@@ -1,0 +1,1 @@
+FeatBit turns feature flag infrastructure into the trusted decision control layer for coding agents by keeping rollout execution in FeatBit and measurement inside the customer's environment.
