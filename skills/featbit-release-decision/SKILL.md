@@ -1,121 +1,274 @@
 ---
-name: release-decision
-description: Guides agents through FeatBit release decision workflows. Use when a user needs a data-driven recommendation on whether to continue, pause, or roll back a feature flag rollout. Resolves both website or landing-page changes and agent or prompt variant comparisons into a reviewer-ready recommendation card. Triggers — "release decision", "should I continue rollout", "analyze experiment results", "feature flag results", "is my experiment ready", "agent variant comparison", "website conversion decision", "rollout recommendation", "continue or rollback", "evaluate my experiment".
+name: featbit-release-decision
+description: FeatBit release decision philosophy and control framework. Activate when the user is anywhere in the loop from intent to implementation to feedback to next iteration and needs the right decision lens, not a fixed workflow. Triggers — "release decision", "what should we build", "feature flag", "A/B test", "experiment design", "how do I measure this", "should I ship this", "rollout strategy", "analyze results", "continue or rollback", "how do I know it worked", "what did we learn", "next iteration", "optimize page", "increase adoption".
 license: MIT
 metadata:
   author: FeatBit
-  version: 1.0.0
+  version: 4.0.0
   category: release-management
 ---
 
-# FeatBit Release Decision
+# FeatBit Release Decision — Agent Decision-Making: Philosophy & Control Framework
 
-Deterministic, data-driven release decisions on FeatBit feature flags. Use when a user needs to decide whether a flagged rollout should continue, pause, or become a rollback candidate.
+This skill is the **control framework above implementation**.
 
-## When to Use
+It is not a workflow, not a practice catalog, and not a CLI manual. Its job is to help the agent decide:
 
-Activate when users:
+- what kind of decision the user is actually facing,
+- which philosophy or control principle should be activated now,
+- what the next smallest reversible move is,
+- and how feedback from this cycle should reshape the next intent.
 
-- Ask whether to continue or roll back a feature flag rollout
-- Need a recommendation based on experiment or observational data
-- Are comparing two agent prompt variants for quality or cost metrics
-- Are evaluating a website or landing-page change against conversion goals
-- Say things like "should I continue rollout", "is my experiment ready", "analyze my feature flag results"
+Concrete tools are secondary. They are implementation adapters, not the meaning of the skill.
 
-Do not use for flag CRUD operations — use the FeatBit REST API skill for those.
+---
 
-## Supported Recipes
+## The Core Loop
 
-| Recipe | Use For |
-|---|---|
-| `website_conversion_change` | Homepage, CTA, onboarding, pricing, or conversion-focused page changes |
-| `agent_variant_comparison` | Coding agents, prompt variants, planner versions, workflow version comparisons |
+Every measurable product or AI change moves through the same loop:
 
-Full recipe reference: [references/recipes.md](references/recipes.md)
-
-## Required Inputs
-
-Collect these from the user before running any commands. Ask only for what is missing — do not request technical metric names.
-
-| Input | Description | Example |
-|---|---|---|
-| What changed | Which feature flag or change is being evaluated | `"new checkout agent v2"`, `"homepage hero CTA"` |
-| Goal | Business or operational objective | `"increase checkout completions"`, `"reduce task cost"` |
-| Data source env var | Name of the environment variable holding the Postgres connection string | `FB_DECISION_PG` |
-| Variant names | Two variant identifiers | `baseline`, `candidate` |
-| Protected audience _(optional)_ | Groups to exclude from rollout actions | `"premium users"` |
-
-**Do not ask the user to select metrics.** The recipe selects them automatically from its defaults.
-
-## Execution Workflow
-
-Run these steps in order. Do not skip or reorder steps. Full rules: [references/workflow.md](references/workflow.md)
-
-### Step 1 — Inspect the data source
-
-```bash
-featbit-decision inspect --connection-env <ENV_VAR> --out artifacts/catalog.json
+```
+intent → hypothesis → implementation → exposure → measurement → interpretation → decision → learning → next intent
 ```
 
-Produces `catalog.json`. Read it to understand the available tables and their columns.
+The loop matters more than any single tool inside it.
 
-### Step 2 — Generate plan.json
+This skill exists to keep the loop intellectually honest:
 
-Use the planner system prompt with the user brief and `catalog.json` as inputs. The planner:
+- no implementation without an explicit intent,
+- no measurement without a defined hypothesis,
+- no decision without evidence framing,
+- no iteration without learning capture.
 
-- Picks exactly one supported recipe
-- Maps the user goal to the recipe's metric defaults
-- Selects a table that satisfies the required columns (or fails with an explanation)
+---
 
-Output: `plan.json`. Do not generate SQL or invent metrics.
+## Operating Position
 
-### Step 3 — Validate the plan
+When this skill is active, the agent should think in this order:
 
-```bash
-featbit-decision validate-plan --plan artifacts/plan.json --catalog artifacts/catalog.json
+1. What decision is the user really trying to make?
+2. Which stage of the loop are they in right now?
+3. Which control principles should be triggered in this stage?
+4. What implementation path is appropriate only after those principles are clear?
+5. What learning must be preserved so the next cycle starts from evidence rather than memory drift?
+
+The skill should never let a tool define the problem prematurely.
+
+---
+
+## Session Memory
+
+Maintain `.decision-context/intent.md`. Create it on first contact and keep it current.
+
+```
+goal:            <the business outcome the user wants>
+intent:          <what the user is trying to improve or learn>
+hypothesis:      <the falsifiable claim being tested>
+change:          <what is being built, gated, measured, or rolled out>
+stage:           <intent | hypothesis | implementing | exposing | measuring | deciding | learning>
+variants:        <baseline / candidate if applicable>
+primary_metric:  <the metric that decides success>
+guardrails:      <metrics that must not degrade>
+constraints:     <protected audiences, rollout caps, operational limits>
+open_questions:  <what is still unclear>
+last_action:     <last thing proposed or executed>
+last_learning:   <what was learned from the previous cycle>
 ```
 
-Stop and explain any validation error to the user. Do not proceed past a failure.
+This file is not a log. It is the current decision state.
 
-### Step 4 — Run evaluation
+---
 
-```bash
-featbit-decision run \
-  --plan artifacts/plan.json \
-  --catalog artifacts/catalog.json \
-  --connection-env <ENV_VAR> \
-  --out artifacts/results.json \
-  --summary-out artifacts/summary.md
+## Trigger Model
+
+This skill does not expose a sequence of steps. It exposes **triggerable control lenses**.
+
+At any moment, one or more lenses may apply. The agent should identify them from the user's message, the workspace state, and prior memory.
+
+---
+
+### CF-01 · Intent Clarification
+
+**Trigger:** The user has a desire or direction, but the desired outcome is vague or mixed together with implementation details.
+
+**Control principle:** Separate **goal** from **solution**. "We want more people to use Chat with FeatBit AI Skills" is a goal. "Add a better CTA" is only one possible solution.
+
+**What the agent should do:** Extract the real business outcome first. If the user jumps directly to a tactic, ask what success would look like if that tactic worked.
+
+**Typical implementation path:** LLM reasoning only.
+
+---
+
+### CF-02 · Hypothesis Discipline
+
+**Trigger:** A goal exists, but there is no explicit causal claim tying a change to a measurable outcome.
+
+**Control principle:** Convert intent into a falsifiable statement before implementation.
+
+Use this template:
+
+> We believe **[change X]** will **[move metric Y in direction Z]** for **[audience A]**, because **[causal reason R]**.
+
+Without this, later analysis turns into story-telling after the fact.
+
+**What the agent should do:** Force clarity on expected direction, audience, and causal reasoning before discussing rollout or metrics in detail.
+
+---
+
+### CF-03 · Reversible Change Control
+
+**Trigger:** A change is about to be implemented and could affect user behavior, adoption, task outcomes, or system cost.
+
+**Control principle:** Any measurable change should be made reversible before it is made visible.
+
+In FeatBit terms, this usually means a feature flag. But the philosophy is broader than the tool: reversibility comes before exposure.
+
+**What the agent should do:** Ensure the proposed implementation path preserves the ability to compare, pause, or undo.
+
+**Typical implementation path:** `featbit-mcp`, `featbit-cli`, FeatBit REST API, or an equivalent gating mechanism.
+
+---
+
+### CF-04 · Exposure Strategy
+
+**Trigger:** A reversible change exists, but the user has not defined who should see it, how much traffic should see it, or how expansion decisions will be made.
+
+**Control principle:** Exposure is a decision, not a deployment side effect.
+
+Start small. Define protected audiences. Define in advance what evidence would justify expansion, pause, or rollback.
+
+**What the agent should do:** Make the rollout logic explicit. A default starting point is conservative exposure, commonly 10%.
+
+---
+
+### CF-05 · Measurement Discipline
+
+**Trigger:** The user asks how to know whether the change worked, or names too many success metrics, or mixes goals, proxies, and diagnostics together.
+
+**Control principle:** One primary metric, a small number of guardrails, and event design that matches the hypothesis.
+
+If there is no single primary metric, the decision is not yet sharp enough.
+
+**What the agent should do:** Define:
+
+- one primary success metric,
+- two or three guardrails,
+- the event shape required to measure them,
+- and where in the user journey the event should be emitted.
+
+**Typical implementation path:** LLM reasoning first; SDK or instrumentation guidance second.
+
+---
+
+### CF-06 · Evidence Sufficiency
+
+**Trigger:** Data is being collected and the user wants to decide, or is impatient to interpret weak evidence.
+
+**Control principle:** Do not let urgency pretend to be evidence.
+
+Evidence must be simultaneous across variants, measured over the same time window, and sufficient to support a directional decision.
+
+**What the agent should do:** Decide whether the right next move is to evaluate now, wait for more data, widen the observation window, or revisit instrumentation quality.
+
+**Typical implementation path:** direct DB query, evaluation tooling, or simple counting logic.
+
+---
+
+### CF-07 · Decision Framing
+
+**Trigger:** Results exist and the team wants to decide what to do next.
+
+**Control principle:** Release decisions are framed by effect direction, guardrail health, and business meaning, not by ritualized significance language.
+
+The useful categories are:
+
+- `CONTINUE`
+- `PAUSE`
+- `ROLLBACK CANDIDATE`
+- `INCONCLUSIVE`
+
+Those are action categories, not scientific truths.
+
+**What the agent should do:** Explain the decision in reviewer language, tie it back to the hypothesis, and separate "not enough evidence" from "evidence of harm".
+
+---
+
+### CF-08 · Learning Closure
+
+**Trigger:** A cycle has ended, whether the result was good, bad, or inconclusive.
+
+**Control principle:** A finished cycle must produce a reusable learning, otherwise the next cycle starts from opinion again.
+
+**What the agent should do:** Capture:
+
+- what changed,
+- what happened,
+- what was confirmed or refuted,
+- why that likely happened,
+- and what the next hypothesis should be.
+
+This learning feeds the next intent.
+
+---
+
+## Capability Domains
+
+The framework is primary. Concrete implementation should be decomposed into broad capability domains first, then handled by separate skills that specialize in those domains.
+
+Recommended domains:
+
+- **Intent and hypothesis shaping**: clarify the outcome, sharpen the causal claim, define success
+- **Reversible exposure control**: feature flags, variant setup, rollout and targeting strategy
+- **Measurement design and instrumentation**: event schema, SDK integration, data quality
+- **Evidence analysis and decision execution**: interpreting collected signals, producing structured recommendation artifacts
+- **Learning capture and next-iteration framing**: synthesize what changed, what was learned, and what to try next
+
+This top-level skill should stay at the domain-routing and control-framework layer.
+
+---
+
+## Concrete Skills
+
+Concrete methods, tools, and executable procedures should live in separate implementation skills under those domains.
+
+Examples:
+
+- a flag-control skill for `featbit-mcp`, `featbit-cli`, and REST API operations
+- an SDK/instrumentation skill for application integration and event emission
+- an evidence-analysis skill for structured experiment evaluation
+- an iteration-learning skill for post-decision synthesis
+
+The purpose of this `release-decision` skill is to decide **which domain should be activated now**, not to be the implementation manual for all of them.
+
+---
+
+## Guardrails For The Agent
+
+- Do not anchor the conversation to a tool before the decision type is clear.
+- Do not let an available tool shrink the user's actual goal.
+- Do not confuse implementation advice with decision philosophy.
+- Do not ask the user to choose many metrics to compensate for a vague hypothesis.
+- Do not claim certainty when the evidence only supports a directional judgment.
+- Do not finish a cycle without recording the learning state for the next one.
+
+---
+
+## Entry Protocol
+
+Before asking or saying anything, scan the workspace for existing context:
+
+```
+.decision-context/intent.md  → Prior decision state and last learning
+artifacts/results.json       → Evidence already interpreted?
+artifacts/plan.json          → Evaluation structure already proposed?
+artifacts/catalog.json       → Evidence source already inspected?
+existing docs or notes       → Any prior human-written problem framing?
 ```
 
-Produces `results.json` (machine-readable recommendation) and `summary.md` (human-readable explanation).
+Identify which control lenses are relevant based on the scan and the current message. Ask only what you cannot infer. One question at a time.
 
-### Step 5 — Apply control policy
+---
 
-Determine whether direct FeatBit control is authorized in the environment, or whether an action file should be generated for operator review.
+## Implementation Note
 
-**Default path — dry-run (always safe):**
-
-```bash
-featbit-decision sync-dry-run --plan artifacts/plan.json --out artifacts/featbit-actions.json
-```
-
-Produces `featbit-actions.json` for operator or automation review.
-
-**Direct execution path:** Use only when FeatBit management tooling is already present and explicitly authorized in the session.
-
-### Step 6 — Present the recommendation card
-
-Format the final output using the card structure in [references/output-format.md](references/output-format.md).
-
-## Key Rules
-
-1. **Do not expose intermediate artifacts** (`catalog.json`, `plan.json`, `results.json`) unless the user asks for debugging.
-2. **Do not claim statistical significance.** Use reviewer language: "directionally positive", "within guardrail bounds", "meets exit criteria".
-3. **Do not skip `validate-plan`.** Treat CLI output as authoritative — do not substitute informal reasoning.
-4. **Do not ask the user to choose metrics.** Recipe defaults are the source of truth.
-5. **Never put credentials in any artifact.** Always pass connection strings by environment variable name only.
-
-## CLI Command Reference
-
-Full command options and examples: [references/commands.md](references/commands.md)
+If a concrete tool path is needed, pick a domain-specific skill first. Only then pick the specific tool or program inside that skill.
