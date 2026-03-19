@@ -5,12 +5,12 @@ Full orchestration rules for the `release-decision` skill. Follow these rules ex
 ## Execution Order
 
 1. Read the user brief and identify which recipe applies.
-2. Run `featbit decision inspect` to discover available tables and columns.
+2. Run `featbit-decision inspect` to discover available tables and columns.
 3. Generate `plan.json` using the planner system prompt with the brief + `catalog.json` as inputs.
-4. Run `featbit decision validate-plan`. Stop if validation fails — explain the failure to the user.
-5. Run `featbit decision run` to produce `results.json` and `summary.md`.
+4. Run `featbit-decision validate-plan`. Stop if validation fails — explain the failure to the user.
+5. Run `featbit-decision run` to produce `results.json` and `summary.md`.
 6. Apply the control policy to determine the output path.
-7. If direct control is not available or not authorized, run `featbit decision sync-dry-run` to produce `featbit-actions.json`.
+7. If direct control is not available or not authorized, run `featbit-decision sync-dry-run` to produce `featbit-actions.json`.
 8. Present the recommendation card to the user.
 
 ## Artifact Order
@@ -19,11 +19,11 @@ Artifacts are produced in this sequence:
 
 | Order | Artifact | Produced By |
 |---|---|---|
-| 1 | `artifacts/catalog.json` | `featbit decision inspect` |
+| 1 | `artifacts/catalog.json` | `featbit-decision inspect` |
 | 2 | `artifacts/plan.json` | Planner LLM call |
-| 3 | `artifacts/results.json` | `featbit decision run` |
-| 4 | `artifacts/summary.md` | `featbit decision run` |
-| 5 | `artifacts/featbit-actions.json` | `featbit decision sync-dry-run` _(if needed)_ |
+| 3 | `artifacts/results.json` | `featbit-decision run` |
+| 4 | `artifacts/summary.md` | `featbit-decision run` |
+| 5 | `artifacts/featbit-actions.json` | `featbit-decision sync-dry-run` _(if needed)_ |
 
 ## Planning Rules
 
@@ -57,7 +57,7 @@ Two paths are permitted:
 
 Use when FeatBit management tooling is not available in the current environment, or when authorization is unclear.
 
-- Run `featbit decision sync-dry-run` to produce `featbit-actions.json`.
+- Run `featbit-decision sync-dry-run` to produce `featbit-actions.json`.
 - Present the action file content for operator review.
 - The action remains auditable and reversible.
 

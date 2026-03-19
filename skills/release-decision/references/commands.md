@@ -1,13 +1,13 @@
 # CLI Command Reference
 
-All `featbit decision` commands operate on local files and a PostgreSQL data source. They do not require `--host`, `--token`, or `--org`.
+All `featbit-decision` commands operate on local files and a PostgreSQL data source. They do not require `--host`, `--token`, or `--org`.
 
-## featbit decision inspect
+## featbit-decision inspect
 
 Connects to a PostgreSQL database and introspects the schema. Writes a `catalog.json` file describing available tables and their columns.
 
 ```bash
-featbit decision inspect \
+featbit-decision inspect \
   --connection-env <ENV_VAR> \
   --out <path/to/catalog.json>
 ```
@@ -21,17 +21,17 @@ featbit decision inspect \
 
 ```bash
 export FB_DECISION_PG="Host=localhost;Port=5432;Database=experiments;Username=reader;Password=..."
-featbit decision inspect --connection-env FB_DECISION_PG --out artifacts/catalog.json
+featbit-decision inspect --connection-env FB_DECISION_PG --out artifacts/catalog.json
 ```
 
 ---
 
-## featbit decision validate-plan
+## featbit-decision validate-plan
 
 Validates a `plan.json` against a `catalog.json`. Checks that the selected table, columns, recipe, and metric pack are consistent.
 
 ```bash
-featbit decision validate-plan \
+featbit-decision validate-plan \
   --plan <path/to/plan.json> \
   --catalog <path/to/catalog.json>
 ```
@@ -45,12 +45,12 @@ featbit decision validate-plan \
 
 ---
 
-## featbit decision run
+## featbit-decision run
 
 Runs the full evaluation: queries PostgreSQL with the approved SQL templates, evaluates metrics, applies the recommendation engine, and writes `results.json` and `summary.md`.
 
 ```bash
-featbit decision run \
+featbit-decision run \
   --plan <path/to/plan.json> \
   --catalog <path/to/catalog.json> \
   --connection-env <ENV_VAR> \
@@ -77,12 +77,12 @@ featbit decision run \
 
 ---
 
-## featbit decision sync-dry-run
+## featbit-decision sync-dry-run
 
 Generates a `featbit-actions.json` file describing the recommended FeatBit flag operation without applying it. For operator or automation review.
 
 ```bash
-featbit decision sync-dry-run \
+featbit-decision sync-dry-run \
   --plan <path/to/plan.json> \
   --out <path/to/featbit-actions.json>
 ```

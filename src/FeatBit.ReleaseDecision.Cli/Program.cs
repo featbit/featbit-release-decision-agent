@@ -9,22 +9,8 @@ if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
     return 0;
 }
 
-if (!string.Equals(args[0], "decision", StringComparison.OrdinalIgnoreCase))
-{
-    await stderr.WriteLineAsync($"error: unknown command '{args[0]}'");
-    await stderr.WriteLineAsync("usage: featbit-decision decision <subcommand> [options]");
-    await stderr.WriteLineAsync("run 'featbit-decision --help' for usage");
-    return 1;
-}
-
-if (args.Length < 2 || args[1] is "-h" or "--help")
-{
-    PrintHelp(stdout);
-    return 0;
-}
-
-var subcommand = args[1].ToLowerInvariant();
-var opts = ParseOptions(args[2..]);
+var subcommand = args[0].ToLowerInvariant();
+var opts = ParseOptions(args[1..]);
 
 return subcommand switch
 {
@@ -54,12 +40,12 @@ return subcommand switch
     _ => await UnknownSubcommandAsync(stderr, subcommand)
 };
 
-static Dictionary<string, string> ParseOptions(string[] args)
+static Dictionary<string, string> ParseOptions(IReadOnlyList<string> args)
 {
     var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    for (int i = 0; i < args.Length; i++)
+    for (int i = 0; i < args.Count; i++)
     {
-        if (args[i].StartsWith("--") && i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+        if (args[i].StartsWith("--") && i + 1 < args.Count && !args[i + 1].StartsWith("--"))
         {
             result[args[i]] = args[i + 1];
             i++;
@@ -73,17 +59,17 @@ static void PrintHelp(TextWriter w)
     w.WriteLine("featbit-decision — FeatBit Release Decision CLI (.NET 10 AOT)");
     w.WriteLine();
     w.WriteLine("Usage:");
-    w.WriteLine("  featbit-decision decision inspect");
+    w.WriteLine("  featbit-decision inspect");
     w.WriteLine("      --connection-env <VAR> --out <catalog.json>");
     w.WriteLine();
-    w.WriteLine("  featbit-decision decision validate-plan");
+    w.WriteLine("  featbit-decision validate-plan");
     w.WriteLine("      --plan <plan.json> [--catalog <catalog.json>]");
     w.WriteLine();
-    w.WriteLine("  featbit-decision decision run");
+    w.WriteLine("  featbit-decision run");
     w.WriteLine("      --plan <plan.json> --catalog <catalog.json>");
     w.WriteLine("      --connection-env <VAR> --out <results.json> --summary-out <summary.md>");
     w.WriteLine();
-    w.WriteLine("  featbit-decision decision sync-dry-run");
+    w.WriteLine("  featbit-decision sync-dry-run");
     w.WriteLine("      --plan <plan.json> --out <featbit-actions.json>");
     w.WriteLine();
     w.WriteLine("Options:");

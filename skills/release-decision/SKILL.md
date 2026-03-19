@@ -54,7 +54,7 @@ Run these steps in order. Do not skip or reorder steps. Full rules: [references/
 ### Step 1 — Inspect the data source
 
 ```bash
-featbit decision inspect --connection-env <ENV_VAR> --out artifacts/catalog.json
+featbit-decision inspect --connection-env <ENV_VAR> --out artifacts/catalog.json
 ```
 
 Produces `catalog.json`. Read it to understand the available tables and their columns.
@@ -72,7 +72,7 @@ Output: `plan.json`. Do not generate SQL or invent metrics.
 ### Step 3 — Validate the plan
 
 ```bash
-featbit decision validate-plan --plan artifacts/plan.json --catalog artifacts/catalog.json
+featbit-decision validate-plan --plan artifacts/plan.json --catalog artifacts/catalog.json
 ```
 
 Stop and explain any validation error to the user. Do not proceed past a failure.
@@ -80,7 +80,7 @@ Stop and explain any validation error to the user. Do not proceed past a failure
 ### Step 4 — Run evaluation
 
 ```bash
-featbit decision run \
+featbit-decision run \
   --plan artifacts/plan.json \
   --catalog artifacts/catalog.json \
   --connection-env <ENV_VAR> \
@@ -97,7 +97,7 @@ Determine whether direct FeatBit control is authorized in the environment, or wh
 **Default path — dry-run (always safe):**
 
 ```bash
-featbit decision sync-dry-run --plan artifacts/plan.json --out artifacts/featbit-actions.json
+featbit-decision sync-dry-run --plan artifacts/plan.json --out artifacts/featbit-actions.json
 ```
 
 Produces `featbit-actions.json` for operator or automation review.
