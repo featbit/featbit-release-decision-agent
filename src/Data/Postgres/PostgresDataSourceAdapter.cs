@@ -115,7 +115,7 @@ ORDER BY table_schema, table_name, ordinal_position;";
     private async Task<double> RunMetricAsync(NpgsqlConnection connection, ExperimentPlan plan, string metricName, string variant, CancellationToken cancellationToken)
     {
         var template = sqlTemplateLoader.Load(plan.DataSourceKind, metricName);
-        var sql = template.Replace("{{table}}", QuoteQualifiedIdentifier(plan.Table), StringComparison.Ordinal);
+        var sql = ApplySqlBindings(template, plan);
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("decision_key", plan.DecisionKey);
@@ -130,6 +130,19 @@ ORDER BY table_schema, table_name, ordinal_position;";
         }
 
         return Convert.ToDouble(value);
+    }
+
+    private static string ApplySqlBindings(string template, ExperimentPlan plan)
+    {
+        var sql = template.Replace("{{table}}", QuoteQualifiedIdentifier(plan.Table), StringComparison.Ordinal);
+
+        foreach (var canonicalColumnName in RequiredTemplateColumns)
+        {
+            var actualColumnName = ResolveActualColumnName(plan, canonicalColumnName);
+            sql = sql.Replace($"{{{{{canonicalColumnName}_column}}}}", QuoteIdentifier(actualColumnName), StringComparison.Ordinal);
+        }
+
+        return sql;
     }
 
     private static double CalculateRelativeDelta(double baselineValue, double candidateValue)
@@ -151,6 +164,29 @@ ORDER BY table_schema, table_name, ordinal_position;";
             _ => "pass"
         };
     }
+
+    private static string ResolveActualColumnName(ExperimentPlan plan, string canonicalColumnName)
+    {
+        return plan.ColumnMappings.TryGetValue(canonicalColumnName, out var mappedColumnName) && !string.IsNullOrWhiteSpace(mappedColumnName)
+            ? mappedColumnName
+            : canonicalColumnName;
+    }
+
+    private static string QuoteIdentifier(string identifier)
+    {
+        return $"\"{identifier.Replace("\"", "\"\"")}\"";
+    }
+
+    private static readonly string[] RequiredTemplateColumns =
+    [
+        "decision_key",
+        "variant",
+        "task_id",
+        "success",
+        "cost",
+        "latency_ms",
+        "created_at"
+    ];
 
     private static string QuoteQualifiedIdentifier(string identifier)
     {

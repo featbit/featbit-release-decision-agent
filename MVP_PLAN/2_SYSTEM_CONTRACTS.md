@@ -44,6 +44,7 @@ Represents the system-generated execution plan for one decision run.
 4. `page_scope`
 5. `target_audience`
 6. `protected_audience`
+7. `column_mappings`
 
 ### Credential Handling
 
@@ -60,7 +61,8 @@ Represents the system-generated execution plan for one decision run.
 5. `guardrails` must match the selected recipe
 6. `data_source_kind` must currently be `postgres`
 7. `table` must be present in the inspected catalog or provided through a mapping rule
-8. `time_range` must be present
+8. `column_mappings`, when present, must map canonical recipe field names to actual columns in the selected table
+9. `time_range` must be present
 
 ## 2. featbit-actions.json
 
@@ -111,7 +113,7 @@ Represents the inspected customer data source schema available to the runtime.
 
 1. `data_source_kind` must currently be `postgres`
 2. required table must exist
-3. required columns for the recipe must exist
+3. required columns for the recipe must exist directly or be satisfiable through `column_mappings`
 
 ## 4. results.json
 

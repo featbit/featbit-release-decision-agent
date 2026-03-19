@@ -44,6 +44,7 @@
 4. `page_scope`
 5. `target_audience`
 6. `protected_audience`
+7. `column_mappings`
 
 ### 凭据处理
 
@@ -60,7 +61,8 @@
 5. `guardrails` 必须与所选 recipe 一致
 6. `data_source_kind` 当前必须是 `postgres`
 7. `table` 必须存在于 inspect 得到的 catalog 中，或通过 mapping 规则提供
-8. `time_range` 必须存在
+8. `column_mappings` 如果存在，必须把 recipe 的 canonical 字段名映射到所选表中的真实列名
+9. `time_range` 必须存在
 
 ## 2. featbit-actions.json
 
@@ -111,7 +113,7 @@
 
 1. `data_source_kind` 当前必须是 `postgres`
 2. 必需 table 必须存在
-3. recipe 需要的列必须存在
+3. recipe 需要的列必须直接存在，或可通过 `column_mappings` 满足
 
 ## 4. results.json
 

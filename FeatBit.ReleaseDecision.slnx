@@ -7,4 +7,7 @@
   <Folder Name="/src/Data/Postgres/">
     <Project Path="src/Data/Postgres/Data.Postgres.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FeatBit.ReleaseDecision.Tests/FeatBit.ReleaseDecision.Tests.csproj" />
+  </Folder>
 </Solution>

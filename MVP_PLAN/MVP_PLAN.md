@@ -248,17 +248,9 @@ Done when:
 
 Do these now, in order:
 
-1. define recipe-driven `plan.json`
-2. define `featbit-actions.json`
-3. define `catalog.json`
-4. define `results.json`
-5. define `summary.md`
-6. add sample artifacts for both recipes
-7. implement `validate-plan`
-8. implement `sync-dry-run`
-9. implement `run`
-10. implement `inspect`
-11. add prompts, workflow docs, demo, and tests
+Core MVP tasks in this plan are complete.
+
+Next work, if started, belongs to production hardening rather than MVP definition.
 
 ## MVP Completion Criteria
 

@@ -20,6 +20,8 @@ public sealed class ExperimentPlan
 
     public string Table { get; set; } = string.Empty;
 
+    public Dictionary<string, string> ColumnMappings { get; set; } = [];
+
     public TimeRange TimeRange { get; set; } = new();
 
     public string? Notes { get; set; }

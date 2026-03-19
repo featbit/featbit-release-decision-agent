@@ -28,4 +28,15 @@ public sealed class FileStore
         await using var stream = File.Create(path);
         await JsonSerializer.SerializeAsync(stream, value, JsonOptions, cancellationToken);
     }
+
+    public async Task WriteTextAsync(string path, string content, CancellationToken cancellationToken = default)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await File.WriteAllTextAsync(path, content, cancellationToken);
+    }
 }

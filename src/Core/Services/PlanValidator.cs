@@ -122,8 +122,39 @@ public sealed class PlanValidator
         else if (hasRecipe)
         {
             var table = catalog.Tables.First(item => string.Equals(item.Name, plan.Table, StringComparison.OrdinalIgnoreCase));
+            var availableColumns = table.Columns.Select(column => column.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var mapping in plan.ColumnMappings)
+            {
+                if (!recipe!.RequiredColumns.Contains(mapping.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    errors.Add($"column_mappings key '{mapping.Key}' is not supported for recipe '{plan.RecipeId}'.");
+                }
+
+                if (string.IsNullOrWhiteSpace(mapping.Value))
+                {
+                    errors.Add($"column_mappings value for '{mapping.Key}' cannot be empty.");
+                }
+                else if (!availableColumns.Contains(mapping.Value))
+                {
+                    errors.Add($"column_mappings value '{mapping.Value}' for '{mapping.Key}' was not found in table '{plan.Table}'.");
+                }
+            }
+
+            var duplicateTargets = plan.ColumnMappings
+                .Where(mapping => !string.IsNullOrWhiteSpace(mapping.Value))
+                .GroupBy(mapping => mapping.Value, StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Count() > 1)
+                .Select(group => group.Key)
+                .ToArray();
+
+            foreach (var duplicateTarget in duplicateTargets)
+            {
+                errors.Add($"column_mappings cannot map multiple canonical fields to '{duplicateTarget}'.");
+            }
+
             var missingColumns = recipe!.RequiredColumns
-                .Where(requiredColumn => !table.Columns.Any(column => string.Equals(column.Name, requiredColumn, StringComparison.OrdinalIgnoreCase)))
+                .Where(requiredColumn => !availableColumns.Contains(ResolveActualColumnName(plan, requiredColumn)))
                 .ToArray();
 
             if (missingColumns.Length > 0)
@@ -138,5 +169,12 @@ public sealed class PlanValidator
         }
 
         return errors;
+    }
+
+    private static string ResolveActualColumnName(ExperimentPlan plan, string canonicalColumnName)
+    {
+        return plan.ColumnMappings.TryGetValue(canonicalColumnName, out var mappedColumnName) && !string.IsNullOrWhiteSpace(mappedColumnName)
+            ? mappedColumnName
+            : canonicalColumnName;
     }
 }

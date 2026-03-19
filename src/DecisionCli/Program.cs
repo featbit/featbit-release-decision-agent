@@ -7,6 +7,7 @@ var postgresConnectionFactory = new PostgresConnectionFactory();
 var metricTemplateRegistry = new MetricTemplateRegistry();
 var sqlTemplateLoader = new SqlTemplateLoader(metricTemplateRegistry);
 var recipeCatalog = new RecipeCatalog();
+var summaryWriter = new SummaryWriter();
 
 IReadOnlyDictionary<string, IDataSourceAdapter> adapters = new Dictionary<string, IDataSourceAdapter>(StringComparer.OrdinalIgnoreCase)
 {
@@ -20,7 +21,7 @@ var commands = new Dictionary<string, ICommandHandler>(StringComparer.OrdinalIgn
 {
 	["inspect"] = new InspectCommand(adapters, fileStore),
 	["validate-plan"] = new ValidatePlanCommand(fileStore, planValidator),
-	["run"] = new RunCommand(fileStore, adapters, recommendationEngine),
+	["run"] = new RunCommand(fileStore, adapters, recommendationEngine, summaryWriter),
 	["sync-dry-run"] = new SyncDryRunCommand(fileStore)
 };
 

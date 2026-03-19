@@ -248,17 +248,9 @@
 
 按顺序执行：
 
-1. 定义 recipe-driven `plan.json`
-2. 定义 `featbit-actions.json`
-3. 定义 `catalog.json`
-4. 定义 `results.json`
-5. 定义 `summary.md`
-6. 为两个 recipes 增加 sample artifacts
-7. 实现 `validate-plan`
-8. 实现 `sync-dry-run`
-9. 实现 `run`
-10. 实现 `inspect`
-11. 增加 prompts、workflow 文档、demo 和 tests
+这个计划中的核心 MVP 任务已经完成。
+
+如果继续做，下一阶段应归类为 production hardening，而不是 MVP 定义本身。
 
 ## MVP 完成标准
 
