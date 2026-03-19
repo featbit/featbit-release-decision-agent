@@ -69,6 +69,10 @@ public static class PlanValidator
         if (string.IsNullOrWhiteSpace(plan.Table))
             errors.Add("table is required");
 
+        // 9. decision_key is required
+        if (string.IsNullOrWhiteSpace(plan.DecisionKey))
+            errors.Add("decision_key is required");
+
         // 9+. Catalog-dependent validations (optional — only when catalog is provided)
         if (catalog != null && !string.IsNullOrWhiteSpace(plan.Table))
         {
@@ -84,7 +88,7 @@ public static class PlanValidator
                 var available = tableEntry.Columns.Select(c => c.Name).ToArray();
 
                 // All canonical columns the engine needs must be resolvable
-                foreach (var canonical in new[] { "variant", "success", "cost", "latency_ms", "timestamp" })
+                foreach (var canonical in new[] { "decision_key", "task_id", "variant", "success", "cost", "latency_ms", "timestamp" })
                 {
                     if (!ColumnResolver.TryResolve(canonical, plan.ColumnMappings, available, out _))
                         errors.Add(

@@ -38,6 +38,8 @@ public sealed class PostgresAnalyzer(string connectionString)
             throw new InvalidOperationException("Cannot resolve 'latency_ms' column. Add a column_mappings entry.");
         if (!ColumnResolver.TryResolve("timestamp", plan.ColumnMappings, availableColumns, out var timestampCol))
             throw new InvalidOperationException("Cannot resolve 'timestamp' column. Add a column_mappings entry.");
+        if (!ColumnResolver.TryResolve("decision_key", plan.ColumnMappings, availableColumns, out var decisionKeyCol))
+            throw new InvalidOperationException("Cannot resolve 'decision_key' column. Add a column_mappings entry.");
 
         // Split schema.table for safe quoting
         var (schemaQ, tableQ) = QuoteTable(plan.Table);
@@ -52,7 +54,8 @@ public sealed class PostgresAnalyzer(string connectionString)
                 PERCENTILE_CONT(0.95) WITHIN GROUP
                     (ORDER BY "{latencyCol}"::float8)                AS p95_latency_ms
             FROM {schemaQ}.{tableQ}
-            WHERE "{variantCol}" IN (@v1, @v2)
+            WHERE "{decisionKeyCol}" = @decision_key
+              AND "{variantCol}" IN (@v1, @v2)
               AND "{timestampCol}" >= @start
               AND "{timestampCol}" <  @end
             GROUP BY "{variantCol}"
@@ -62,6 +65,7 @@ public sealed class PostgresAnalyzer(string connectionString)
         await using var conn = await dataSource.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand(sql, conn);
 
+        cmd.Parameters.AddWithValue("decision_key", plan.DecisionKey);
         cmd.Parameters.AddWithValue("v1", plan.Variants[0]);
         cmd.Parameters.AddWithValue("v2", plan.Variants[1]);
         cmd.Parameters.AddWithValue("start", NpgsqlTypes.NpgsqlDbType.TimestampTz,
