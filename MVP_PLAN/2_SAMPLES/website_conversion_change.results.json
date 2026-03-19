@@ -1,0 +1,35 @@
+{
+  "recipe_id": "website_conversion_change",
+  "decision_key": "homepage_message_test",
+  "primary_metric": {
+    "name": "task_success_rate",
+    "baseline_variant": "homepage_current",
+    "candidate_variant": "homepage_candidate",
+    "baseline_value": 0.23,
+    "candidate_value": 0.251,
+    "absolute_delta": 0.021,
+    "relative_delta": 0.0913
+  },
+  "guardrails": [
+    {
+      "name": "avg_cost",
+      "baseline_value": 0.14,
+      "candidate_value": 0.145,
+      "relative_delta": 0.0357,
+      "status": "pass"
+    },
+    {
+      "name": "p95_latency_ms",
+      "baseline_value": 1320,
+      "candidate_value": 1355,
+      "relative_delta": 0.0265,
+      "status": "pass"
+    }
+  ],
+  "recommendation": "continue",
+  "recommended_next_rollout_percentage": 25,
+  "reasoning": [
+    "Primary metric improved for the target experience",
+    "No guardrail regression detected"
+  ]
+}

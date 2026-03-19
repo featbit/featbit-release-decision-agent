@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Core/Core.csproj" />
+    <Project Path="src/DecisionCli/DecisionCli.csproj" />
+  </Folder>
+  <Folder Name="/src/Data/" />
+  <Folder Name="/src/Data/Postgres/">
+    <Project Path="src/Data/Postgres/Data.Postgres.csproj" />
+  </Folder>
+</Solution>

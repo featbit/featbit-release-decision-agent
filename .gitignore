@@ -1,0 +1,20 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+TestResults/
+artifacts/
+
+# Local environment and secret files
+.env
+.env.*
+*.local
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db

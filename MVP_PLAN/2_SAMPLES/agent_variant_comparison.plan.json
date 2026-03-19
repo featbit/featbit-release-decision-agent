@@ -1,0 +1,21 @@
+{
+  "recipe_id": "agent_variant_comparison",
+  "decision_key": "coding_agent_planner",
+  "variants": ["planner_a", "planner_b"],
+  "randomization_unit": "task_id",
+  "primary_metric": "task_success_rate",
+  "guardrails": ["avg_cost", "p95_latency_ms"],
+  "rollout_percentage": 10,
+  "data_source_kind": "postgres",
+  "table": "public.decision_events",
+  "time_range": {
+    "start": "2026-03-01T00:00:00Z",
+    "end": "2026-03-07T00:00:00Z"
+  },
+  "user_goal": "Compare planner_a and planner_b for coding-agent tasks.",
+  "boundaries": [
+    "Do not increase cost materially",
+    "Do not increase latency materially"
+  ],
+  "notes": "System-generated plan for agent variant comparison."
+}

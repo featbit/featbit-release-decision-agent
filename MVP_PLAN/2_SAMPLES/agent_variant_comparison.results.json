@@ -1,0 +1,35 @@
+{
+  "recipe_id": "agent_variant_comparison",
+  "decision_key": "coding_agent_planner",
+  "primary_metric": {
+    "name": "task_success_rate",
+    "baseline_variant": "planner_a",
+    "candidate_variant": "planner_b",
+    "baseline_value": 0.61,
+    "candidate_value": 0.648,
+    "absolute_delta": 0.038,
+    "relative_delta": 0.0623
+  },
+  "guardrails": [
+    {
+      "name": "avg_cost",
+      "baseline_value": 0.42,
+      "candidate_value": 0.429,
+      "relative_delta": 0.0214,
+      "status": "pass"
+    },
+    {
+      "name": "p95_latency_ms",
+      "baseline_value": 1800,
+      "candidate_value": 1785,
+      "relative_delta": -0.0083,
+      "status": "pass"
+    }
+  ],
+  "recommendation": "continue",
+  "recommended_next_rollout_percentage": 25,
+  "reasoning": [
+    "Primary metric improved",
+    "No guardrail regression detected"
+  ]
+}
