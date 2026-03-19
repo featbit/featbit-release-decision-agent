@@ -17,8 +17,8 @@ Show that a user brief can move through inspect, planning, validation, determini
 
 Use one of these briefs:
 
-1. `MVP_PLAN/3_SAMPLE_BRIEFS/agent_variant_comparison.brief.md`
-2. `MVP_PLAN/3_SAMPLE_BRIEFS/website_conversion_change.brief.md`
+1. `examples/agent_variant_comparison/brief.md`
+2. `examples/website_conversion_change/brief.md`
 
 ## Output Folder
 

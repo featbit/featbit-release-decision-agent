@@ -17,8 +17,8 @@
 
 使用以下任一 brief：
 
-1. `MVP_PLAN/3_SAMPLE_BRIEFS/agent_variant_comparison.brief.md`
-2. `MVP_PLAN/3_SAMPLE_BRIEFS/website_conversion_change.brief.md`
+1. `examples/agent_variant_comparison/brief.md`
+2. `examples/website_conversion_change/brief.md`
 
 ## 输出目录
 

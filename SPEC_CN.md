@@ -606,7 +606,6 @@ This recommendation is based on rule-based metric comparison in the MVP and is n
         DataCatalog.cs
         QueryResult.cs
         EvaluationResult.cs
-        Recommendation.cs
         FeatBitActionPlan.cs
       Services/
         PlanValidator.cs
@@ -615,32 +614,42 @@ This recommendation is based on rule-based metric comparison in the MVP and is n
         FileStore.cs
 
     /Data
-      /ClickHouse
-        ClickHouseConnectionFactory.cs
-        ClickHouseSchemaInspector.cs
-        ClickHouseQueryRunner.cs
+      /Postgres
+        PostgresConnectionFactory.cs
+        PostgresDataSourceAdapter.cs
 
     /Templates
       Sql/
-        task_success_rate.sql
-        avg_cost.sql
-        p95_latency_ms.sql
+        task_success_rate.postgres.sql
+        avg_cost.postgres.sql
+        p95_latency_ms.postgres.sql
+
+  /skills
+    /release_decision.website_change
+      SKILL.md
+    /release_decision.agent_variant
+      SKILL.md
+
+  /slash-commands
+    configure-data-source.md
+    inspect-data-source.md
+    run-release-decision.md
+
+  /toolkit
+    README.md
 
   /prompts
     planner-system.md
-    planner-user-template.md
     summary-system.md
     claude-workflow.md
     featbit-control-policy.md
 
   /examples
-    brief.md
-    sample-plan.json
-    sample-results.json
-    sample-summary.md
-    schema-mapping.json
-
-  /scripts
+    /agent_variant_comparison
+      brief.md
+    /website_conversion_change
+      brief.md
+    demo.ps1
     demo-flow.md
     demo-commands.sh
 

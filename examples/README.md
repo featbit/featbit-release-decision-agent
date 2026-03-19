@@ -1,6 +1,6 @@
 # Examples
 
-This folder contains runtime-facing examples for the FeatBit release decision MVP.
+This folder contains runtime-facing examples for the toolkit layer.
 
 ## Included Examples
 
@@ -10,13 +10,13 @@ This folder contains runtime-facing examples for the FeatBit release decision MV
 
 ## Intended Use
 
-Use these examples when you want to run the workflow from the repo root without reading the planning documents first.
+Use these examples when you want to run the toolkit from the repo root without reading the planning documents first.
 
 ## Typical Flow
 
 1. choose one brief
 2. inspect a PostgreSQL schema into `artifacts/demo/catalog.json`
-3. turn the brief into `artifacts/demo/plan.json` using `prompts/planner-system.md`
+3. turn the brief into `artifacts/demo/plan.json` using the instruction prompts in `prompts/`
 4. validate the plan
 5. run deterministic evaluation
 6. emit `featbit-actions.json` for dry-run handoff

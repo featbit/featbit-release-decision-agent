@@ -1,43 +1,45 @@
-# FeatBit Release Decision Agent
+# FeatBit Release Decision Agent — Handbook
 
-This repository contains the MVP runtime, prompts, examples, and planning artifacts for a recipe-driven release decision layer.
+This repository is the **handbook and specification source** for the FeatBit release decision system.
 
-## What It Does
+Executable artifacts have been distributed to their canonical homes:
 
-The current MVP supports a deterministic workflow that:
+| Artifact | Repo | Path |
+|---|---|---|
+| Agent skill | [featbit-skills](https://github.com/featbit/featbit-skills) | `skills/featbit-decision/` |
+| CLI commands (`decision` group) | [featbit-cli](https://github.com/featbit/featbit-cli) | `src/FeatBit.Cli/` |
 
-1. inspects a PostgreSQL data source
-2. generates a recipe-driven `plan.json`
-3. validates the plan against an inspected catalog
-4. runs approved metric templates only
-5. writes `results.json` and `summary.md`
-6. emits `featbit-actions.json` for dry-run handoff
+This repo contains:
 
-## Current Scope
+1. `SPEC.md` / `SPEC_CN.md` — full product specification
+2. `WHITE_PAPER.md` / `WHITE_PAPER_CN.md` — concept and rationale
+3. `PRACTICAL_VALIDATION.md` / `PRACTICAL_VALIDATION_CN.md` — validation guide
+4. `PITCH_ONE_LINER.md` — one-liner pitch
 
-1. supported recipes: `agent_variant_comparison`, `website_conversion_change`
-2. supported data source kind: `postgres`
-3. control output: dry-run FeatBit action plan
-4. evaluation method: deterministic rule-based comparison, not formal statistics
+## How It Works
 
-## Quickstart
+The `featbit-decision` skill (in `featbit-skills`) guides an agent through a four-command workflow:
 
-1. set a PostgreSQL connection in `FB_DECISION_PG`
-2. review [examples/README.md](c:/Code/featbit/featbit-release-decision-agent/examples/README.md)
-3. choose a brief from [examples/agent_variant_comparison/brief.md](c:/Code/featbit/featbit-release-decision-agent/examples/agent_variant_comparison/brief.md) or [examples/website_conversion_change/brief.md](c:/Code/featbit/featbit-release-decision-agent/examples/website_conversion_change/brief.md)
-4. run [examples/demo.ps1](c:/Code/featbit/featbit-release-decision-agent/examples/demo.ps1)
+```
+featbit decision inspect   --connection-env <ENV_VAR> --out catalog.json
+featbit decision validate-plan --plan plan.json --catalog catalog.json
+featbit decision run       --plan plan.json --catalog catalog.json \
+                           --connection-env <ENV_VAR> --out results.json --summary-out summary.md
+featbit decision sync-dry-run --plan plan.json --out featbit-actions.json
+```
 
-## Key Paths
+The commands are implemented in `featbit-cli`. They operate on a PostgreSQL data source and local files — no FeatBit API token required.
 
-1. runtime CLI: [src/DecisionCli](c:/Code/featbit/featbit-release-decision-agent/src/DecisionCli)
-2. core logic: [src/Core](c:/Code/featbit/featbit-release-decision-agent/src/Core)
-3. PostgreSQL adapter: [src/Data/Postgres](c:/Code/featbit/featbit-release-decision-agent/src/Data/Postgres)
-4. prompts: [prompts](c:/Code/featbit/featbit-release-decision-agent/prompts)
-5. examples: [examples](c:/Code/featbit/featbit-release-decision-agent/examples)
-6. MVP plan and contracts: [MVP_PLAN](c:/Code/featbit/featbit-release-decision-agent/MVP_PLAN)
+## Supported Recipes
 
-## Notes
+| Recipe | Use For |
+|---|---|
+| `website_conversion_change` | Homepage, CTA, onboarding, or conversion-focused page changes |
+| `agent_variant_comparison` | Coding agents, prompt variants, or workflow version comparisons |
 
-1. prefer `--connection-env` over raw `--connection`
-2. use `column_mappings` when the selected PostgreSQL table uses non-canonical column names
-3. direct FeatBit rollout execution is intentionally outside this repo for the MVP
+## Key Design Constraints
+
+1. Connection strings are always passed via environment variable name — never embedded in files.
+2. Metric selection is recipe-driven — the agent does not ask the user to choose metrics.
+3. All FeatBit control actions are dry-run by default (`featbit-actions.json` for operator review).
+4. Evaluation is deterministic and rule-based — no formal statistical inference claimed.
