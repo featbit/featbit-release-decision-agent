@@ -4,7 +4,7 @@ description: FeatBit release decision philosophy and control framework. Activate
 license: MIT
 metadata:
   author: FeatBit
-  version: 4.0.0
+  version: "4.0.0"
   category: release-management
 ---
 
@@ -229,16 +229,20 @@ This top-level skill should stay at the domain-routing and control-framework lay
 
 ## Concrete Skills
 
-Concrete methods, tools, and executable procedures should live in separate implementation skills under those domains.
+Concrete methods, tools, and executable procedures live in these implementation skills:
 
-Examples:
-
-- a flag-control skill for `featbit-mcp`, `featbit-cli`, and REST API operations
-- an SDK/instrumentation skill for application integration and event emission
-- an evidence-analysis skill for structured experiment evaluation
-- an iteration-learning skill for post-decision synthesis
+| Skill | CF triggers | Capability |
+|---|---|---|
+| `intent-shaping` | CF-01 | Extract measurable business outcome from vague direction |
+| `hypothesis-design` | CF-02 | Convert goal into falsifiable causal claim |
+| `reversible-exposure-control` | CF-03, CF-04 | Feature flag creation, targeting, and progressive rollout |
+| `measurement-design` | CF-05 | Primary metric, guardrails, and event instrumentation |
+| `evidence-analysis` | CF-06, CF-07 | Evidence sufficiency check and decision framing |
+| `learning-capture` | CF-08 | Structured learning synthesis and next-cycle seeding |
 
 The purpose of this `release-decision` skill is to decide **which domain should be activated now**, not to be the implementation manual for all of them.
+
+For a detailed routing guide, see [references/skill-routing-guide.md](references/skill-routing-guide.md).
 
 ---
 
