@@ -1,157 +1,180 @@
 # Tool Adapter: FeatBit CLI
 
 **Vendor:** FeatBit  
-**Tool type:** CLI  
+**Tool type:** CLI (.NET 10)  
 **Default for skill:** `reversible-exposure-control`
 
-This file documents how to use the FeatBit CLI to execute flag operations that implement the reversible-exposure-control skill.
+The FeatBit CLI provides automation-friendly access to a subset of operations that are also available in the FeatBit web UI: config management, flag inspection, and flag management (create, toggle, archive, rollout, evaluate). The web UI is the complete management interface and can do everything the CLI can do plus more — see [tool-featbit-webui.md](tool-featbit-webui.md). Use the CLI when you need scripted, pipeline, or agent-driven flag operations without opening a browser.
 
 ## TOC
 
 - [Prerequisites](#prerequisites)
-- [Core Operations](#core-operations)
-- [Environment Management](#environment-management)
-- [Reference](#reference)
+- [Inspect Operations](#inspect-operations)
+- [Flag Management Commands](#flag-management-commands)
+- [Evaluate Flags](#evaluate-flags)
+- [SDK Integration in Code](#sdk-integration-in-code)
 
 ---
 
 ## Prerequisites
 
-FeatBit CLI installed and authenticated. See [FeatBit CLI documentation](https://docs.featbit.co) for installation and authentication setup.
+Build from source (requires .NET 10 SDK) or download a pre-built binary. See [github.com/featbit/featbit-cli](https://github.com/featbit/featbit-cli) for installation steps.
 
-Verify your installation:
+Initialize config once:
 
 ```bash
-featbit --version
-featbit --help
+featbit config init        # interactive — prompts for host, access token, org ID
+featbit config validate    # confirm credentials work before using other commands
+featbit config show        # display current config (token masked)
+featbit config set --token api-new-token   # update a single field non-interactively
+featbit config clear                       # remove the saved config file
+```
+
+Config is stored outside the repository:
+- Windows: `%APPDATA%\featbit\config.json`
+- macOS: `~/Library/Application Support/featbit/config.json`
+- Linux: `~/.config/featbit/config.json`
+
+Environment variable overrides (take precedence over config file): `FEATBIT_HOST`, `FEATBIT_TOKEN`, `FEATBIT_ORG`
+
+Default host if none provided: `https://app-api.featbit.co`
+
+All business commands accept `--host`, `--token`, and `--org` to override saved config on a single call without writing to disk.
+
+---
+
+## Inspect Operations
+
+Use these commands to look up IDs and verify state.
+
+### List projects
+
+```bash
+featbit project list           # table output
+featbit project list --json    # JSON output
+```
+
+### Get a project and its environments
+
+```bash
+featbit project get <project-id>
+featbit project get <project-id> --json
+```
+
+Returns project name, key, and all environment IDs. **Environment IDs are required for all flag commands.**
+
+### List feature flags in an environment
+
+```bash
+featbit flag list <env-id>                                    # first 10 flags (default page)
+featbit flag list <env-id> --all                              # all flags across all pages
+featbit flag list <env-id> --name my-feature                  # filter by name/key (partial match)
+featbit flag list <env-id> --page-index 1 --page-size 20      # paginate
+featbit flag list <env-id> --json                             # JSON output
+```
+
+JSON output shape:
+
+```json
+{
+  "data": {
+    "totalCount": 5,
+    "items": [
+      { "id": "...", "key": "...", "name": "...", "isEnabled": true, "variationType": "boolean", "tags": [] }
+    ]
+  }
+}
 ```
 
 ---
 
-## Core Operations
+## Flag Management Commands
 
-### 1. Create a Feature Flag
+These commands create or mutate flags directly via the FeatBit management API.
 
-Intent: "Make this change reversible before it is visible."
+### Create a feature flag
 
 ```bash
-featbit flag create \
-  --key "my-feature-flag" \
-  --name "My Feature Flag" \
-  --type boolean \
-  --env <environment-key>
+featbit flag create <env-id> --flag-name "My Feature" --flag-key my-feature
+featbit flag create <env-id> --flag-name "My Feature" --flag-key my-feature --description "Controls X"
 ```
 
-**Naming conventions:**
-- Use kebab-case: `new-checkout-flow`, not `NewCheckoutFlow`
+Creates a boolean flag in the OFF state. Naming conventions:
+- Use kebab-case for keys: `new-checkout-flow`, not `NewCheckoutFlow`
 - Include context: `onboarding-progress-bar`, not `progress-bar`
-- Key is environment-agnostic (same key, different environments)
-- Created in the OFF state by default — do not enable immediately
+- Flag key is environment-agnostic — same key is used across staging and production
 
----
-
-### 2. Add Variants for A/B
-
-For experiments, define explicit variant names:
+### Enable or disable a feature flag
 
 ```bash
-featbit flag add-variant \
-  --key "my-feature-flag" \
-  --variant-key "control" \
-  --variant-name "Control (baseline)"
-
-featbit flag add-variant \
-  --key "my-feature-flag" \
-  --variant-key "treatment" \
-  --variant-name "Treatment (candidate)"
+featbit flag toggle <env-id> <flag-key> true    # enable
+featbit flag toggle <env-id> <flag-key> false   # disable (immediate rollback)
 ```
 
----
+Disabling sets all users to the off variation immediately.
 
-### 3. Set Percentage Rollout
-
-Intent: "Start exposing to X% of users."
+### Set rollout percentage
 
 ```bash
-featbit flag rollout \
-  --key "my-feature-flag" \
-  --variant "treatment" \
-  --percentage 10 \
-  --env <environment-key>
+featbit flag set-rollout <env-id> <flag-key> --rollout '<json>'
+featbit flag set-rollout <env-id> <flag-key> --rollout '<json>' --dispatch-key userId
 ```
 
-Default starting percentage: **5–10%**. See `rollout-patterns.md` for guidance on when to start higher or lower.
+`--rollout` accepts a JSON array of rollout assignments. See [github.com/featbit/featbit-cli](https://github.com/featbit/featbit-cli) for the exact schema. `--dispatch-key` sets the user attribute used to allocate traffic consistently (default: user key).
 
----
-
-### 4. Add Targeting Rules
-
-Intent: "Show this to a specific audience first / protect specific users."
+### Archive a feature flag
 
 ```bash
-featbit flag target \
-  --key "my-feature-flag" \
-  --rule "user.team == internal" \
-  --serve "treatment" \
-  --env <environment-key>
+featbit flag archive <env-id> <flag-key>
 ```
 
-Targeting rules are evaluated before percentage rollout. Use them to implement protected audiences.
+Archives a flag after it is fully removed from code. Archived flags are no longer evaluated.
 
 ---
 
-### 5. Enable the Flag
+## Evaluate Flags
 
-Flags are created OFF. Enable explicitly when ready to expose:
+Evaluate one or more flags for a specific user. This calls the evaluation API (not the management API) and requires the environment SDK secret, not the management access token.
 
 ```bash
-featbit flag enable \
-  --key "my-feature-flag" \
-  --env <environment-key>
+featbit flag evaluate --user-key <user-id> --env-secret <sdk-secret>
+featbit flag evaluate --user-key alice --env-secret <sdk-secret> --user-name "Alice"
+featbit flag evaluate --user-key alice --env-secret <sdk-secret> --flag-keys "flag-a,flag-b"
+featbit flag evaluate --user-key alice --env-secret <sdk-secret> --custom-props '{"plan":"pro"}'
+featbit flag evaluate --user-key alice --env-secret <sdk-secret> --tags beta --tag-filter all
 ```
+
+Use `--host` (or `FEATBIT_HOST`) to point to a self-hosted evaluation endpoint. Output is a table of flag key → variation → match reason, or `--json` for machine-readable output.
 
 ---
 
-### 6. Rollback (Disable Flag Immediately)
+## SDK Integration in Code
 
-Intent: "Rollback NOW."
+A feature flag has no effect unless a `variation()` call exists in the codebase. Reversibility requires both the flag in FeatBit and the flag check in code.
+
+To add flag evaluation to an existing codebase, install the FeatBit SDK skills for the relevant language:
 
 ```bash
-featbit flag disable \
-  --key "my-feature-flag" \
-  --env <environment-key>
+npx skills add featbit/featbit-skills
 ```
 
-All users fall back to the default (off) value. This is the primary rollback mechanism.
+The installer auto-detects your agent (Claude Code, GitHub Copilot, Cursor, Windsurf) and lets you select which skills to install. Choose the SDK skill for your language:
 
----
+| Skill name | Language / framework |
+|---|---|
+| `featbit-sdks-dotnet` | C# / ASP.NET Core |
+| `featbit-sdks-node` | Node.js / TypeScript |
+| `featbit-sdks-python` | Python |
+| `featbit-sdks-java` | Java / JVM |
+| `featbit-sdks-go` | Go |
+| `featbit-sdks-javascript` | Browser JavaScript |
+| `featbit-sdks-react` | React / Next.js |
+| `featbit-sdks-react-native` | React Native / Expo |
 
-### 7. Expand Rollout
-
-Intent: "Move from 10% to 25%."
+To install a single skill directly:
 
 ```bash
-featbit flag rollout \
-  --key "my-feature-flag" \
-  --variant "treatment" \
-  --percentage 25 \
-  --env <environment-key>
+npx skills add featbit/featbit-skills --skill featbit-sdks-node
 ```
 
-Only expand when expansion criteria from `rollout-patterns.md` are met.
-
----
-
-## Environment Management
-
-- Always specify `--env` explicitly
-- Use environment-specific keys (e.g., `production`, `staging`, `beta`)
-- Never run flag changes against `production` without first verifying in `staging`
-
----
-
-## Reference
-
-For full CLI command reference and authentication setup, see the [FeatBit CLI documentation](https://docs.featbit.co).
-
-> **Note:** Command syntax above reflects common FeatBit CLI patterns. Verify against your installed version (`featbit --help`) as syntax may vary across releases.
+Source: [github.com/featbit/featbit-skills](https://github.com/featbit/featbit-skills)

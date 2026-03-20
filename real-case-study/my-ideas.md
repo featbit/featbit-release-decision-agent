@@ -1,0 +1,3 @@
+1. I want to add "Why Unicorn, Medium and Big Companies choose FeatBit as their self-hosted feature flag solution?" to the significant section of the home page, is it good to try and how to make it max ROI?
+2. I want to optimize the page so that more people use our current intelligent chat window feature, `Chat with FeatBit AI Skills`, so we can better understand what content customers care about most.
+3. I want to test if h1 title "AI makes more mistake, FeatBit reduces your risk" can increase the click-through rate of the home page, so we can get more users to explore our product.
