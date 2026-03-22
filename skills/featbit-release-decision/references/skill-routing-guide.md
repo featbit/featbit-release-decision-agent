@@ -26,9 +26,16 @@ Maps each CF trigger to its implementation skill. Read this when routing to a do
 **Skill:** `measurement-design`  
 **Entry signal:** "how do I know it worked", "what should I track", "what's the primary metric".
 
+## CF-05 (after) → experiment-workspace
+
+**Activate when:** instrumentation is confirmed and data needs to be collected and calculated.  
+**Skill:** `experiment-workspace`  
+**Entry signal:** "start the experiment", "set up data collection", "run the analysis", "pull the results", "do we have enough data yet".  
+**Note:** This skill owns the local experiment folder, the data export, and the analysis script. It produces `analysis.md` which is the input to `evidence-analysis`.
+
 ## CF-06 + CF-07 → evidence-analysis
 
-**Activate when:** data exists and a decision is being considered.  
+**Activate when:** `analysis.md` exists in the experiment folder and a decision is being considered.  
 **Skill:** `evidence-analysis`  
 **Entry signal:** "analyze results", "should I ship this", "is this significant", "continue or rollback".
 

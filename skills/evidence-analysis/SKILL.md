@@ -19,7 +19,7 @@ CF-06 and CF-07 are handled together because they represent a continuous decisio
 - Data is being collected and the user wants to know whether to decide now
 - The user is impatient to interpret weak or early evidence
 - Results exist and a go/no-go decision is needed
-- `.decision-context/intent.md` shows `stage: measuring` or `stage: deciding`
+- `.featbit-release-decision/intent.md` shows `stage: measuring` or `stage: deciding`
 
 ## Decision Actions
 
@@ -47,7 +47,7 @@ See [references/decision-framing-guide.md](references/decision-framing-guide.md)
 
 ### Produce the decision artifact
 
-Write a structured decision statement to `.decision-context/decision.md` with:
+Write a structured decision statement to `.featbit-release-decision/decision.md` with:
 - The recommendation category
 - The evidence that supports it (numbers, not vague descriptions)
 - The link back to the original hypothesis
@@ -58,7 +58,7 @@ Write a structured decision statement to `.decision-context/decision.md` with:
 - Do not let urgency substitute for evidence
 - "Not enough data" is a valid and honest decision frame — do not dress it up when the real issue is impatience
 - Separate "we don't know yet" from "we know it's harmful"
-- Update `.decision-context/intent.md` `stage: deciding`
+- Update `.featbit-release-decision/intent.md` `stage: deciding`
 - Hand off to `learning-capture` immediately after the decision is made
 
 ## Reference Files

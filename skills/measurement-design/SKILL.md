@@ -20,7 +20,7 @@ Its job is to ensure every hypothesis has exactly one primary metric, a small se
 - User names multiple competing success metrics
 - User mixes goals, proxies, and diagnostics together
 - Instrumentation does not exist for the desired outcome
-- `.decision-context/intent.md` has `primary_metric:` empty or contains a list
+- `.featbit-release-decision/intent.md` has `primary_metric:` empty or contains a list
 
 ## Core Principle
 
@@ -62,7 +62,7 @@ Check: can the current codebase emit this event? If not, instrumentation must be
 - Do not allow exposure to start without confirmed instrumentation
 - One primary metric only — push back on lists
 - Guardrails protect against harm, not success. They should not be optimized for.
-- Update `.decision-context/intent.md` `primary_metric:` and `guardrails:` fields
+- Update `.featbit-release-decision/intent.md` `primary_metric:` and `guardrails:` fields
 - Hand off to `reversible-exposure-control` when instrumentation is complete
 - Hand off to `evidence-analysis` once data collection is underway
 

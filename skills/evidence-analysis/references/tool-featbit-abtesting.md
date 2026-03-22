@@ -69,7 +69,7 @@ These are guidelines, not rules. Business context, guardrail health, and traffic
 
 ## After Making a Decision
 
-1. Record the decision in `.decision-context/decision.md` using the template in `decision-framing-guide.md`
+1. Record the decision in `.featbit-release-decision/decision.md` using the template in `decision-framing-guide.md`
 2. If **CONTINUE**: run the rollout expansion command via `tool-featbit-cli.md`
 3. If **ROLLBACK CANDIDATE**: disable the flag immediately, then archive the experiment
 4. If **INCONCLUSIVE**: extend the window or close without action and document why

@@ -58,7 +58,7 @@ The skill should never let a tool define the problem prematurely.
 
 ## Session Memory
 
-Maintain `.decision-context/intent.md`. Create it on first contact and keep it current.
+Maintain `.featbit-release-decision/intent.md`. Create it on first contact and keep it current.
 
 ```
 goal:            <the business outcome the user wants>
@@ -262,7 +262,7 @@ For a detailed routing guide, see [references/skill-routing-guide.md](references
 Before asking or saying anything, scan the workspace for existing context:
 
 ```
-.decision-context/intent.md  → Prior decision state and last learning
+.featbit-release-decision/intent.md  → Prior decision state and last learning
 artifacts/results.json       → Evidence already interpreted?
 artifacts/plan.json          → Evaluation structure already proposed?
 artifacts/catalog.json       → Evidence source already inspected?

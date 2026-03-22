@@ -19,7 +19,7 @@ Its job is to extract a real, measurable business outcome from a vague or tactic
 - User describes a desire without a measurable outcome ("we want more engagement")
 - User names a solution before naming the problem ("we should add a better CTA")
 - User mixes goal and implementation ("improve the onboarding flow so users see the feature")
-- `.decision-context/intent.md` has `goal:` empty or vague
+- `.featbit-release-decision/intent.md` has `goal:` empty or vague
 
 ## Core Principle
 
@@ -51,7 +51,7 @@ Confirm the goal belongs to this iteration — not a 6-month vision.
 
 - Ask one question at a time
 - Never proceed to hypothesis or implementation until goal is measurable
-- Update `.decision-context/intent.md` `goal:` and `intent:` fields when clarity is reached
+- Update `.featbit-release-decision/intent.md` `goal:` and `intent:` fields when clarity is reached
 - Hand off to `hypothesis-design` once the goal is sharp
 
 ## Reference Files

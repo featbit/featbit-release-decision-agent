@@ -20,7 +20,7 @@ These two control principles are handled together because they represent a singl
 - A change exists but is not yet behind a feature flag (not reversible)
 - A feature flag exists but exposure strategy is undefined or implicit
 - User asks about rollout percentages, targeting, or who should see a variant
-- `.decision-context/intent.md` shows `stage: implementing` or `stage: exposing`
+- `.featbit-release-decision/intent.md` shows `stage: implementing` or `stage: exposing`
 
 ## Decision Actions (by user intent)
 
@@ -62,9 +62,9 @@ These two control principles are handled together because they represent a singl
 
 - Reversibility (feature flag exists) must be confirmed before exposure begins
 - Never start at 100% unless protected audience targeting is explicitly intentional
-- Document expansion and rollback criteria in `.decision-context/intent.md` under `constraints:`
+- Document expansion and rollback criteria in `.featbit-release-decision/intent.md` under `constraints:`
 - Hand off to `measurement-design` if instrumentation is not confirmed before exposure begins
-- Update `stage: exposing` in `.decision-context/intent.md` when exposure begins
+- Update `stage: exposing` in `.featbit-release-decision/intent.md` when exposure begins
 
 ## Reference Files
 

@@ -19,7 +19,7 @@ Its job is to produce a reusable learning at the end of every cycle — good, ba
 - A decision has been made (CONTINUE, PAUSE, ROLLBACK CANDIDATE, or INCONCLUSIVE)
 - The experiment window has closed
 - The user says "what did we learn" or "next iteration"
-- `.decision-context/intent.md` shows `stage: deciding` and a decision exists
+- `.featbit-release-decision/intent.md` shows `stage: deciding` and a decision exists
 
 ## What a Complete Learning Contains
 
@@ -39,7 +39,7 @@ Work through each of the five components with the user. Prompt for missing parts
 
 ### Write to decision context
 
-Update `.decision-context/intent.md`:
+Update `.featbit-release-decision/intent.md`:
 - Set `last_learning:` to a summary of the learning
 - Set `stage: learning` then immediately `stage: intent` (ready for the next cycle)
 - Clear `hypothesis:`, `primary_metric:`, `guardrails:` — they belong to the next cycle's form

@@ -71,7 +71,7 @@ Define these explicitly before Phase 1 begins — not after the problem appears.
 - Primary metric moves in the wrong direction consistently after [minimum sample] → **pause and investigate**
 - Unexpected user segment is receiving candidate variant → **pause and fix targeting**
 
-Write the thresholds into `.decision-context/intent.md` under `constraints:`.
+Write the thresholds into `.featbit-release-decision/intent.md` under `constraints:`.
 
 ---
 

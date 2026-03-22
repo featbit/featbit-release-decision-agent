@@ -18,7 +18,7 @@ Its job is to convert a goal into a testable, falsifiable statement before any i
 
 - Goal exists but no causal claim links the change to the outcome
 - User says "we think this will help" without explaining the mechanism
-- `hypothesis:` in `.decision-context/intent.md` is empty or non-falsifiable
+- `hypothesis:` in `.featbit-release-decision/intent.md` is empty or non-falsifiable
 - User is about to build without stating what they expect
 
 ## Core Template
@@ -55,7 +55,7 @@ The hypothesis does not need a specific number at this stage. It needs a directi
 
 - Do not proceed to implementation planning until all five components are present
 - Do not conflate the hypothesis with the success threshold (that belongs in `evidence-analysis`)
-- Update `.decision-context/intent.md` `hypothesis:`, `variants:`, and `primary_metric:` when complete
+- Update `.featbit-release-decision/intent.md` `hypothesis:`, `variants:`, and `primary_metric:` when complete
 - Hand off to `reversible-exposure-control` once hypothesis is confirmed
 
 ## Reference Files
