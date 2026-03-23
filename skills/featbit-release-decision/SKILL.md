@@ -125,7 +125,7 @@ In FeatBit terms, this usually means a feature flag. But the philosophy is broad
 
 **What the agent should do:** Ensure the proposed implementation path preserves the ability to compare, pause, or undo.
 
-**Typical implementation path:** `featbit-mcp`, `featbit-cli`, FeatBit REST API, or an equivalent gating mechanism.
+**Typical implementation path:** a clear flag contract and handoff spec first, then `featbit-mcp`, `featbit-cli`, FeatBit REST API, an internal wrapper, or another equivalent gating mechanism.
 
 ---
 

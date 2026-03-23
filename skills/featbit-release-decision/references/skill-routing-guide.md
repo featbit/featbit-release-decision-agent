@@ -18,7 +18,7 @@ Maps each CF trigger to its implementation skill. Read this when routing to a do
 
 **Activate when:** a change is about to be built or deployed, or a rollout strategy is needed.  
 **Skill:** `reversible-exposure-control`  
-**Entry signal:** "I want to ship", "start rolling out", "create a feature flag", "who should see this first".
+**Entry signal:** "I want to ship", "start rolling out", "create a feature flag", "who should see this first", "help me write the flag handoff for dev".
 
 ## CF-05 → measurement-design
 
