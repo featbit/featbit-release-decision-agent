@@ -98,26 +98,19 @@ Or clone manually into your local skills directory and point your agent at the `
 
 ### Activation
 
-Load `instructions/release-decision.prompt.md` into your coding agent as the system prompt or active instruction file.
-
-**Claude Code**
-```bash
-cc --system instructions/release-decision.prompt.md
-```
-
-**GitHub Copilot (VS Code)**  
-Open agent mode and select the **FeatBit Release Decision** custom mode, or attach the prompt file directly to the chat.
-
-**Codex CLI**
-```bash
-codex --instructions instructions/release-decision.prompt.md
-```
-
-Then describe your goal — the agent will identify your current stage and apply the right control lens:
+After installation, use the slash command directly in Claude Code, GitHub Copilot, or Codex:
 
 ```
-We want more users to complete onboarding
+/featbit-release-decision <dictate-your-experiment-feature-or-idea>
 ```
+
+For example:
+
+```
+/featbit-release-decision We want more users to complete onboarding
+```
+
+The agent will identify your current stage and apply the right control lens.
 
 ---
 
