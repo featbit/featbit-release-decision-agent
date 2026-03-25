@@ -9,14 +9,15 @@ No dashboard required. No online account. Runs locally.
 ## Requirements
 
 ```
-python >= 3.9
+python >= 3.10
 numpy
+scipy
 ```
 
 Install once:
 
 ```bash
-pip install numpy
+pip install numpy scipy
 ```
 
 ---
@@ -31,185 +32,109 @@ On first project setup, the agent copies it to `.featbit-release-decision/script
 python .featbit-release-decision/scripts/analyze-bayesian.py chat-cta-v2
 ```
 
-```python
-#!/usr/bin/env python3
-"""
-Bayesian A/B experiment analysis script.
-Usage: python analyze-bayesian.py <experiment-slug>
-
-Reads:
-  .featbit-release-decision/experiments/<slug>/definition.md
-  .featbit-release-decision/experiments/<slug>/input.json
-
-Writes:
-  .featbit-release-decision/experiments/<slug>/analysis.md
-"""
-
-import json
-import sys
-import re
-from datetime import datetime, timezone
-from pathlib import Path
-import numpy as np
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-def load_definition(path: Path) -> tuple[dict, str]:
-    """Return (key→value dict, raw text) for definition.md."""
-    text = path.read_text()
-    result = {}
-    for line in text.splitlines():
-        if line and not line.startswith(" ") and not line.startswith("#") and ":" in line:
-            key, _, value = line.partition(":")
-            result[key.strip()] = value.strip()
-    return result, text
-
-
-def p_treatment_better(ctrl_k, ctrl_n, trt_k, trt_n,
-                        n_samples: int = 100_000) -> float:
-    """P(treatment CR > control CR) via Beta-Binomial Monte Carlo."""
-    rng  = np.random.default_rng(seed=42)
-    ctrl = rng.beta(ctrl_k + 1, ctrl_n - ctrl_k + 1, n_samples)
-    trt  = rng.beta(trt_k  + 1, trt_n  - trt_k  + 1, n_samples)
-    return float(np.mean(trt > ctrl))
-
-
-def format_metric_table(label, metric_data, control, treatment):
-    ctrl      = metric_data[control]
-    trt       = metric_data[treatment]
-    ctrl_rate = ctrl["k"] / ctrl["n"] if ctrl["n"] > 0 else 0.0
-    trt_rate  = trt["k"]  / trt["n"]  if trt["n"]  > 0 else 0.0
-    rel        = (trt_rate - ctrl_rate) / ctrl_rate * 100 if ctrl_rate > 0 else float("nan")
-    confidence = p_treatment_better(ctrl["k"], ctrl["n"], trt["k"], trt["n"])
-    header = (
-        "| variant | exposed | converted | rate | relative_change | p(treatment > control) |\n"
-        "|---------|---------|-----------|------|-----------------|------------------------|"
-    )
-    ctrl_row = f"| {control} | {ctrl['n']} | {ctrl['k']} | {ctrl_rate:.2%} | — | — |"
-    trt_row  = (
-        f"| {treatment} | {trt['n']} | {trt['k']} "
-        f"| {trt_rate:.2%} | {rel:+.1f}% | {confidence:.1%} |"
-    )
-    return f"## {label}\n\n{header}\n{ctrl_row}\n{trt_row}\n"
-
-
-# ── main ─────────────────────────────────────────────────────────────────────
-
-def main(slug: str) -> None:
-    base = Path(".featbit-release-decision") / "experiments" / slug
-    defn, text = load_definition(base / "definition.md")
-
-    input_path = base / "input.json"
-    if not input_path.exists():
-        print(f"ERROR: {input_path} not found.")
-        print("Collect input data first:")
-        print(f"  python .featbit-release-decision/scripts/collect-input.py {slug}")
-        sys.exit(1)
-
-    data = json.loads(input_path.read_text())
-
-    ctrl_m    = re.search(r"control:\s*(\S+)", text)
-    trt_m     = re.search(r"treatment:\s*(\S+)", text)
-    control   = ctrl_m.group(1) if ctrl_m else "control"
-    treatment = trt_m.group(1)  if trt_m  else "treatment"
-
-    primary_event    = defn.get("primary_metric_event", "")
-    guardrail_events: list[str] = []
-    in_guardrail = False
-    for line in text.splitlines():
-        if "guardrail_events:" in line:
-            in_guardrail = True
-            continue
-        if in_guardrail:
-            s = line.strip()
-            if s.startswith("- "):
-                guardrail_events.append(s[2:].strip())
-            elif s and not s.startswith("#"):
-                in_guardrail = False
-
-    min_sample   = int(defn.get("minimum_sample_per_variant", 0) or 0)
-    primary_data = data["metrics"].get(primary_event, {})
-    ctrl_n       = primary_data.get(control,   {}).get("n", 0)
-    trt_n        = primary_data.get(treatment, {}).get("n", 0)
-    sample_ok    = min(ctrl_n, trt_n) >= min_sample
-
-    now       = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_raw   = re.search(r"end:\s*(\S+)", text)
-    start_raw = re.search(r"start:\s*(\S+)", text)
-    end_label   = end_raw.group(1)   if end_raw   else "open"
-    start_label = start_raw.group(1) if start_raw else "?"
-
-    lines = [
-        f"experiment:   {slug}",
-        f"computed_at:  {now}",
-        f"window:       {start_label} → {end_label}",
-        "",
-    ]
-
-    if primary_event in data["metrics"]:
-        lines.append(format_metric_table(
-            f"Primary Metric: {primary_event}",
-            data["metrics"][primary_event], control, treatment,
-        ))
-
-    for g in guardrail_events:
-        if g in data["metrics"]:
-            lines.append(format_metric_table(
-                f"Guardrail: {g}",
-                data["metrics"][g], control, treatment,
-            ))
-
-    sample_mark = (
-        "✓" if sample_ok
-        else f"✗ (got {min(ctrl_n, trt_n)}, need {min_sample})"
-    )
-    lines += [
-        "## Sample check",
-        f"minimum required per variant: {min_sample} {sample_mark}",
-        f"control exposed:   {ctrl_n}",
-        f"treatment exposed: {trt_n}",
-    ]
-
-    out_path = base / "analysis.md"
-    out_path.write_text("\n".join(lines) + "\n")
-    print(f"Written: {out_path}")
-    if not sample_ok:
-        print("WARNING: sample size below minimum — treat results as indicative only.")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python analyze-bayesian.py <experiment-slug>")
-        sys.exit(1)
-    main(sys.argv[1])
-```
-
 ---
 
 ## What the Script Does
 
 1. Reads `definition.md` to know which flag variants and events to look for
-2. Loads `input.json` — aggregated `(n, k)` counts per variant per metric
-3. For each metric: reads `n` and `k` per variant, computes rates
-4. Runs Bayesian probability (Beta-Binomial conjugate, uniform prior) to get `p(treatment > control)`
+2. Loads `input.json` — aggregated per-variant metric data
+3. For each metric, per treatment arm:
+   - **Bayesian analysis** — analytical Gaussian posterior (flat prior), producing:
+     - P(win): probability that treatment is better than control
+     - 95% credible interval for the relative effect
+     - Risk / expected loss: quantifies the downside of a wrong decision
+   - **Frequentist Welch t-test** — p-value and confidence interval (independent of Bayesian output)
+   - Optionally **sequential / always-valid** CI and e-value p-value for experiments where you peek before the fixed horizon (set `sequential: true` per metric in `input.json`)
+4. **SRM check** — chi-squared test flags trafficking imbalances before you interpret any results
 5. Checks sample size against `minimum_sample_per_variant`
 6. Writes `analysis.md`
 
 ---
 
-## Interpreting the Confidence Column
+## Input Formats
 
-`p(treatment > control)` is a Bayesian probability, not a classical p-value.
+### Proportion metric (conversion rate, click-through rate, …)
 
-| Value | Meaning |
-|-------|---------|
-| > 95% | Strong signal — treatment is likely better |
-| 80–95% | Moderate signal — consider extending the window |
-| 40–80% | Weak or no signal |
-| < 40% | Treatment is likely worse than control |
+```json
+"click_cta": {
+  "control":   {"n": 5000, "k": 300},
+  "treatment": {"n": 5050, "k": 350}
+}
+```
 
-These thresholds are starting points. Business context and guardrail health matter. Pass `analysis.md` to `evidence-analysis` for the final decision framing.
+### Continuous metric (revenue, session duration, score, …)
+
+```json
+"revenue_per_user": {
+  "control":   {"n": 5000, "sum": 45000.0,  "sum_squares": 820000.0},
+  "treatment": {"n": 5050, "sum": 48020.0,  "sum_squares": 901000.0}
+}
+```
+
+### Inverse metric (lower is better: error rate, latency, …)
+
+Add `"inverse": true` at the metric level:
+
+```json
+"error_rate": {
+  "inverse":   true,
+  "control":   {"n": 5000, "k": 90},
+  "treatment": {"n": 5050, "k": 70}
+}
+```
+
+### Multiple treatment arms
+
+Add more variant keys matching what is declared in `definition.md`:
+
+```json
+"click_cta": {
+  "control":     {"n": 3300, "k": 198},
+  "treatment_a": {"n": 3350, "k": 228},
+  "treatment_b": {"n": 3300, "k": 215}
+}
+```
+
+---
+
+## Output Columns
+
+| Column | Description |
+|--------|-------------|
+| `n` | Users / observations in this variant |
+| `conv` / `mean` | Conversions (proportion) or mean value (continuous) |
+| `rate` | Conversion rate (proportion metrics only) |
+| `rel Δ` | Relative change vs control: (trt − ctrl) / ctrl |
+| `95% credible CI` | Bayesian 95 % credible interval for the relative effect |
+| `P(win)` | P(treatment is better), accounting for inverse flag |
+| `risk[ctrl]` | Opportunity cost of *keeping* control if treatment is actually better |
+| `risk[trt]` | Downside of *adopting* treatment if control is actually better |
+| `p-value` | Frequentist Welch t-test p-value (two-sided) |
+| `sig` | ✓ if p < 0.05, ✗ otherwise |
+
+`risk[ctrl]` and `risk[trt]` are in the same unit as the relative effect (e.g. 0.003 = 0.3 % of control mean).  When evaluating whether to ship:
+- a low `risk[trt]` means you lose little by adopting treatment even if control turns out to be better.
+- a low `risk[ctrl]` means you lose little by staying on control even if treatment turns out to be better.
+
+---
+
+## Interpreting Results
+
+### Quick decision guide
+
+| P(win) | Interpretation |
+|--------|----------------|
+| ≥ 95 % | Strong signal — consider adopting treatment |
+| 80 – 95 % | Leaning treatment — extend window or accept with risk awareness |
+| 20 – 80 % | Inconclusive — extend window |
+| 5 – 20 % | Leaning control |
+| ≤ 5 % | Treatment is likely harmful |
+
+Both P(win) and p-value are shown. They typically agree; divergence at the boundary can happen because the Bayesian posterior is Gaussian (flat prior) while the t-test uses Student-t. Trust the p-value for formal significance; trust P(win) + risk for decision framing.
+
+### SRM (Sample Ratio Mismatch)
+
+A χ² p-value < 0.01 is a red flag: the split may be corrupted by redirects, caching, bot traffic, or assignment bugs. Do not draw conclusions from such data until the root cause is fixed.
 
 ---
 

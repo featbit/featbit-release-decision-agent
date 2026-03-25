@@ -52,11 +52,11 @@ This position is defensible because FeatBit already owns rollout control, can ke
 
 FeatBit is not trying to become a general experimentation platform with a large analysis surface, a broad metric modeling layer, and a platform-centric experiment workflow.
 
-That is the shape of products like GrowthBook: a platform-centered system for defining metrics, connecting warehouses, running experiment analysis, and consuming results through the product itself.
+That is the shape of traditional experimentation platforms: a platform-centered system for defining metrics, connecting warehouses, running experiment analysis, and consuming results through the product itself.
 
 FeatBit Release Decision Plugin is different in three ways: the primary entry point is the coding agent, the primary output is an operational release decision that can include rollout, safe release, or rollback, and the data boundary is stricter because raw decision data stays in the customer's environment.
 
-This is the strategic distinction: GrowthBook helps teams run experiments as a platform. FeatBit aims to make coding agents safe and useful for release decisions.
+This is the strategic distinction: traditional experimentation platforms help teams run experiments through a product UI. FeatBit aims to make coding agents safe and useful for release decisions.
 
 ## Why This Matters
 

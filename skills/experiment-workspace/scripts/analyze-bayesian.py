@@ -2,7 +2,18 @@
 """
 ROLE: READY-TO-RUN — copy to project and run as-is. Do not modify.
 
-Bayesian A/B experiment analysis script.
+Bayesian + Frequentist A/B experiment analysis script.
+
+Implements:
+  • Analytical Gaussian Bayesian analysis (chance to win, 95% credible interval,
+    risk / expected loss)
+  • Frequentist Welch two-sided t-test (p-value, confidence interval)
+  • Sequential / always-valid confidence interval for peeking without inflation
+    (Waudby-Smith et al. 2023, https://arxiv.org/abs/2103.06476)
+  • Sample Ratio Mismatch (SRM) check
+  • Continuous metrics (mean / variance) in addition to conversion rates
+  • Inverse metrics (lower is better, e.g. error_rate, latency)
+  • Multiple treatment arms
 
 Usage:
     python .featbit-release-decision/scripts/analyze-bayesian.py <experiment-slug>
@@ -15,7 +26,27 @@ Writes:
     .featbit-release-decision/experiments/<slug>/analysis.md
 
 Requirements:
-    pip install numpy
+    pip install numpy scipy
+
+──────────────────────────────────────────────────────────────────────────────
+INPUT FORMAT  (input.json → metrics → <metric-name>)
+──────────────────────────────────────────────────────────────────────────────
+Proportion metric (conversion rate, click-through rate …):
+    "<variant>": {"n": 1000, "k": 120}
+
+Continuous metric (revenue, duration, score …):
+    "<variant>": {"n": 1000, "sum": 5000.0, "sum_squares": 27500.0}
+
+Inverse metric — add  "inverse": true  at the metric level (same level as
+variant keys):
+    "error_rate": {
+        "inverse": true,
+        "control": {"n": 1000, "k": 18},
+        "treatment": {"n": 1020, "k": 15}
+    }
+
+Multiple treatment arms — add more variant keys matching definition.md.
+──────────────────────────────────────────────────────────────────────────────
 """
 
 import json
@@ -25,59 +56,427 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
+from scipy.stats import chi2 as chi2_dist
+from scipy.stats import norm
+from scipy.stats import t as t_dist
+from scipy.stats import truncnorm
+
+ALPHA = 0.05                      # significance level; credible interval = 1 − ALPHA
+SEQUENTIAL_TUNING_PARAMETER = 5000  # κ: Waudby-Smith et al. 2023 default
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. METRIC MOMENTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def metric_moments(vdata: dict) -> tuple[float, float, int]:
+    """
+    Return (per-unit mean, per-unit variance, n) from a variant data dict.
+
+    Proportion  {"n": N, "k": K}                      → Bernoulli variance p(1−p)
+    Continuous  {"n": N, "sum": S, "sum_squares": SS}  → sample variance
+    """
+    n = int(vdata.get("n", 0))
+    if n == 0:
+        return 0.0, 0.0, 0
+    if "k" in vdata:
+        mean = float(vdata["k"]) / n
+        var  = mean * (1.0 - mean)
+    else:
+        s    = float(vdata.get("sum", 0.0))
+        ss   = float(vdata.get("sum_squares", 0.0))
+        mean = s / n
+        var  = (ss - s * s / n) / (n - 1) if n > 1 else 0.0
+    return mean, var, n
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. BAYESIAN ANALYSIS  (Gaussian posterior, flat / improper prior)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _delta_method_se(
+    mean_a: float, var_a: float, n_a: int,
+    mean_b: float, var_b: float, n_b: int,
+    relative: bool,
+) -> float:
+    """
+    Standard error for (mean_b − mean_a) [absolute] or
+    (mean_b − mean_a) / mean_a [relative] via the delta method.
+    """
+    if relative:
+        if mean_a == 0:
+            return 0.0
+        return float(np.sqrt(
+            var_b / (n_b * mean_a ** 2)
+            + var_a * mean_b ** 2 / (n_a * mean_a ** 4)
+        ))
+    return float(np.sqrt(var_b / n_b + var_a / n_a))
+
+
+def _truncated_normal_mean(mu: float, sigma: float, a: float, b: float) -> float:
+    """E[X | a < X ≤ b] for X ~ N(mu, sigma²)."""
+    alpha_tn = (a - mu) / sigma
+    beta_tn  = (b - mu) / sigma
+    return float(truncnorm.stats(alpha_tn, beta_tn, loc=mu, scale=sigma, moments="m"))
+
+
+def _risk(mu: float, sigma: float) -> tuple[float, float]:
+    """
+    (risk_ctrl, risk_trt) where δ ~ N(mu, sigma²) is the relative treatment effect.
+
+    risk_ctrl = E[max(0, δ)]  — expected opportunity cost of keeping control
+                                when treatment is actually better.
+    risk_trt  = E[max(0,−δ)] — expected loss from adopting treatment
+                                when control is actually better.
+
+    Both values are in the same unit as the relative effect (fractions, not %).
+    """
+    p_ctrl_better = float(norm.cdf(0.0, loc=mu, scale=sigma))
+    mn_neg = _truncated_normal_mean(mu, sigma, -np.inf, 0.0)
+    mn_pos = _truncated_normal_mean(mu, sigma,  0.0, np.inf)
+    return float((1.0 - p_ctrl_better) * mn_pos), float(-p_ctrl_better * mn_neg)
+
+
+def bayesian_result(
+    mean_a: float, var_a: float, n_a: int,
+    mean_b: float, var_b: float, n_b: int,
+    inverse: bool = False,
+) -> dict:
+    """
+    Analytical Gaussian-posterior Bayesian A/B test with a flat (improper) prior.
+
+    Returns a dict with:
+      chance_to_win    P(treatment is better)
+      relative_change  (mean_b − mean_a) / mean_a  as a fraction (0.05 = 5 %)
+      absolute_change  mean_b − mean_a
+      ci_rel_lower     lower bound of 95 % credible interval (relative)
+      ci_rel_upper     upper bound of 95 % credible interval (relative)
+      risk_ctrl        risk[ctrl]: opportunity cost of keeping control
+      risk_trt         risk[trt]:  downside risk of adopting treatment
+      error            None  or  an error string
+    """
+    if n_a == 0 or n_b == 0:
+        return {"error": "zero sample size"}
+    if mean_a == 0:
+        return {"error": "control mean is zero — cannot compute relative effect"}
+
+    se_rel = _delta_method_se(mean_a, var_a, n_a, mean_b, var_b, n_b, relative=True)
+    if se_rel == 0:
+        return {"error": "zero standard error (no variance in data)"}
+
+    mu_rel = (mean_b - mean_a) / mean_a
+    mu_abs = mean_b - mean_a
+    z_half = float(norm.ppf(1.0 - ALPHA / 2))
+
+    ctw = float(norm.sf(0.0, loc=mu_rel, scale=se_rel))   # P(δ_rel > 0)
+    if inverse:
+        ctw = 1.0 - ctw
+
+    risk_c, risk_t = _risk(mu_rel, se_rel)
+    if inverse:
+        risk_c, risk_t = risk_t, risk_c   # flip: "winning" direction is reversed
+
+    return {
+        "error":           None,
+        "chance_to_win":   ctw,
+        "relative_change": mu_rel,
+        "absolute_change": mu_abs,
+        "ci_rel_lower":    mu_rel - z_half * se_rel,
+        "ci_rel_upper":    mu_rel + z_half * se_rel,
+        "risk_ctrl":       risk_c,
+        "risk_trt":        risk_t,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. FREQUENTIST  (Welch two-sided t-test + sequential always-valid option)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _welch_dof(var_a: float, n_a: int, var_b: float, n_b: int) -> float:
+    """Welch–Satterthwaite effective degrees of freedom."""
+    s_a = var_a / n_a
+    s_b = var_b / n_b
+    denom = s_a ** 2 / (n_a - 1) + s_b ** 2 / (n_b - 1)
+    if denom == 0:
+        return float(n_a + n_b - 2)
+    return (s_a + s_b) ** 2 / denom
+
+
+def frequentist_result(
+    mean_a: float, var_a: float, n_a: int,
+    mean_b: float, var_b: float, n_b: int,
+    inverse: bool = False,
+    sequential: bool = False,
+) -> dict:
+    """
+    Two-sided Welch t-test; optionally uses sequential / always-valid CI.
+
+    sequential=True turns on the Waudby-Smith et al. (2023) anytime-valid
+    confidence sequence, which controls Type-I error even when peeking.
+    The p-value becomes an e-value-based quantity (eq 155 of the paper).
+
+    Returns: p_value, significant, ci_rel_lower/upper, relative_change,
+             absolute_change, dof, sequential, error.
+    """
+    if n_a == 0 or n_b == 0:
+        return {"error": "zero sample size"}
+    if mean_a == 0:
+        return {"error": "control mean is zero"}
+
+    mu_abs = mean_b - mean_a
+    se_abs = _delta_method_se(mean_a, var_a, n_a, mean_b, var_b, n_b, relative=False)
+    mu_rel = mu_abs / abs(mean_a)
+    se_rel = _delta_method_se(mean_a, var_a, n_a, mean_b, var_b, n_b, relative=True)
+
+    if se_abs == 0:
+        return {"error": "zero standard error"}
+
+    dof   = _welch_dof(var_a, n_a, var_b, n_b)
+    t_stat = mu_abs / se_abs
+    p_val  = float(2.0 * (1.0 - t_dist.cdf(abs(t_stat), dof)))
+
+    if sequential:
+        # Waudby-Smith et al. 2023: eq 9 (CI) and eq 155 (p-value / e-value)
+        rho = float(np.sqrt(
+            (-2.0 * np.log(ALPHA) + np.log(-2.0 * np.log(ALPHA) + 1.0))
+            / SEQUENTIAL_TUNING_PARAMETER
+        ))
+        n_seq = min(n_a, n_b)
+        s2    = se_abs ** 2 * n_seq
+        hw_abs = float(np.sqrt(s2) * np.sqrt(
+            2.0 * (n_seq * rho ** 2 + 1.0)
+            * np.log(np.sqrt(n_seq * rho ** 2 + 1.0) / ALPHA)
+            / (n_seq * rho) ** 2
+        ))
+        ci_lo_rel = mu_rel - (hw_abs / abs(mean_a))
+        ci_hi_rel = mu_rel + (hw_abs / abs(mean_a))
+        # Sequential e-value → p-value bound
+        st2   = mu_abs ** 2 * n_seq / se_abs ** 2
+        tr2p1 = n_seq * rho ** 2 + 1.0
+        evalue = float(np.exp(rho ** 2 * st2 / (2.0 * tr2p1)) / np.sqrt(tr2p1))
+        p_val  = min(1.0 / max(evalue, 1e-300), 1.0)
+    else:
+        z_half    = float(t_dist.ppf(1.0 - ALPHA / 2, dof))
+        ci_lo_rel = mu_rel - z_half * se_rel
+        ci_hi_rel = mu_rel + z_half * se_rel
+
+    return {
+        "error":           None,
+        "p_value":         p_val,
+        "significant":     p_val < ALPHA,
+        "dof":             dof,
+        "relative_change": mu_rel,
+        "absolute_change": mu_abs,
+        "ci_rel_lower":    ci_lo_rel,
+        "ci_rel_upper":    ci_hi_rel,
+        "sequential":      sequential,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. SRM CHECK  (Sample Ratio Mismatch)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def srm_check(observed: list[int], expected_weights: list[float] | None = None) -> float:
+    """
+    Chi-squared SRM test.  Returns p-value; p < 0.01 is the common alarm threshold.
+    expected_weights defaults to equal allocation across all variants.
+    """
+    total = sum(observed)
+    if total == 0:
+        return 1.0
+    k = len(observed)
+    if expected_weights is None:
+        expected_weights = [1.0 / k] * k
+    total_w = sum(expected_weights)
+    chi_sq  = sum(
+        (o - w / total_w * total) ** 2 / (w / total_w * total)
+        for o, w in zip(observed, expected_weights)
+        if w > 0
+    )
+    return float(chi2_dist.sf(chi_sq, k - 1))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. DEFINITION PARSING
+# ══════════════════════════════════════════════════════════════════════════════
 
 def load_definition(path: Path) -> tuple[dict, str]:
-    """Return (key→value dict, raw text) for definition.md."""
+    """Return (key→value dict, raw markdown text)."""
     text = path.read_text()
-    result = {}
+    kv = {}
     for line in text.splitlines():
         if line and not line.startswith(" ") and not line.startswith("#") and ":" in line:
             key, _, value = line.partition(":")
-            result[key.strip()] = value.strip()
-    return result, text
+            kv[key.strip()] = value.strip()
+    return kv, text
 
 
-def p_treatment_better(
-    ctrl_k: int, ctrl_n: int,
-    trt_k: int,  trt_n: int,
-    n_samples: int = 100_000,
-) -> float:
-    """P(treatment CR > control CR) via Beta-Binomial Monte Carlo, Beta(1,1) prior."""
-    rng = np.random.default_rng(seed=42)
-    ctrl = rng.beta(ctrl_k + 1, ctrl_n - ctrl_k + 1, n_samples)
-    trt  = rng.beta(trt_k  + 1, trt_n  - trt_k  + 1, n_samples)
-    return float(np.mean(trt > ctrl))
+def parse_variants(text: str) -> tuple[str, list[str]]:
+    """
+    Extract (control_value, [treatment_values]) from definition.md.
+    Handles both a single  treatment:  key and multiple  treatment_a: / treatment_b:  keys.
+    """
+    ctrl_m   = re.search(r"^\s+control:\s*(\S+)", text, re.MULTILINE)
+    trt_list = re.findall(r"^\s+treatment[^:\n]*:\s*(\S+)", text, re.MULTILINE)
+    control    = ctrl_m.group(1) if ctrl_m else "control"
+    treatments = trt_list if trt_list else ["treatment"]
+    return control, treatments
 
 
-def format_metric_table(
+def parse_guardrails(text: str) -> list[str]:
+    events: list[str] = []
+    in_block = False
+    for line in text.splitlines():
+        if "guardrail_events:" in line:
+            in_block = True
+            continue
+        if in_block:
+            s = line.strip()
+            if s.startswith("- "):
+                events.append(s[2:].strip())
+            elif s and not s.startswith("#"):
+                in_block = False
+    return events
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. FORMATTING
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _pct(x: float) -> str:
+    return f"{x * 100:+.2f}%"
+
+
+def _fmt_p(p: float) -> str:
+    return "<0.001" if p < 0.001 else f"{p:.3f}"
+
+
+def format_metric_section(
     label: str,
-    metric_data: dict,
+    mdata: dict,
     control: str,
-    treatment: str,
+    treatments: list[str],
+    is_guardrail: bool = False,
 ) -> str:
-    ctrl = metric_data[control]
-    trt  = metric_data[treatment]
-    ctrl_rate = ctrl["k"] / ctrl["n"] if ctrl["n"] > 0 else 0.0
-    trt_rate  = trt["k"]  / trt["n"]  if trt["n"]  > 0 else 0.0
-    rel = (trt_rate - ctrl_rate) / ctrl_rate * 100 if ctrl_rate > 0 else float("nan")
-    confidence = p_treatment_better(ctrl["k"], ctrl["n"], trt["k"], trt["n"])
+    """
+    Render one metric block as a Markdown table with Bayesian + frequentist columns.
 
-    header = (
-        "| variant | exposed | converted | rate | relative_change | p(treatment > control) |\n"
-        "|---------|---------|-----------|------|-----------------|------------------------|"
-    )
-    ctrl_row = f"| {control} | {ctrl['n']} | {ctrl['k']} | {ctrl_rate:.2%} | — | — |"
-    trt_row  = (
-        f"| {treatment} | {trt['n']} | {trt['k']} "
-        f"| {trt_rate:.2%} | {rel:+.1f}% | {confidence:.1%} |"
-    )
-    return f"## {label}\n\n{header}\n{ctrl_row}\n{trt_row}\n"
+    Columns:
+      variant | n | [conv | rate]  | rel Δ | 95% credible CI | P(win)
+            | risk[ctrl] | risk[trt] | p-value | sig
+
+    risk[ctrl] = opportunity cost of keeping control (want this low to stay).
+    risk[trt]  = downside risk of adopting treatment (want this low to ship).
+    Both values are relative (e.g. 0.003 = 0.3 % of the control mean).
+    """
+    heading  = "### Guardrail" if is_guardrail else "### Primary Metric"
+    inverse  = bool(mdata.get("inverse", False))
+    ctrl_raw = mdata.get(control, {})
+    if not ctrl_raw or not isinstance(ctrl_raw, dict):
+        return f"{heading}: {label}\n\n_no data for control variant '{control}'_\n\n"
+
+    mean_a, var_a, n_a = metric_moments(ctrl_raw)
+    is_prop = "k" in ctrl_raw
+    kind    = ("proportion" if is_prop else "continuous") + (" · inverse (lower is better)" if inverse else "")
+
+    lines = [f"{heading}: {label}", "", f"_type: {kind}_", ""]
+
+    # table header — proportions have two extra columns (conv, rate)
+    if is_prop:
+        h1  = "| variant | n | conv | rate | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] | p-value | sig |"
+        sep = "|---------|---|------|------|-------|-----------------|--------|------------|-----------|---------|-----|"
+        ctrl_row = (
+            f"| **{control}** | {n_a:,} | {int(ctrl_raw.get('k', 0)):,} | {mean_a:.3%}"
+            " | — | — | — | — | — | — | — |"
+        )
+    else:
+        h1  = "| variant | n | mean | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] | p-value | sig |"
+        sep = "|---------|---|------|-------|-----------------|--------|------------|-----------|---------|-----|"
+        ctrl_row = (
+            f"| **{control}** | {n_a:,} | {mean_a:.4f}"
+            " | — | — | — | — | — | — | — |"
+        )
+
+    lines += [h1, sep, ctrl_row]
+
+    for trt in treatments:
+        trt_raw = mdata.get(trt, {})
+        if not trt_raw or not isinstance(trt_raw, dict):
+            dash = " — |" * (11 if is_prop else 10)
+            lines.append(f"| **{trt}** |{dash}")
+            continue
+
+        mean_b, var_b, n_b = metric_moments(trt_raw)
+        bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
+        freq = frequentist_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
+
+        if bay.get("error") or freq.get("error"):
+            err = bay.get("error") or freq.get("error")
+            lines.append(f"| **{trt}** | {n_b:,} | — | _error: {err}_ |")
+            continue
+
+        ci_str = f"[{_pct(bay['ci_rel_lower'])}, {_pct(bay['ci_rel_upper'])}]"
+        sig    = "✓" if freq["significant"] else "✗"
+
+        if is_prop:
+            lines.append(
+                f"| **{trt}** | {n_b:,} | {int(trt_raw.get('k', 0)):,} | {mean_b:.3%} |"
+                f" {_pct(bay['relative_change'])} | {ci_str} |"
+                f" {bay['chance_to_win']:.1%} |"
+                f" {bay['risk_ctrl']:.4f} | {bay['risk_trt']:.4f} |"
+                f" {_fmt_p(freq['p_value'])} | {sig} |"
+            )
+        else:
+            lines.append(
+                f"| **{trt}** | {n_b:,} | {mean_b:.4f} |"
+                f" {_pct(bay['relative_change'])} | {ci_str} |"
+                f" {bay['chance_to_win']:.1%} |"
+                f" {bay['risk_ctrl']:.4f} | {bay['risk_trt']:.4f} |"
+                f" {_fmt_p(freq['p_value'])} | {sig} |"
+            )
+
+    lines.append("")
+
+    # per-treatment decision hint
+    for trt in treatments:
+        trt_raw = mdata.get(trt, {})
+        if not trt_raw or not isinstance(trt_raw, dict):
+            continue
+        mean_b, var_b, n_b = metric_moments(trt_raw)
+        bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
+        freq = frequentist_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
+        if bay.get("error"):
+            continue
+
+        ctw    = bay["chance_to_win"]
+        rc, rt = bay["risk_ctrl"], bay["risk_trt"]
+        sig    = "significant" if freq.get("significant") else "not significant"
+        prefix = f"**{trt}**: " if len(treatments) > 1 else ""
+
+        if ctw >= 0.95 and not is_guardrail:
+            hint = f"strong signal → adopt treatment  ({sig})"
+        elif ctw >= 0.80 and not is_guardrail:
+            hint = f"leaning treatment  ({sig})"
+        elif ctw <= 0.05 and not is_guardrail:
+            hint = f"treatment appears harmful  ({sig})"
+        elif ctw <= 0.20 and not is_guardrail:
+            hint = f"leaning control  ({sig})"
+        else:
+            hint = f"inconclusive  ({sig})"
+
+        lines.append(
+            f"> {prefix}P(win)={ctw:.0%}  "
+            f"risk[ctrl]={rc:.4f}  risk[trt]={rt:.4f}  → {hint}"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. MAIN
+# ══════════════════════════════════════════════════════════════════════════════
 
 def main(slug: str) -> None:
     base = Path(".featbit-release-decision") / "experiments" / slug
@@ -90,74 +489,93 @@ def main(slug: str) -> None:
         print(f"  python .featbit-release-decision/scripts/collect-input.py {slug}")
         sys.exit(1)
 
-    data = json.loads(input_path.read_text())
+    raw          = json.loads(input_path.read_text())
+    metrics_data = raw.get("metrics", raw)   # accept both {metrics:{…}} and flat
 
-    ctrl_m = re.search(r"control:\s*(\S+)", text)
-    trt_m  = re.search(r"treatment:\s*(\S+)", text)
-    control   = ctrl_m.group(1) if ctrl_m else "control"
-    treatment = trt_m.group(1)  if trt_m  else "treatment"
+    control, treatments = parse_variants(text)
+    guardrail_events    = parse_guardrails(text)
+    primary_event       = defn.get("primary_metric_event", "")
+    min_sample          = int(defn.get("minimum_sample_per_variant", 0) or 0)
 
-    primary_event = defn.get("primary_metric_event", "")
-    guardrail_events: list[str] = []
-    in_guardrail = False
-    for line in text.splitlines():
-        if "guardrail_events:" in line:
-            in_guardrail = True
-            continue
-        if in_guardrail:
-            s = line.strip()
-            if s.startswith("- "):
-                guardrail_events.append(s[2:].strip())
-            elif s and not s.startswith("#"):
-                in_guardrail = False
+    now       = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    start_raw = re.search(r"start:\s*(\S+)", text)
+    end_raw   = re.search(r"end:\s*(\S+)",   text)
+    start_lbl = start_raw.group(1) if start_raw else "?"
+    end_lbl   = end_raw.group(1)   if end_raw   else "open"
 
-    min_sample   = int(defn.get("minimum_sample_per_variant", 0) or 0)
-    primary_data = data["metrics"].get(primary_event, {})
-    ctrl_n  = primary_data.get(control,   {}).get("n", 0)
-    trt_n   = primary_data.get(treatment, {}).get("n", 0)
-    sample_ok = min(ctrl_n, trt_n) >= min_sample
+    all_variants = [control] + treatments
 
-    now         = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_raw     = re.search(r"end:\s*(\S+)", text)
-    start_raw   = re.search(r"start:\s*(\S+)", text)
-    end_label   = end_raw.group(1)   if end_raw   else "open"
-    start_label = start_raw.group(1) if start_raw else "?"
+    # ── SRM check ──────────────────────────────────────────────────────────
+    srm_block = ""
+    if primary_event and primary_event in metrics_data:
+        pm = metrics_data[primary_event]
+        ns = [
+            pm.get(v, {}).get("n", 0)
+            for v in all_variants
+            if isinstance(pm.get(v), dict)
+        ]
+        if len(ns) >= 2 and sum(ns) > 0:
+            srm_p   = srm_check(ns)
+            srm_tag = (
+                "⚠ POSSIBLE IMBALANCE — investigate before interpreting results"
+                if srm_p < 0.01 else "✓ ok"
+            )
+            srm_block = (
+                "## SRM (Sample Ratio Mismatch)\n"
+                f"χ² p-value: **{srm_p:.4f}** {srm_tag}\n"
+                f"observed n: {', '.join(f'{v}={n}' for v, n in zip(all_variants, ns))}\n"
+            )
 
-    lines = [
+    # ── Sample size check ───────────────────────────────────────────────────
+    primary_md = metrics_data.get(primary_event, {}) if primary_event else {}
+    ctrl_n     = primary_md.get(control, {}).get("n", 0) if primary_md else 0
+    min_trt_n  = min(
+        (primary_md.get(t, {}).get("n", 0) for t in treatments if primary_md),
+        default=0,
+    )
+    sample_ok   = (min(ctrl_n, min_trt_n) >= min_sample) if min_sample > 0 else True
+    sample_mark = (
+        "✓" if sample_ok
+        else f"✗  (got {min(ctrl_n, min_trt_n)}, need {min_sample})"
+    )
+
+    # ── Assemble document ───────────────────────────────────────────────────
+    out_lines = [
         f"experiment:   {slug}",
         f"computed_at:  {now}",
-        f"window:       {start_label} → {end_label}",
+        f"window:       {start_lbl} → {end_lbl}",
+        f"control:      {control}",
+        f"treatments:   {', '.join(treatments)}",
         "",
     ]
 
-    if primary_event in data["metrics"]:
-        lines.append(format_metric_table(
-            f"Primary Metric: {primary_event}",
-            data["metrics"][primary_event],
-            control, treatment,
+    if srm_block:
+        out_lines.append(srm_block)
+
+    if primary_event and primary_event in metrics_data:
+        out_lines.append(format_metric_section(
+            primary_event, metrics_data[primary_event],
+            control, treatments, is_guardrail=False,
         ))
 
     for g in guardrail_events:
-        if g in data["metrics"]:
-            lines.append(format_metric_table(
-                f"Guardrail: {g}",
-                data["metrics"][g],
-                control, treatment,
+        if g in metrics_data:
+            out_lines.append(format_metric_section(
+                g, metrics_data[g],
+                control, treatments, is_guardrail=True,
             ))
 
-    sample_mark = (
-        "✓" if sample_ok
-        else f"✗ (got {min(ctrl_n, trt_n)}, need {min_sample})"
-    )
-    lines += [
+    out_lines += [
         "## Sample check",
-        f"minimum required per variant: {min_sample} {sample_mark}",
-        f"control exposed:   {ctrl_n}",
-        f"treatment exposed: {trt_n}",
+        f"minimum required per variant: {min_sample}  {sample_mark}",
+        f"control ({control}) exposed:   {ctrl_n}",
+    ] + [
+        f"{trt} exposed:   {primary_md.get(trt, {}).get('n', 0) if primary_md else 0}"
+        for trt in treatments
     ]
 
     out_path = base / "analysis.md"
-    out_path.write_text("\n".join(lines) + "\n")
+    out_path.write_text("\n".join(out_lines) + "\n")
     print(f"Written: {out_path}")
     if not sample_ok:
         print("WARNING: sample size below minimum — treat results as indicative only.")
