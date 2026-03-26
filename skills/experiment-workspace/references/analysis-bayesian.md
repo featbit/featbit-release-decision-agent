@@ -36,12 +36,12 @@ python .featbit-release-decision/scripts/analyze-bayesian.py chat-cta-v2
 
 ## What the Script Does
 
-1. Reads `definition.md` to know which flag variants and events to look for
+1. Reads `definition.md` to know which flag variants, events, and prior to use
 2. Loads `input.json` — aggregated per-variant metric data
 3. For each metric, per treatment arm:
-   - **Bayesian analysis** — analytical Gaussian posterior (flat prior), producing:
+   - **Bayesian analysis** — analytical Gaussian posterior with optional informative prior, producing:
      - P(win): probability that treatment is better than control
-     - 95% credible interval for the relative effect
+     - 95% credible interval for the relative effect (posterior-adjusted when prior is proper)
      - Risk / expected loss: quantifies the downside of a wrong decision
    - **Frequentist Welch t-test** — p-value and confidence interval (independent of Bayesian output)
    - Optionally **sequential / always-valid** CI and e-value p-value for experiments where you peek before the fixed horizon (set `sequential: true` per metric in `input.json`)
@@ -135,6 +135,59 @@ Both P(win) and p-value are shown. They typically agree; divergence at the bound
 ### SRM (Sample Ratio Mismatch)
 
 A χ² p-value < 0.01 is a red flag: the split may be corrupted by redirects, caching, bot traffic, or assignment bugs. Do not draw conclusions from such data until the root cause is fixed.
+
+---
+
+---
+
+## Gaussian Prior (Optional)
+
+The script supports an optional **informative Gaussian prior** on the relative effect, controlled by the `prior:` block in `definition.md`.
+
+### Default behaviour (flat prior)
+
+```markdown
+prior:
+  proper:  false
+```
+
+Posterior = data only. Identical to the original behaviour. Safe default — use this when you have no prior knowledge.
+
+### Informative prior
+
+```markdown
+prior:
+  proper:  true
+  mean:    0.0    # no expected direction
+  stddev:  0.3    # ±30% is the plausible lift range
+```
+
+The posterior is the **precision-weighted average** of the prior and the data:
+
+```
+post_mean = (data_mean/data_var + prior_mean/prior_var) / (1/data_var + 1/prior_var)
+post_std  = sqrt(1 / (1/data_var + 1/prior_var))
+```
+
+**Effect on results:**
+
+| Sample size | Prior influence |
+|---|---|
+| Small (n < 200) | Strong — result pulled toward `mean` |
+| Medium | Partial shrinkage toward prior |
+| Large | Data dominates, prior is washed out |
+
+**When to use a proper prior:**
+- You have historical data from similar experiments (set `mean` to the typical observed lift)
+- You want to regularise noisy early results and reduce false positives in small samples
+- You are running many experiments and want consistent shrinkage (set `stddev` to the typical lift range in your product)
+
+**When to keep flat prior:**
+- No prior experiments to draw from
+- You want results to be purely data-driven with no subjective input
+- Explaining results to stakeholders who expect standard frequentist-style output
+
+The `prior:` line in `analysis.md` header tells you which mode was used: `flat/improper (data-only)` or `proper (mean=X, stddev=Y)`.
 
 ---
 

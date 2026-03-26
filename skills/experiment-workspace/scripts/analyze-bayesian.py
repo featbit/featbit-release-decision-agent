@@ -52,6 +52,7 @@ Multiple treatment arms — add more variant keys matching definition.md.
 import json
 import re
 import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -63,6 +64,24 @@ from scipy.stats import truncnorm
 
 ALPHA = 0.05                      # significance level; credible interval = 1 − ALPHA
 SEQUENTIAL_TUNING_PARAMETER = 5000  # κ: Waudby-Smith et al. 2023 default
+
+
+@dataclass
+class GaussianPrior:
+    """
+    Gaussian prior on the relative effect δ = (mean_b − mean_a) / mean_a.
+
+    proper=False  → flat/improper prior (default); posterior = data likelihood only.
+    proper=True   → informative prior; posterior is the precision-weighted average
+                    of the prior and the data estimate (conjugate Gaussian update).
+
+    Recommended defaults when enabling a proper prior:
+        mean   = 0.0   (no expected direction)
+        stddev = 0.3   (±30% relative lift is the plausible range)
+    """
+    mean: float = 0.0
+    variance: float = 1e10   # effectively flat when proper=False
+    proper: bool = False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -141,18 +160,34 @@ def bayesian_result(
     mean_a: float, var_a: float, n_a: int,
     mean_b: float, var_b: float, n_b: int,
     inverse: bool = False,
+    prior: GaussianPrior | None = None,
 ) -> dict:
     """
-    Analytical Gaussian-posterior Bayesian A/B test with a flat (improper) prior.
+    Analytical Gaussian-posterior Bayesian A/B test.
+
+    When prior is None or prior.proper is False: flat/improper prior — posterior equals
+    the data likelihood (original behaviour, fully backward-compatible).
+
+    When prior.proper is True: applies a conjugate Gaussian prior-posterior update.
+    The posterior is the precision-weighted average of the prior and the data estimate:
+
+        post_prec  = 1/data_var + 1/prior.variance
+        post_mean  = (data_mean/data_var + prior.mean/prior.variance) / post_prec
+        post_std   = sqrt(1 / post_prec)
+
+    Effect: with small samples the result is pulled toward the prior mean; as n grows
+    the data dominates and the prior is "washed out".  prior.mean = 0, prior.stddev = 0.3
+    This encodes "most experiments have a lift between −30% and +30%".
 
     Returns a dict with:
       chance_to_win    P(treatment is better)
-      relative_change  (mean_b − mean_a) / mean_a  as a fraction (0.05 = 5 %)
-      absolute_change  mean_b − mean_a
-      ci_rel_lower     lower bound of 95 % credible interval (relative)
-      ci_rel_upper     upper bound of 95 % credible interval (relative)
+      relative_change  posterior mean of (mean_b − mean_a) / mean_a  (fraction)
+      absolute_change  mean_b − mean_a  (observed, not posterior-adjusted)
+      ci_rel_lower     lower bound of 95 % credible interval (relative, posterior)
+      ci_rel_upper     upper bound of 95 % credible interval (relative, posterior)
       risk_ctrl        risk[ctrl]: opportunity cost of keeping control
       risk_trt         risk[trt]:  downside risk of adopting treatment
+      prior_applied    True if a proper prior was used
       error            None  or  an error string
     """
     if n_a == 0 or n_b == 0:
@@ -166,6 +201,17 @@ def bayesian_result(
 
     mu_rel = (mean_b - mean_a) / mean_a
     mu_abs = mean_b - mean_a
+
+    # ── Conjugate Gaussian prior update ───────────────────────────────────────
+    prior_applied = False
+    if prior is not None and prior.proper:
+        data_prec  = 1.0 / (se_rel ** 2)
+        prior_prec = 1.0 / prior.variance
+        post_prec  = data_prec + prior_prec
+        mu_rel     = (mu_rel * data_prec + prior.mean * prior_prec) / post_prec
+        se_rel     = float(np.sqrt(1.0 / post_prec))
+        prior_applied = True
+
     z_half = float(norm.ppf(1.0 - ALPHA / 2))
 
     ctw = float(norm.sf(0.0, loc=mu_rel, scale=se_rel))   # P(δ_rel > 0)
@@ -185,6 +231,7 @@ def bayesian_result(
         "ci_rel_upper":    mu_rel + z_half * se_rel,
         "risk_ctrl":       risk_c,
         "risk_trt":        risk_t,
+        "prior_applied":   prior_applied,
     }
 
 
@@ -324,6 +371,52 @@ def parse_variants(text: str) -> tuple[str, list[str]]:
     return control, treatments
 
 
+def parse_prior(text: str) -> GaussianPrior:
+    """
+    Read optional prior block from definition.md.
+
+    prior:
+      proper:  true
+      mean:    0.0
+      stddev:  0.3
+
+    Defaults to flat/improper prior if the block is absent.
+    """
+    proper_m = re.search(r"proper:\s*(true|false)", text, re.IGNORECASE)
+    mean_m   = re.search(r"(?<=prior:.*\n)(?:.*\n)*?.*mean:\s*(-?[\d.]+)", text)
+    # simpler line-by-line parse
+    proper, mean, stddev = False, 0.0, 0.3
+    in_prior = False
+    for line in text.splitlines():
+        if re.match(r"^prior\s*:", line):
+            in_prior = True
+            continue
+        if in_prior:
+            s = line.strip()
+            if not s or (not s.startswith("#") and ":" not in s):
+                in_prior = False
+                continue
+            if s.startswith("#"):
+                continue
+            key, _, val = s.partition(":")
+            key, val = key.strip(), val.strip()
+            if key == "proper":
+                proper = val.lower() == "true"
+            elif key == "mean":
+                try:
+                    mean = float(val)
+                except ValueError:
+                    pass
+            elif key == "stddev":
+                try:
+                    stddev = float(val)
+                except ValueError:
+                    pass
+            elif ":" not in line and not line.startswith(" "):
+                in_prior = False
+    return GaussianPrior(mean=mean, variance=stddev ** 2, proper=proper)
+
+
 def parse_guardrails(text: str) -> list[str]:
     events: list[str] = []
     in_block = False
@@ -358,6 +451,7 @@ def format_metric_section(
     control: str,
     treatments: list[str],
     is_guardrail: bool = False,
+    prior: GaussianPrior | None = None,
 ) -> str:
     """
     Render one metric block as a Markdown table with Bayesian + frequentist columns.
@@ -408,7 +502,7 @@ def format_metric_section(
             continue
 
         mean_b, var_b, n_b = metric_moments(trt_raw)
-        bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
+        bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse, prior)
         freq = frequentist_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
 
         if bay.get("error") or freq.get("error"):
@@ -444,7 +538,7 @@ def format_metric_section(
         if not trt_raw or not isinstance(trt_raw, dict):
             continue
         mean_b, var_b, n_b = metric_moments(trt_raw)
-        bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
+        bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse, prior)
         freq = frequentist_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
         if bay.get("error"):
             continue
@@ -494,6 +588,7 @@ def main(slug: str) -> None:
 
     control, treatments = parse_variants(text)
     guardrail_events    = parse_guardrails(text)
+    prior               = parse_prior(text)
     primary_event       = defn.get("primary_metric_event", "")
     min_sample          = int(defn.get("minimum_sample_per_variant", 0) or 0)
 
@@ -540,12 +635,17 @@ def main(slug: str) -> None:
     )
 
     # ── Assemble document ───────────────────────────────────────────────────
+    prior_label = (
+        f"proper (mean={prior.mean}, stddev={prior.variance ** 0.5:.3g})"
+        if prior.proper else "flat/improper (data-only)"
+    )
     out_lines = [
         f"experiment:   {slug}",
         f"computed_at:  {now}",
         f"window:       {start_lbl} → {end_lbl}",
         f"control:      {control}",
         f"treatments:   {', '.join(treatments)}",
+        f"prior:        {prior_label}",
         "",
     ]
 
@@ -555,14 +655,14 @@ def main(slug: str) -> None:
     if primary_event and primary_event in metrics_data:
         out_lines.append(format_metric_section(
             primary_event, metrics_data[primary_event],
-            control, treatments, is_guardrail=False,
+            control, treatments, is_guardrail=False, prior=prior,
         ))
 
     for g in guardrail_events:
         if g in metrics_data:
             out_lines.append(format_metric_section(
                 g, metrics_data[g],
-                control, treatments, is_guardrail=True,
+                control, treatments, is_guardrail=True, prior=prior,
             ))
 
     out_lines += [

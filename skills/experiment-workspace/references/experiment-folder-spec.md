@@ -47,6 +47,10 @@ observation_window:
   start:                 <ISO 8601 date, e.g. 2026-03-01>
   end:                   <ISO 8601 date, or "open" if still running>
 minimum_sample_per_variant: <number, e.g. 200>
+prior:
+  proper:  false         # true = informative prior; false = flat/data-only (default)
+  mean:    0.0           # expected relative lift (0 = no expected direction)
+  stddev:  0.3           # uncertainty around prior mean (0.3 = ±30% plausible range)
 hypothesis:              <copied verbatim from .featbit-release-decision/intent.md>
 ```
 
@@ -55,6 +59,8 @@ Rules for `definition.md`:
 - `primary_metric_event` must exactly match the event name tracked via FeatBit SDK's `track()` call
 - `observation_window.start` is the date from which logs are included — do not backfill before the flag was enabled
 - `minimum_sample_per_variant` is a sanity floor, not a stopping rule
+- `prior` block is optional — omit it or set `proper: false` for flat prior (original behaviour)
+- Enable `proper: true` when you have domain knowledge about the likely lift range (e.g. past experiments). With small samples the prior pulls the result toward `mean`; with large samples the data dominates and the prior is washed out.
 
 ---
 
