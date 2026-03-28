@@ -125,6 +125,94 @@ With `proper: false` (the default), the flat prior means the posterior equals th
 
 ---
 
+## Before You Run: Setting `minimum_sample_per_variant`
+
+`minimum_sample_per_variant` in `definition.md` is a **validity floor** — the minimum number of exposed users per variant before the script's Gaussian approximation can be trusted. It is not a stopping rule.
+
+The Bayesian stopping criterion is different and comes later: you stop when `risk[trt]` or `risk[ctrl]` falls below an acceptable threshold (see Decision Guide). The validity floor just ensures the math is reliable enough to read at all.
+
+---
+
+### What the validity floor protects
+
+The script approximates the posterior as a Gaussian distribution. This approximation requires a sufficient number of observed conversions — not just exposures. The rule of thumb:
+
+```
+n × p_baseline ≥ 30   (at least 30 conversions per variant)
+```
+
+Below this threshold, the Gaussian curve is a poor fit for the true posterior shape, and P(win) and risk values can be misleading even when sample sizes look large.
+
+---
+
+### How to set `minimum_sample_per_variant` — proportion metrics
+
+```
+minimum_sample_per_variant  =  30 / p_baseline
+```
+
+| Baseline conversion rate | Minimum n per variant |
+|--------------------------|-----------------------|
+| 1% | 3,000 |
+| 2% | 1,500 |
+| 5% | 600 |
+| 8% | 375 |
+| 10% | 300 |
+| 20% | 150 |
+| 30% | 100 |
+
+**The default of 200 is only safe when your baseline conversion rate is above 15%.** For most product metrics (CTR, signups, checkout rates) which sit between 2–10%, the floor is between 300 and 1,500.
+
+**Example:** CTA click rate baseline is 5%.
+```
+minimum_sample_per_variant = 30 / 0.05 = 600
+```
+
+Set `minimum_sample_per_variant: 600` in `definition.md`.
+
+---
+
+### How to set `minimum_sample_per_variant` — continuous metrics
+
+For continuous metrics (revenue, session duration), the Gaussian approximation is generally more robust because the Central Limit Theorem kicks in faster. A floor of 100–200 per variant is usually sufficient unless the metric has extreme skew (e.g. revenue where a few large orders dominate).
+
+If your continuous metric is highly skewed, increase the floor to 500+.
+
+---
+
+### The Bayesian stopping logic: watch risk converge
+
+Reaching `minimum_sample_per_variant` only means the results are safe to read. It does not mean you should stop.
+
+In a Bayesian experiment, you keep running until the posterior has updated enough that the risk of a wrong decision is acceptable:
+
+- **Stop when `risk[trt]` drops below your loss threshold** → the cost of shipping treatment even if you're wrong is negligible → ship
+- **Stop when `risk[ctrl]` drops below your opportunity cost threshold** → the cost of staying on control even if you're wrong is negligible → hold
+- **Neither drops within your observation window** → inconclusive → do not force a decision
+
+Risk falls naturally as sample size grows and the posterior narrows. You cannot predict exactly when it will drop — it depends on the true effect size. A large true effect causes rapid convergence; a small or zero effect causes risk to plateau and never drop cleanly.
+
+```
+Small sample   →  wide posterior  →  high risk on both sides  →  keep running
+Large sample   →  narrow posterior →  one side's risk drops    →  ready to decide
+```
+
+This is fundamentally different from frequentist thinking, which requires you to fix the sample size before collecting data. The Bayesian approach lets you check periodically after the validity floor is reached and decide when the evidence is sufficient for your risk tolerance.
+
+---
+
+### What happens if you ignore the validity floor
+
+| Situation | Consequence |
+|-----------|-------------|
+| n=200, baseline rate 5% → only 10 conversions per variant | Gaussian approximation is inaccurate; P(win) and risk values are unreliable |
+| P(win) = 94% with 10 conversions | Likely an artefact of the approximation — do not act on it |
+| risk[trt] looks low at n=100 | The posterior is still wide; risk will rise again as more data arrives |
+
+The validity floor is the minimum before you start reading results. Treat any output below the floor as noise, not signal.
+
+---
+
 ## Usage Patterns
 
 ### Pattern 1 — Basic proportion metric (conversion rate, click-through rate)
