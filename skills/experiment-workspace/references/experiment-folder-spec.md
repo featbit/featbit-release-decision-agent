@@ -46,7 +46,7 @@ variants:
 observation_window:
   start:                 <ISO 8601 date, e.g. 2026-03-01>
   end:                   <ISO 8601 date, or "open" if still running>
-minimum_sample_per_variant: <number, e.g. 200>
+minimum_sample_per_variant: <number — computed by agent as ceil(30 / p_baseline), see experiment-workspace SKILL.md>
 prior:
   proper:  false         # true = informative prior; false = flat/data-only (default)
   mean:    0.0           # expected relative lift (0 = no expected direction)
@@ -100,23 +100,40 @@ Written by the analysis script after computation. Example output:
 experiment:   chat-cta-v2
 computed_at:  2026-03-15T09:00:00Z
 window:       2026-03-01 → 2026-03-15
+control:      false
+treatments:   true
+prior:        flat/improper (data-only)
 
-## Primary Metric: cta_clicked
+## SRM (Sample Ratio Mismatch)
+χ² p-value: **0.4821** ✓ ok
+observed n: false=487, true=513
 
-| variant   | exposed | converted | rate   | relative_change | p(treatment > control) |
-|-----------|---------|-----------|--------|-----------------|------------------------|
-| control   | 487     | 41        | 8.42%  | —               | —                      |
-| treatment | 513     | 67        | 13.06% | +55.1%          | 97.3%                  |
+### Primary Metric: cta_clicked
 
-## Guardrail: chat_opened
+_type: proportion_
 
-| variant   | exposed | converted | rate   | relative_change | p(treatment > control) |
-|-----------|---------|-----------|--------|-----------------|------------------------|
-| control   | 487     | 38        | 7.80%  | —               | —                      |
-| treatment | 513     | 41        | 7.99%  | +2.4%           | 54.1%                  |
+| variant | n | conv | rate | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] |
+|---------|---|------|------|-------|-----------------|--------|------------|-----------|
+| **false** | 487 | 41 | 8.42% | — | — | — | — | — |
+| **true** | 513 | 67 | 13.06% | +55.12% | [+28.45%, +81.79%] | 97.3% | 0.0412 | 0.0012 |
+
+> P(win)=97%  risk[ctrl]=0.0412  risk[trt]=0.0012  → strong signal → adopt treatment
+
+### Guardrail: chat_opened
+
+_type: proportion_
+
+| variant | n | conv | rate | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] |
+|---------|---|------|------|-------|-----------------|--------|------------|-----------|
+| **false** | 487 | 38 | 7.80% | — | — | — | — | — |
+| **true** | 513 | 41 | 7.99% | +2.44% | [−9.81%, +14.69%] | 54.1% | 0.0089 | 0.0084 |
+
+> P(win)=54%  risk[ctrl]=0.0089  risk[trt]=0.0084  → inconclusive
 
 ## Sample check
-minimum required per variant: 200 ✓
+minimum required per variant: 487  ✓
+control (false) exposed:   487
+true exposed:   513
 ```
 
 Do not edit `analysis.md` by hand. Re-run the script if data changes.
@@ -128,21 +145,31 @@ Do not edit `analysis.md` by hand. Re-run the script if data changes.
 Written by the agent after `evidence-analysis` frames the outcome. Template:
 
 ```markdown
-experiment:   <slug>
-decided_at:   <ISO date>
-decision:     <CONTINUE | PAUSE | ROLLBACK CANDIDATE | INCONCLUSIVE>
+Experiment:         <slug>
+Observation window: <start date> to <end date>
+Sample:             <N users per variant> — minimum required: <minimum_sample_per_variant>
+SRM check:          <✓ ok / ⚠ failed — p = X>
 
-## Evidence Summary
-<2–4 sentences referencing numbers from analysis.md>
+Hypothesis: <copied from intent.md>
 
-## Hypothesis Verdict
-<Was the hypothesis confirmed, rejected, or inconclusive? One sentence.>
+Primary metric: <metric name>
+  Baseline (control):  <rate or mean>
+  Candidate:           <rate or mean>
+  Relative change:     <rel Δ>
+  P(win):              <X>%
+  risk[trt]:           <value>
+  risk[ctrl]:          <value>
+  95% credible CI:     [<lower>, <upper>]
 
-## Next Action
-<What happens now — expand rollout, revert flag, extend window, or close?>
+Guardrails:
+  <guardrail 1>: P(win) = <X>%  — <healthy / possible harm / strong harm>
+  <guardrail 2>: P(win) = <X>%  — <healthy / possible harm / strong harm>
 
-## Link to Intent
-See `.featbit-release-decision/intent.md` for full hypothesis and business context.
+Decision: <CONTINUE | PAUSE | ROLLBACK CANDIDATE | INCONCLUSIVE>
+
+Reasoning: <2–3 sentences tying the evidence to the hypothesis and the decision category>
+
+Next action: <specific step — expand to X%, disable flag, extend window, investigate Y>
 ```
 
 ---

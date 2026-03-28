@@ -533,6 +533,23 @@ def main(slug: str) -> None:
         else f"✗  (got {min(ctrl_n, min_trt_n)}, need {min_sample})"
     )
 
+    # ── Gaussian approximation validity check (k ≥ 30 per variant) ──────────
+    # The Gaussian posterior approximation requires at least 30 conversions per
+    # variant. If k < 30, P(win) and risk values may be unreliable even when n
+    # passes the minimum_sample_per_variant floor (which is computed from an
+    # estimated baseline rate that may differ from the actual observed rate).
+    approx_warnings: list[str] = []
+    if primary_md:
+        for v in all_variants:
+            vdata = primary_md.get(v, {})
+            if isinstance(vdata, dict) and "k" in vdata:
+                k_val = int(vdata.get("k", 0))
+                if k_val < 30:
+                    approx_warnings.append(
+                        f"  ⚠ {v}: only {k_val} conversions "
+                        f"— Gaussian approximation unreliable (need ≥ 30)"
+                    )
+
     # ── Assemble document ───────────────────────────────────────────────────
     prior_label = (
         f"proper (mean={prior.mean}, stddev={prior.variance ** 0.5:.3g})"
@@ -573,11 +590,17 @@ def main(slug: str) -> None:
         for trt in treatments
     ]
 
+    if approx_warnings:
+        out_lines += ["", "**Gaussian approximation warning** — too few conversions:"] + approx_warnings
+        out_lines.append("Do not act on P(win) or risk values until conversions reach ≥ 30 per variant.")
+
     out_path = base / "analysis.md"
     out_path.write_text("\n".join(out_lines) + "\n")
     print(f"Written: {out_path}")
     if not sample_ok:
         print("WARNING: sample size below minimum — treat results as indicative only.")
+    if approx_warnings:
+        print("WARNING: fewer than 30 conversions in at least one variant — Gaussian approximation unreliable.")
 
 
 if __name__ == "__main__":
