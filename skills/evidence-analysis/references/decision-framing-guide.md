@@ -36,7 +36,8 @@ These are **action categories**, not statistical verdicts. They exist to produce
 - Primary metric P(win) is 80–95% (leaning positive but not conclusive)
 - Or a guardrail P(win) ≤ 20% (possible harm — not yet confirmed)
 - Or risk[trt] is above 0.01 despite high P(win) (the downside of being wrong is meaningful)
-- Or an instrumentation anomaly or SRM issue was detected
+- Or SRM check failed (χ² p < 0.01) — traffic split is compromised, investigate before expanding
+- Or an instrumentation anomaly was detected
 
 **What to say:**
 > "The primary metric shows P(win) = [X]%, but [guardrail metric] P(win) = [Y]% — a possible harm signal. Recommend pausing at current exposure while investigating [specific signal]."
@@ -70,7 +71,7 @@ Do NOT soften ROLLBACK CANDIDATE language. Clarity is operational here.
 - Or external contamination (holiday, marketing event, outage) compromised the window
 
 **What to say:**
-> "Current evidence is insufficient for a directional decision. [N] exposures per variant collected over [X days]. Primary metric P(win) = [X]% with risk[trt] = [value] — posterior has not converged. Recommend extending the observation window by [time] before deciding."
+> "Current evidence is insufficient for a directional decision. [N] exposures per variant collected over [X days]. Primary metric P(win) = [X]% with risk[trt] = [value] — posterior has not converged. Recommend extending the observation window to cover at least one full business cycle (≥ 7 days) before deciding."
 
 ---
 
@@ -98,18 +99,23 @@ These categories support decisions under uncertainty. INCONCLUSIVE is a valid an
 ```
 Experiment:         [flag key / experiment name]
 Observation window: [start date] to [end date]
-Sample:             [N users per variant]
+Sample:             [N users per variant] — minimum required: [minimum_sample_per_variant]
+SRM check:          [✓ ok / ⚠ failed — p = X]
 
 Hypothesis: [paste from intent.md]
 
 Primary metric: [metric name]
-  Baseline:   [value]
-  Candidate:  [value]
-  Direction:  [expected / unexpected]
+  Baseline (control):  [rate or mean]
+  Candidate:           [rate or mean]
+  Relative change:     [rel Δ from analysis.md]
+  P(win):              [X]%
+  risk[trt]:           [value]
+  risk[ctrl]:          [value]
+  95% credible CI:     [lower, upper]
 
 Guardrails:
-  [guardrail 1]: [healthy / degraded / within range]
-  [guardrail 2]: [healthy / degraded / within range]
+  [guardrail 1]: P(win) = [X]%  — [healthy / possible harm / strong harm]
+  [guardrail 2]: P(win) = [X]%  — [healthy / possible harm / strong harm]
 
 Decision: [CONTINUE / PAUSE / ROLLBACK CANDIDATE / INCONCLUSIVE]
 

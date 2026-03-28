@@ -41,7 +41,7 @@ If any check fails, the right move is NOT to decide — it is to wait, fix, or e
 Once evidence is sufficient, read `analysis.md` and frame the outcome using exactly one of these categories:
 
 - **CONTINUE** — Primary metric P(win) ≥ 95% and risk[trt] is low. Guardrail P(win) all > 20%. Proceed with planned expansion.
-- **PAUSE** — Primary metric P(win) 80–95%, or a guardrail P(win) ≤ 20%. Signal exists but is not clean enough to expand. Investigate before proceeding.
+- **PAUSE** — Primary metric P(win) 80–95%, or a guardrail P(win) ≤ 20%, or SRM check failed. Signal exists but is not clean enough to expand. Investigate before proceeding.
 - **ROLLBACK CANDIDATE** — A guardrail P(win) ≤ 5%, or primary metric P(win) ≤ 5%. Evidence of harm. Flag should be reverted.
 - **INCONCLUSIVE** — Sample below validity floor, or risk[trt] and risk[ctrl] both still high, or primary metric P(win) 20–80% after a full observation window. Extend window or revisit instrumentation.
 
