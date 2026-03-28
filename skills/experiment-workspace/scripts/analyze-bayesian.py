@@ -292,9 +292,6 @@ def parse_prior(text: str) -> GaussianPrior:
 
     Defaults to flat/improper prior if the block is absent.
     """
-    proper_m = re.search(r"proper:\s*(true|false)", text, re.IGNORECASE)
-    mean_m   = re.search(r"(?<=prior:.*\n)(?:.*\n)*?.*mean:\s*(-?[\d.]+)", text)
-    # simpler line-by-line parse
     proper, mean, stddev = False, 0.0, 0.3
     in_prior = False
     for line in text.splitlines():

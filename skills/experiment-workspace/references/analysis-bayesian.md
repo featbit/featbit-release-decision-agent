@@ -29,7 +29,9 @@ pip install numpy scipy
    - Computes the **Bayesian posterior** over the relative effect δ = (mean_trt − mean_ctrl) / mean_ctrl
    - Derives **P(win)**, **95% credible interval**, and **risk / expected loss**
 4. Runs an **SRM check** — flags trafficking imbalances before you interpret any result
-5. Checks sample size against `minimum_sample_per_variant`
+5. Runs two validity checks on the primary metric:
+   - `n ≥ minimum_sample_per_variant` — exposure floor from `definition.md`
+   - `k ≥ 30` per variant — conversion floor for Gaussian approximation reliability; warns if not met even when n passes
 6. Writes `analysis.md`
 
 ---
@@ -287,6 +289,14 @@ Add variant keys in `definition.md` and `input.json` matching each arm. The scri
 ```
 
 Each treatment arm gets its own row in the output table and its own decision hint.
+
+**Multiple comparison caution:** running two treatments against the same control means you are making two independent tests. The probability that at least one of them shows P(win) ≥ 95% by chance alone is higher than 5% — roughly `1 − 0.95²  ≈ 10%` for two arms. To maintain the same level of confidence when choosing a winner:
+
+- Raise the P(win) threshold to **≥ 97–98%** before acting on any single arm
+- Or use risk as the tiebreaker: prefer the arm with the lowest `risk[trt]`, not the highest P(win)
+- Do not pick the "best-looking" arm mid-experiment and treat it as a two-way comparison — that inflates the false positive rate further
+
+The same caution applies to guardrail metrics (documented in the Decision Guide).
 
 ---
 
