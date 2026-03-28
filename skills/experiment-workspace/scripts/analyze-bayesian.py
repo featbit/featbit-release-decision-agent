@@ -2,14 +2,11 @@
 """
 ROLE: READY-TO-RUN — copy to project and run as-is. Do not modify.
 
-Bayesian + Frequentist A/B experiment analysis script.
+Bayesian A/B experiment analysis script.
 
 Implements:
   • Analytical Gaussian Bayesian analysis (chance to win, 95% credible interval,
     risk / expected loss)
-  • Frequentist Welch two-sided t-test (p-value, confidence interval)
-  • Sequential / always-valid confidence interval for peeking without inflation
-    (Waudby-Smith et al. 2023, https://arxiv.org/abs/2103.06476)
   • Sample Ratio Mismatch (SRM) check
   • Continuous metrics (mean / variance) in addition to conversion rates
   • Inverse metrics (lower is better, e.g. error_rate, latency)
@@ -59,11 +56,9 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import chi2 as chi2_dist
 from scipy.stats import norm
-from scipy.stats import t as t_dist
 from scipy.stats import truncnorm
 
-ALPHA = 0.05                      # significance level; credible interval = 1 − ALPHA
-SEQUENTIAL_TUNING_PARAMETER = 5000  # κ: Waudby-Smith et al. 2023 default
+ALPHA = 0.05                      # credible interval = 1 − ALPHA
 
 
 @dataclass
@@ -236,92 +231,7 @@ def bayesian_result(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. FREQUENTIST  (Welch two-sided t-test + sequential always-valid option)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _welch_dof(var_a: float, n_a: int, var_b: float, n_b: int) -> float:
-    """Welch–Satterthwaite effective degrees of freedom."""
-    s_a = var_a / n_a
-    s_b = var_b / n_b
-    denom = s_a ** 2 / (n_a - 1) + s_b ** 2 / (n_b - 1)
-    if denom == 0:
-        return float(n_a + n_b - 2)
-    return (s_a + s_b) ** 2 / denom
-
-
-def frequentist_result(
-    mean_a: float, var_a: float, n_a: int,
-    mean_b: float, var_b: float, n_b: int,
-    inverse: bool = False,
-    sequential: bool = False,
-) -> dict:
-    """
-    Two-sided Welch t-test; optionally uses sequential / always-valid CI.
-
-    sequential=True turns on the Waudby-Smith et al. (2023) anytime-valid
-    confidence sequence, which controls Type-I error even when peeking.
-    The p-value becomes an e-value-based quantity (eq 155 of the paper).
-
-    Returns: p_value, significant, ci_rel_lower/upper, relative_change,
-             absolute_change, dof, sequential, error.
-    """
-    if n_a == 0 or n_b == 0:
-        return {"error": "zero sample size"}
-    if mean_a == 0:
-        return {"error": "control mean is zero"}
-
-    mu_abs = mean_b - mean_a
-    se_abs = _delta_method_se(mean_a, var_a, n_a, mean_b, var_b, n_b, relative=False)
-    mu_rel = mu_abs / abs(mean_a)
-    se_rel = _delta_method_se(mean_a, var_a, n_a, mean_b, var_b, n_b, relative=True)
-
-    if se_abs == 0:
-        return {"error": "zero standard error"}
-
-    dof   = _welch_dof(var_a, n_a, var_b, n_b)
-    t_stat = mu_abs / se_abs
-    p_val  = float(2.0 * (1.0 - t_dist.cdf(abs(t_stat), dof)))
-
-    if sequential:
-        # Waudby-Smith et al. 2023: eq 9 (CI) and eq 155 (p-value / e-value)
-        rho = float(np.sqrt(
-            (-2.0 * np.log(ALPHA) + np.log(-2.0 * np.log(ALPHA) + 1.0))
-            / SEQUENTIAL_TUNING_PARAMETER
-        ))
-        n_seq = min(n_a, n_b)
-        s2    = se_abs ** 2 * n_seq
-        hw_abs = float(np.sqrt(s2) * np.sqrt(
-            2.0 * (n_seq * rho ** 2 + 1.0)
-            * np.log(np.sqrt(n_seq * rho ** 2 + 1.0) / ALPHA)
-            / (n_seq * rho) ** 2
-        ))
-        ci_lo_rel = mu_rel - (hw_abs / abs(mean_a))
-        ci_hi_rel = mu_rel + (hw_abs / abs(mean_a))
-        # Sequential e-value → p-value bound
-        st2   = mu_abs ** 2 * n_seq / se_abs ** 2
-        tr2p1 = n_seq * rho ** 2 + 1.0
-        evalue = float(np.exp(rho ** 2 * st2 / (2.0 * tr2p1)) / np.sqrt(tr2p1))
-        p_val  = min(1.0 / max(evalue, 1e-300), 1.0)
-    else:
-        z_half    = float(t_dist.ppf(1.0 - ALPHA / 2, dof))
-        ci_lo_rel = mu_rel - z_half * se_rel
-        ci_hi_rel = mu_rel + z_half * se_rel
-
-    return {
-        "error":           None,
-        "p_value":         p_val,
-        "significant":     p_val < ALPHA,
-        "dof":             dof,
-        "relative_change": mu_rel,
-        "absolute_change": mu_abs,
-        "ci_rel_lower":    ci_lo_rel,
-        "ci_rel_upper":    ci_hi_rel,
-        "sequential":      sequential,
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. SRM CHECK  (Sample Ratio Mismatch)
+# 3. SRM CHECK  (Sample Ratio Mismatch)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def srm_check(observed: list[int], expected_weights: list[float] | None = None) -> float:
@@ -345,7 +255,7 @@ def srm_check(observed: list[int], expected_weights: list[float] | None = None) 
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 5. DEFINITION PARSING
+# 4. DEFINITION PARSING
 # ══════════════════════════════════════════════════════════════════════════════
 
 def load_definition(path: Path) -> tuple[dict, str]:
@@ -434,15 +344,11 @@ def parse_guardrails(text: str) -> list[str]:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. FORMATTING
+# 5. FORMATTING
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _pct(x: float) -> str:
     return f"{x * 100:+.2f}%"
-
-
-def _fmt_p(p: float) -> str:
-    return "<0.001" if p < 0.001 else f"{p:.3f}"
 
 
 def format_metric_section(
@@ -454,11 +360,11 @@ def format_metric_section(
     prior: GaussianPrior | None = None,
 ) -> str:
     """
-    Render one metric block as a Markdown table with Bayesian + frequentist columns.
+    Render one metric block as a Markdown table with Bayesian columns.
 
     Columns:
       variant | n | [conv | rate]  | rel Δ | 95% credible CI | P(win)
-            | risk[ctrl] | risk[trt] | p-value | sig
+            | risk[ctrl] | risk[trt]
 
     risk[ctrl] = opportunity cost of keeping control (want this low to stay).
     risk[trt]  = downside risk of adopting treatment (want this low to ship).
@@ -478,18 +384,18 @@ def format_metric_section(
 
     # table header — proportions have two extra columns (conv, rate)
     if is_prop:
-        h1  = "| variant | n | conv | rate | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] | p-value | sig |"
-        sep = "|---------|---|------|------|-------|-----------------|--------|------------|-----------|---------|-----|"
+        h1  = "| variant | n | conv | rate | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] |"
+        sep = "|---------|---|------|------|-------|-----------------|--------|------------|-----------|"
         ctrl_row = (
             f"| **{control}** | {n_a:,} | {int(ctrl_raw.get('k', 0)):,} | {mean_a:.3%}"
-            " | — | — | — | — | — | — | — |"
+            " | — | — | — | — | — |"
         )
     else:
-        h1  = "| variant | n | mean | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] | p-value | sig |"
-        sep = "|---------|---|------|-------|-----------------|--------|------------|-----------|---------|-----|"
+        h1  = "| variant | n | mean | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] |"
+        sep = "|---------|---|------|-------|-----------------|--------|------------|-----------|"
         ctrl_row = (
             f"| **{control}** | {n_a:,} | {mean_a:.4f}"
-            " | — | — | — | — | — | — | — |"
+            " | — | — | — | — | — |"
         )
 
     lines += [h1, sep, ctrl_row]
@@ -503,15 +409,12 @@ def format_metric_section(
 
         mean_b, var_b, n_b = metric_moments(trt_raw)
         bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse, prior)
-        freq = frequentist_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
 
-        if bay.get("error") or freq.get("error"):
-            err = bay.get("error") or freq.get("error")
-            lines.append(f"| **{trt}** | {n_b:,} | — | _error: {err}_ |")
+        if bay.get("error"):
+            lines.append(f"| **{trt}** | {n_b:,} | — | _error: {bay['error']}_ |")
             continue
 
         ci_str = f"[{_pct(bay['ci_rel_lower'])}, {_pct(bay['ci_rel_upper'])}]"
-        sig    = "✓" if freq["significant"] else "✗"
 
         if is_prop:
             lines.append(
@@ -519,7 +422,6 @@ def format_metric_section(
                 f" {_pct(bay['relative_change'])} | {ci_str} |"
                 f" {bay['chance_to_win']:.1%} |"
                 f" {bay['risk_ctrl']:.4f} | {bay['risk_trt']:.4f} |"
-                f" {_fmt_p(freq['p_value'])} | {sig} |"
             )
         else:
             lines.append(
@@ -527,7 +429,6 @@ def format_metric_section(
                 f" {_pct(bay['relative_change'])} | {ci_str} |"
                 f" {bay['chance_to_win']:.1%} |"
                 f" {bay['risk_ctrl']:.4f} | {bay['risk_trt']:.4f} |"
-                f" {_fmt_p(freq['p_value'])} | {sig} |"
             )
 
     lines.append("")
@@ -539,25 +440,23 @@ def format_metric_section(
             continue
         mean_b, var_b, n_b = metric_moments(trt_raw)
         bay  = bayesian_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse, prior)
-        freq = frequentist_result(mean_a, var_a, n_a, mean_b, var_b, n_b, inverse)
         if bay.get("error"):
             continue
 
         ctw    = bay["chance_to_win"]
         rc, rt = bay["risk_ctrl"], bay["risk_trt"]
-        sig    = "significant" if freq.get("significant") else "not significant"
         prefix = f"**{trt}**: " if len(treatments) > 1 else ""
 
         if ctw >= 0.95 and not is_guardrail:
-            hint = f"strong signal → adopt treatment  ({sig})"
+            hint = "strong signal → adopt treatment"
         elif ctw >= 0.80 and not is_guardrail:
-            hint = f"leaning treatment  ({sig})"
+            hint = "leaning treatment"
         elif ctw <= 0.05 and not is_guardrail:
-            hint = f"treatment appears harmful  ({sig})"
+            hint = "treatment appears harmful"
         elif ctw <= 0.20 and not is_guardrail:
-            hint = f"leaning control  ({sig})"
+            hint = "leaning control"
         else:
-            hint = f"inconclusive  ({sig})"
+            hint = "inconclusive"
 
         lines.append(
             f"> {prefix}P(win)={ctw:.0%}  "
@@ -569,7 +468,7 @@ def format_metric_section(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 7. MAIN
+# 6. MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main(slug: str) -> None:

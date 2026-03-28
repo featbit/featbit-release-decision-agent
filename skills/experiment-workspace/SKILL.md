@@ -106,7 +106,13 @@ The agent does not need to touch any online dashboard. Creating `definition.md` 
    python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
    ```
 4. Read the output in `.featbit-release-decision/experiments/<slug>/analysis.md`
-5. Hand off to `evidence-analysis` with `analysis.md` as the input
+5. Key outputs to check before handing off:
+   - **P(win)** ≥ 95% → strong signal; ≤ 5% → likely harmful; 20–80% → inconclusive
+   - **risk[trt]** — if P(win) is near a boundary, this tells you how costly a wrong call is
+   - **SRM check** — if χ² p-value < 0.01, stop and investigate traffic split before interpreting metrics
+6. Hand off to `evidence-analysis` with both `analysis.md` and `definition.md` as inputs
+
+For the full list of metric types and usage patterns (proportion, continuous, inverse, multiple arms, informative prior), see `references/analysis-bayesian.md`.
 
 ### "I want to update the data and re-run"
 
@@ -132,6 +138,7 @@ The agent does not need to touch any online dashboard. Creating `definition.md` 
 - `observation_window.start` must match when the flag was actually enabled. Do not backfill earlier — pre-flag data is not part of the experiment.
 - Verify `input.json` sanity before running analysis: `k` ≤ `n` for every row, variant keys match `definition.md`, no zero `n` values.
 - Do not interpret results by eyeballing `input.json`. Always run `analyze-bayesian.py` and read `analysis.md`.
+- If the SRM check flags an imbalance (χ² p < 0.01), do not proceed to `evidence-analysis` — the data is unreliable.
 - "The script says 97% confidence" does not mean "ship it." That is `evidence-analysis`'s job.
 
 ---
