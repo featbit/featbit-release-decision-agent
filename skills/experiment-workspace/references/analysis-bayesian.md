@@ -180,24 +180,29 @@ If your continuous metric is highly skewed, increase the floor to 500+.
 
 ---
 
-### The Bayesian stopping logic: watch risk converge
+### Reading risk values to judge whether to decide
 
 Reaching `minimum_sample_per_variant` only means the results are safe to read. It does not mean you should stop.
 
-In a Bayesian experiment, you keep running until the posterior has updated enough that the risk of a wrong decision is acceptable:
+After reaching the floor, re-run the analysis periodically:
 
-- **Stop when `risk[trt]` drops below your loss threshold** → the cost of shipping treatment even if you're wrong is negligible → ship
-- **Stop when `risk[ctrl]` drops below your opportunity cost threshold** → the cost of staying on control even if you're wrong is negligible → hold
-- **Neither drops within your observation window** → inconclusive → do not force a decision
-
-Risk falls naturally as sample size grows and the posterior narrows. You cannot predict exactly when it will drop — it depends on the true effect size. A large true effect causes rapid convergence; a small or zero effect causes risk to plateau and never drop cleanly.
-
-```
-Small sample   →  wide posterior  →  high risk on both sides  →  keep running
-Large sample   →  narrow posterior →  one side's risk drops    →  ready to decide
+```bash
+python .featbit-release-decision/scripts/collect-input.py <slug>
+python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
 ```
 
-This is fundamentally different from frequentist thinking, which requires you to fix the sample size before collecting data. The Bayesian approach lets you check periodically after the validity floor is reached and decide when the evidence is sufficient for your risk tolerance.
+Then open `analysis.md` and read `risk[trt]` and `risk[ctrl]`. These are outputs computed by the script — there is no configuration field for them. The judgment of "low enough" is made by you or the agent running `evidence-analysis` by comparing the values to the reference ranges in the Decision Guide below.
+
+How risk behaves as sample grows:
+
+```
+Small sample   →  wide posterior  →  risk[trt] and risk[ctrl] both high  →  keep running
+Large sample   →  narrow posterior →  one side's risk drops               →  ready to decide
+```
+
+Risk falls as sample size grows and the posterior narrows. A large true effect causes rapid convergence. A small or absent effect causes risk to plateau — both sides stay uncertain — which is the correct signal that the experiment is genuinely inconclusive.
+
+The judgment step — "is risk[trt] low enough to ship?" — belongs to `evidence-analysis`, not to this script.
 
 ---
 

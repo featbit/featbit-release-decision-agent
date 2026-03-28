@@ -79,7 +79,39 @@ This setup is idempotent — safe to re-run if files are already present.
 3. Create `.featbit-release-decision/experiments/<slug>/definition.md` from the template in `references/experiment-folder-spec.md`
 4. Copy `hypothesis:` verbatim from `.featbit-release-decision/intent.md`
 5. Confirm the `observation_window.start` date — this is today if the flag was just enabled
-6. Set `minimum_sample_per_variant` — default 200 unless the user has a specific power calculation
+6. Set `minimum_sample_per_variant` using the following fallback chain. Do not expose the formula to the user at any step.
+
+   **Step 1 — read the hypothesis in `intent.md`:**
+   - Does it mention a current baseline rate? (e.g. "increase signup rate from 4% to 5%" → p_baseline = 0.04)
+   - Does it mention an expected lift that implies a current level? Extract the number and compute `ceil(30 / p_baseline)`
+
+   **Step 2 — infer from metric event name and funnel stage:**
+   - Re-read the primary metric event name: does it suggest a funnel position?
+   - Use these heuristics as a starting estimate:
+
+     | Metric type | Typical baseline range | Suggested floor |
+     |-------------|----------------------|-----------------|
+     | Button click / CTA | 3–10% | 500 |
+     | Signup / registration | 1–5% | 1,000 |
+     | Purchase / checkout | 1–3% | 1,500 |
+     | Feature engagement (active users) | 10–30% | 200 |
+     | Error rate / latency (inverse) | 1–5% | 1,000 |
+
+   **Step 3 — collect a short baseline sample from the control group (most accurate):**
+   - If the flag has been live for at least 1–3 days, guide the user to pull control-only data for that period and share it with the agent.
+   - Tell the user exactly what numbers are needed:
+     > "To get an accurate baseline, I need two numbers from your control group for the past few days:
+     > - **n** — how many unique users were exposed to the control variant
+     > - **k** — how many of those users triggered the '[metric event]' event
+     > You can get these from FeatBit's experiment results, your database, or your analytics tool."
+   - Once the user provides `n` and `k`: compute `p_baseline = k / n`, then set `ceil(30 / p_baseline)` — this overrides any estimate from Steps 1–2
+
+   **Step 4 — ask the user only if Steps 1–3 all fail:**
+   "What is the current conversion rate for [metric name]? A rough estimate is fine, e.g. 'about 5%' or 'maybe 1 in 20 users'."
+
+   **Step 5 — if no estimate is available from any source:**
+   - Use 1,000 as a safe conservative default (assumes ~3% baseline)
+   - Record the assumption explicitly in `definition.md` as a comment so it can be revised once real data arrives
 7. Update `.featbit-release-decision/intent.md`: `stage: measuring`
 8. Tell the user: the next step is to collect data (customize `collect-input.py` if needed), then run the analysis
 

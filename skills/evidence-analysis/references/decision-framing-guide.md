@@ -16,27 +16,30 @@ These are **action categories**, not statistical verdicts. They exist to produce
 
 **Meaning:** The evidence supports proceeding with the planned rollout expansion.
 
-**Conditions:**
-- Primary metric is moving in the expected direction
-- All guardrail metrics are within acceptable range
-- Observation window is complete
+**Conditions (read from `analysis.md`):**
+- Primary metric P(win) ≥ 95%
+- Primary metric risk[trt] is low (< 0.01 as a general reference — calibrate to your metric's business impact)
+- All guardrail P(win) > 20% (no harm signal on any guardrail)
+- Observation window is complete (≥ one full business cycle)
+- SRM check passed
 
 **What to say:**
-> "The primary metric [metric name] shows [direction] of [magnitude] for the candidate variant. Guardrails are healthy. Recommend proceeding to Phase 2 at [next %]."
+> "The primary metric [metric name] shows P(win) = [X]% with risk[trt] = [value] for the candidate variant. Guardrails are healthy (all P(win) > 20%). Recommend proceeding to Phase 2 at [next %]."
 
 ---
 
 ### PAUSE
 
-**Meaning:** Something needs investigation before the rollout expands. Not necessarily harmful — unclear.
+**Meaning:** Something needs investigation before the rollout expands. Not necessarily harmful — signal is mixed or incomplete.
 
-**Conditions:**
-- A guardrail metric shows unexpected movement (not necessarily crossed threshold yet)
-- The primary metric is flat or mixed across user segments
-- An instrumentation anomaly was detected
+**Conditions (read from `analysis.md`):**
+- Primary metric P(win) is 80–95% (leaning positive but not conclusive)
+- Or a guardrail P(win) ≤ 20% (possible harm — not yet confirmed)
+- Or risk[trt] is above 0.01 despite high P(win) (the downside of being wrong is meaningful)
+- Or an instrumentation anomaly or SRM issue was detected
 
 **What to say:**
-> "The primary metric shows [direction], but [guardrail metric] has moved [direction] beyond the expected range. Recommend pausing at current exposure while investigating [specific signal]."
+> "The primary metric shows P(win) = [X]%, but [guardrail metric] P(win) = [Y]% — a possible harm signal. Recommend pausing at current exposure while investigating [specific signal]."
 
 ---
 
@@ -44,13 +47,13 @@ These are **action categories**, not statistical verdicts. They exist to produce
 
 **Meaning:** Evidence indicates the candidate variant is causing harm.
 
-**Conditions:**
-- A guardrail metric has degraded beyond the pre-defined rollback threshold
-- Primary metric has moved in the wrong direction with sufficient sample
-- Critical errors or regressions are attributable to the candidate variant
+**Conditions (read from `analysis.md`):**
+- A guardrail P(win) ≤ 5% (strong harm signal on a protected metric)
+- Or primary metric P(win) ≤ 5% (treatment is very likely worse)
+- Or critical errors or regressions are directly attributable to the candidate variant
 
 **What to say:**
-> "Evidence indicates the candidate variant is degrading [guardrail metric] by [magnitude]. This exceeds the pre-defined rollback threshold of [threshold]. Recommend disabling the candidate variant immediately and investigating [root cause area]."
+> "Evidence indicates the candidate variant is degrading [guardrail metric]: P(win) = [X]%, risk[ctrl] = [value]. Recommend disabling the candidate variant immediately and investigating [root cause area]."
 
 Do NOT soften ROLLBACK CANDIDATE language. Clarity is operational here.
 
@@ -60,13 +63,14 @@ Do NOT soften ROLLBACK CANDIDATE language. Clarity is operational here.
 
 **Meaning:** The collected evidence is genuinely insufficient to support a directional decision.
 
-**Conditions:**
-- Sample size is too small to distinguish signal from noise
-- External contamination (holiday, marketing event, outage) compromised the window
-- Both variants show essentially identical results and more time would help
+**Conditions (read from `analysis.md`):**
+- Sample per variant is below `minimum_sample_per_variant` in `definition.md`
+- Or risk[trt] and risk[ctrl] are both still high (> 0.02) — posterior has not yet narrowed enough
+- Or primary metric P(win) is 20–80% after a full observation window has elapsed
+- Or external contamination (holiday, marketing event, outage) compromised the window
 
 **What to say:**
-> "Current evidence is insufficient for a directional decision. [Sample size] exposures were collected over [X days]. The primary metric shows [direction] of [magnitude], which is within noise range at this sample size. Recommend extending the observation window by [time] before deciding."
+> "Current evidence is insufficient for a directional decision. [N] exposures per variant collected over [X days]. Primary metric P(win) = [X]% with risk[trt] = [value] — posterior has not converged. Recommend extending the observation window by [time] before deciding."
 
 ---
 
@@ -78,8 +82,11 @@ If the primary metric is positive but you're uncertain, that's CONTINUE with a c
 **Calling PAUSE when you mean ROLLBACK CANDIDATE**  
 Do not soften "evidence of harm" into "let's investigate." If a pre-defined rollback threshold was crossed, the category is ROLLBACK CANDIDATE regardless of discomfort with the decision.
 
-**Citing p-values as the decision basis**  
-The categories are framed by business impact, not statistical significance language. "p < 0.05" tells reviewers nothing actionable. "Conversion rate increased by 4.2 percentage points across 3,400 sessions" does.
+**Citing P(win) alone without risk**
+P(win) = 94% sounds convincing, but if risk[trt] is still high (> 0.01), the downside of being wrong is meaningful. Always pair P(win) with risk[trt] when framing a CONTINUE recommendation. "P(win) = 96%, risk[trt] = 0.003 across 4,200 exposures" is an actionable statement. "P(win) = 94%" alone is not.
+
+**Describing magnitude in statistical terms instead of business terms**
+"P(win) = 97%" tells reviewers nothing about the actual change. "Click rate increased from 5.1% to 6.3% (+24% relative) with P(win) = 97%" does.
 
 **Waiting for certainty before framing**  
 These categories support decisions under uncertainty. INCONCLUSIVE is a valid and honest frame — use it rather than delaying.
