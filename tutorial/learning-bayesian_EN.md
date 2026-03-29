@@ -293,6 +293,113 @@ The prior pulls the posterior mean toward historical knowledge. With small sampl
 
 ---
 
+## Chapter 7: 95% Credible Interval
+
+### Frequentist Confidence Interval vs Bayesian Credible Interval
+
+The strict meaning of a **frequentist confidence interval** is counterintuitive:
+
+> "If I repeated this experiment 100 times, 95 of the resulting intervals would contain the true value."
+
+It describes the long-run performance of the interval-construction method — not that "the true value has a 95% probability of being inside this interval."
+
+A **Bayesian credible interval** says directly:
+
+> "The true δ (delta) has a 95% probability of falling within this interval."
+
+This is what most people assume a confidence interval means. Bayesian makes that statement mathematically valid.
+
+---
+
+### Why can Bayesian make this claim?
+
+The key is: **Bayesian treats δ itself as a random variable. Frequentist does not.**
+
+**Frequentist worldview:**
+> The true δ is a fixed number — you just don't know what it is. A fixed number has no probability — it either falls in the interval or it doesn't. So frequentists can only say: "my interval-construction method has a 95% hit rate in the long run."
+
+**Bayesian worldview:**
+> I have uncertainty about the true δ, and that uncertainty can be expressed as probability. δ is random to me — not because it truly varies, but because **I don't know its true value**. So I can say: "given the data I observed, there is a 95% probability that δ falls in this interval."
+
+**Everyday analogy:**
+
+You can't find your keys:
+- Frequentist: the keys are in a fixed location. I can't say "there's a 70% chance they're in the kitchen." I can only say "my search strategy has a 95% success rate in the long run."
+- Bayesian: I don't know where the keys are — based on my memory, 70% chance they're in the kitchen, 20% in the bedroom, 10% somewhere else.
+
+Bayesian allows you to express **subjective uncertainty** as probability.
+
+---
+
+### How the script computes it
+
+The posterior is `N(μ_rel, se²)`. The 95% credible interval is the **middle 95% of that normal curve**:
+
+```
+ci_lower = μ_rel - 1.96 × se
+ci_upper = μ_rel + 1.96 × se
+```
+
+Why 1.96? A property of the normal distribution: ±1.96 standard deviations from the mean covers exactly 95% of the area.
+
+```python
+z_half   = norm.ppf(1.0 - 0.05 / 2)   # = 1.96
+ci_lower = μ_rel - z_half × se
+ci_upper = μ_rel + z_half × se
+```
+
+Using the CTA click-rate example:
+
+```
+μ_rel = +15.52%,  se = 8.79%
+
+ci_lower = 15.52% - 1.96 × 8.79% = +0.29%
+ci_upper = 15.52% + 1.96 × 8.79% = +30.75%
+
+95% credible interval: [+0.29%, +30.75%]
+```
+
+Meaning: **after seeing this data, the true lift has a 95% probability of being between +0.29% and +30.75%.**
+
+The wide interval reflects se = 8.79% — the sample is not yet large enough. As sample size grows, se shrinks and the interval narrows.
+
+---
+
+### What is the credible interval useful for?
+
+**1. Judging whether the result has practical significance**
+
+P(win) only tells you the direction. CI tells you the magnitude:
+
+```
+Case A: P(win) = 96%, CI = [+0.1%, +1.2%]  → lift may be tiny — worth shipping?
+Case B: P(win) = 96%, CI = [+8%,  +25%]   → even the conservative estimate is +8%
+```
+
+**P(win) tells you direction. CI tells you magnitude.**
+
+**2. Judging whether to keep running**
+
+```
+Early   (small n): CI = [-5%, +35%]   → very wide, still uncertain — keep running
+Middle  (more n):  CI = [+3%, +28%]   → narrowing, but still a wide range
+Late    (large n): CI = [+10%, +21%]  → stable and narrow — ready to decide
+```
+
+**3. Comparing against your MDE**
+
+MDE (Minimum Detectable Effect) = the smallest lift that is worth acting on.
+
+Example with MDE = +5%:
+
+```
+CI = [+0.1%, +12%]  → lower bound below MDE — keep running
+CI = [+6%,  +18%]   → entire interval above MDE — ready to decide
+CI = [+0.5%, +3%]   → entire interval below MDE — not worth shipping even if treatment wins
+```
+
+---
+
 ## Learning Progress
 
 - [x] Chapter 1: Why Bayesian?
@@ -301,7 +408,7 @@ The prior pulls the posterior mean toward historical knowledge. With small sampl
 - [x] Chapter 4: The posterior distribution N(μ_rel, se²)
 - [x] Chapter 5: How P(win) is computed
 - [x] Chapter 6: How this relates to Bayes
-- [ ] Chapter 7: 95% Credible Interval
+- [x] Chapter 7: 95% Credible Interval
 - [ ] Chapter 8: Risk (expected loss)
 - [ ] Chapter 9: SRM check
 - [ ] Chapter 10: Using an informative prior
