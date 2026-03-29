@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(xargs grep:*)",
-      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(find C:/Code/featbit -maxdepth 3 -name *bayesian* -o -name *harness* -o -name experiment-workspace)"
     ]
   }
 }
