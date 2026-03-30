@@ -331,6 +331,40 @@ When to keep flat (`proper: false`):
 
 The `analysis.md` header always states which mode was used: `flat/improper (data-only)` or `proper (mean=X, stddev=Y)`.
 
+#### How to derive `mean` and `stddev` from historical experiments
+
+If you have results from a past experiment, read `rel Δ` and the `95% credible CI` from its `analysis.md`:
+
+```
+prior mean   = rel Δ  (e.g. +0.12 for a +12% lift)
+prior stddev = (ci_upper − ci_lower) / (2 × 1.96)
+               (e.g. CI [+4%, +20%] → stddev = (0.20 − 0.04) / 3.92 ≈ 0.041)
+```
+
+Note: `se` is not directly shown in `analysis.md`. Derive it from the credible interval width as above.
+
+If you have multiple past experiments, use the average `rel Δ` as `mean` and the standard deviation across those lifts as `stddev`.
+
+#### Two-phase approach: run a pilot first, then start a fresh experiment with a prior
+
+A valid and practical workflow when you have no prior history:
+
+```
+Phase A — pilot (days 1–5):
+  Run the experiment normally with proper: false (flat prior).
+  After phase A, read rel Δ and 95% credible CI from analysis.md.
+  Compute: mean = rel Δ,  stddev = (ci_upper − ci_lower) / (2 × 1.96)
+
+Phase B — main experiment (day 6 onward):
+  Reset the observation window. input.json must contain only data from day 6 onward.
+  Set prior using phase A results:
+    mean:   <rel Δ from phase A>
+    stddev: <derived from CI above>
+    proper: true
+```
+
+**Critical rule:** the data from phase A and phase B must never overlap. If you re-use phase A data in phase B's `input.json`, the early data is counted twice and the posterior will be biased. Reset the window completely before collecting phase B data.
+
 ---
 
 ### Pattern 6 — Primary metric + guardrail metrics
@@ -416,6 +450,8 @@ A good signal is one that **holds steady** as more data arrives, not one that sp
 ### SRM (Sample Ratio Mismatch)
 
 A χ² p-value < 0.01 is a red flag: the traffic split is not what you configured. **Do not draw conclusions from the metric results until the root cause is fixed.**
+
+**When SRM passes (p ≥ 0.01):** traffic allocation looks normal based on the `n` values you provided. This check is only as reliable as your data. Ensure `n` is the **unique user exposure count** (DISTINCT users assigned to each variant), not the number of flag evaluation events — the same user can trigger multiple evaluations, which inflates counts and can mask or create a false SRM signal.
 
 Common causes to investigate in order:
 

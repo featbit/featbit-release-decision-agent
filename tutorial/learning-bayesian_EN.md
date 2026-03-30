@@ -122,6 +122,8 @@ The closer the mean is to 0.5, the larger the variance (maximum uncertainty). Th
       = +15.52%
 ```
 
+> Naming note: the same value appears under three different names — **μ_rel** in this tutorial, **δ (delta)** as a mathematical symbol, and **`rel Δ`** (short for "relative delta") as the column name in the `analysis.md` output table. All three refer to the same number.
+
 **se = how uncertain we are about μ_rel:**
 
 Computed via the Delta Method:
@@ -663,13 +665,19 @@ If you use the first 3 days of the experiment to set a prior, then compute the p
 
 ```
 Experiment A: days 1–5, collect baseline data
-  → observe δ ≈ 12%, se ≈ 8%
-  → set prior: mean = 0.12, stddev = 0.08
+  → read from analysis.md: rel Δ = +12%, 95% CI = [+4%, +20%]
+  → derive prior parameters:
+      mean   = rel Δ = 0.12
+      stddev = (ci_upper - ci_lower) / (2 × 1.96)
+             = (0.20 - 0.04) / 3.92 ≈ 0.041
 
 Experiment B: reset observation window on day 6
   → input.json contains only data from day 6 onward
+  → set in definition.md: proper: true, mean: 0.12, stddev: 0.041
   → prior + new data → posterior
 ```
+
+Note: `analysis.md` does not output `se` directly — derive it from the 95% credible interval as shown above. `rel Δ` is the same value as μ_rel / δ (delta).
 
 | Situation | Valid? |
 |-----------|--------|

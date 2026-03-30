@@ -112,8 +112,13 @@ This setup is idempotent — safe to re-run if files are already present.
    **Step 5 — if no estimate is available from any source:**
    - Use 1,000 as a safe conservative default (assumes ~3% baseline)
    - Record the assumption explicitly in `definition.md` as a comment so it can be revised once real data arrives
-7. Update `.featbit-release-decision/intent.md`: `stage: measuring`
-8. Tell the user: the next step is to collect data (customize `collect-input.py` if needed), then run the analysis
+7. Ask the user whether they have prior knowledge about the expected lift for this metric:
+   - "Do you have results from a similar past experiment? If so, what was the approximate lift and how uncertain was it?"
+   - If the user provides a past `μ_rel` and `se` (or a rough range): set `proper: true`, `mean: <μ_rel>`, `stddev: <se>` in `definition.md`
+   - If the user ran a pilot phase (separate experiment window) and has its `analysis.md`: read `μ_rel` and `se` from it and use those as the prior — but only if the pilot data will **not** be included in the new experiment's `input.json`
+   - If no prior knowledge is available: set `proper: false` (flat prior, the safe default) and note this in `definition.md`
+8. Update `.featbit-release-decision/intent.md`: `stage: measuring`
+9. Tell the user: the next step is to collect data (customize `collect-input.py` if needed), then run the analysis
 
 The agent does not need to touch any online dashboard. Creating `definition.md` is the equivalent of "creating an experiment".
 
