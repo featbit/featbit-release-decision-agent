@@ -18,3 +18,5 @@ secrets.json
 # OS files
 .DS_Store
 Thumbs.db
+
+tutorial/experimentation-for-engineers.md
