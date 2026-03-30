@@ -625,6 +625,84 @@ How to correctly interpret SRM results:
 
 ---
 
+## Chapter 10: Using an Informative Prior
+
+### What is a prior?
+
+A prior is your existing belief about δ **before seeing the experiment data**.
+
+The script supports two modes:
+
+```markdown
+prior:
+  proper: false   # default: flat prior — posterior is driven entirely by data
+  proper: true    # enabled: historical knowledge influences the posterior
+  mean:   0.0     # expected direction of lift (0 = no expected direction)
+  stddev: 0.3     # plausible range of lift (±30%)
+```
+
+---
+
+### When should you use a prior?
+
+**Valid sources: independent information from before the experiment**
+
+- Results from similar past experiments
+- Industry knowledge or domain expertise
+- External data completely unrelated to this experiment's data
+
+**Invalid source: early data from this experiment**
+
+If you use the first 3 days of the experiment to set a prior, then compute the posterior using all data (including those 3 days) — the early data is used twice. The result is biased toward early noise and is statistically invalid.
+
+---
+
+### "Run 3-5 days first, then start a new experiment using that data as a prior" — is this valid?
+
+**Yes, completely valid. This is the correct approach.** The key requirement is that the two experiments' data must be entirely separate:
+
+```
+Experiment A: days 1–5, collect baseline data
+  → observe δ ≈ 12%, se ≈ 8%
+  → set prior: mean = 0.12, stddev = 0.08
+
+Experiment B: reset observation window on day 6
+  → input.json contains only data from day 6 onward
+  → prior + new data → posterior
+```
+
+| Situation | Valid? |
+|-----------|--------|
+| Experiment A data as prior, Experiment B uses fresh data | ✅ Valid |
+| First 3 days as prior, posterior computed with all data including those 3 days | ❌ Data used twice |
+
+---
+
+### Actual effect of the prior
+
+| Sample size | Prior influence |
+|-------------|----------------|
+| Small (n < 200) | Strong — result pulled toward prior mean |
+| Medium | Partial shrinkage |
+| Large (n > 1000) | Data dominates — prior is nearly irrelevant |
+
+With a large enough sample, results are almost identical with or without a prior. The prior only has a meaningful effect when **samples are small and noise is high**.
+
+---
+
+### Current documentation gaps (to be improved)
+
+The current `analysis-bayesian.md` and `SKILL.md` have two gaps in how they guide users on priors:
+
+| Location | Gap |
+|----------|-----|
+| `analysis-bayesian.md` | Does not explain how to derive `mean` and `stddev` from historical experiment data |
+| `SKILL.md` | Does not ask the user about prior knowledge when creating `definition.md` — the prior is effectively an invisible feature |
+
+The "run 3-5 days first, then start a new experiment" best practice is not mentioned anywhere in the current documentation. Both gaps will be addressed in a follow-up SKILL/reference improvement task after the tutorial is complete.
+
+---
+
 ## Learning Progress
 
 - [x] Chapter 1: Why Bayesian?
@@ -636,4 +714,4 @@ How to correctly interpret SRM results:
 - [x] Chapter 7: 95% Credible Interval
 - [x] Chapter 8: Risk (expected loss)
 - [x] Chapter 9: SRM check
-- [ ] Chapter 10: Using an informative prior
+- [x] Chapter 10: Using an informative prior
