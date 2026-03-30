@@ -510,6 +510,121 @@ The engineering change takes half a day, and validating this direction is urgent
 
 ---
 
+## Chapter 9: SRM Check (Sample Ratio Mismatch)
+
+### What is SRM?
+
+You configured a 50/50 split, but the actual data shows control=5000, treatment=4750 — is this normal random variation, or is something wrong?
+
+The SRM check uses a **χ² (chi-squared) test** to answer this: is the difference between the observed traffic split and the expected split beyond what random variation can explain?
+
+```python
+srm_p = srm_check([n_control, n_treatment])
+# p < 0.01 → red flag, traffic allocation is off
+```
+
+When p-value < 0.01, the output is:
+```
+⚠ POSSIBLE IMBALANCE — investigate before interpreting results
+```
+
+---
+
+### Why does Bayesian analysis need an SRM check?
+
+The fundamental assumption of Bayesian analysis is that control and treatment have **comparable user populations**.
+
+If traffic allocation went wrong — say treatment accidentally attracted more high-value users — then the observed δ is not because treatment is better, but because **the two groups were different to begin with**. In that case, P(win) = 96% is meaningless — garbage in, garbage out.
+
+**Analogy:** You want to compare the food quality of two restaurants, but one is full of food critics and the other is full of people grabbing a quick lunch. Different ratings don't mean different food quality — the samples themselves are incomparable.
+
+The correct flow is:
+
+```
+Receive data
+  → Run SRM check first
+  → SRM passes → run Bayesian analysis → read P(win) / risk / CI
+  → SRM fails  → stop and investigate, do not read Bayesian results
+```
+
+In the script, `srm_block` always appears at the top of `analysis.md` — the order is fixed.
+
+---
+
+### Why does SRM use p-value instead of Bayesian?
+
+SRM and Bayesian analysis are two independent problems that use different tools:
+
+| Question | Tool | Why |
+|----------|------|-----|
+| Is treatment better? | Bayesian posterior | Needs a direct probability statement for decision-making |
+| Is traffic allocation normal? | Frequentist χ² test | Only needs a yes/no alarm — p-value is sufficient |
+
+SRM only needs to answer a binary question: "is this deviation random noise or a systematic problem?" For anomaly detection, p-value is exactly the right tool.
+
+> Bayesian is for **quantifying effects**. Frequentist is for **detecting anomalies**. Both coexist in the same script without conflict.
+
+---
+
+### Why feature flag setups are especially prone to SRM
+
+**1. SDK initialisation timing**
+A user enters the page before the flag evaluation completes, and an event fires before the exposure is recorded. Some users get assigned a variant but are not counted as exposed.
+
+**2. Cache or persistence inconsistency**
+A user is assigned to treatment on their first visit, then clears cookies or switches devices and gets assigned to control — the same user ends up counted in both buckets.
+
+**3. Staged rollout**
+You didn't open to 50/50 all at once — you went 10%, then 30%, then 50%. The experiment window start time doesn't match when the split was truly 50/50, polluting early data.
+
+**4. Bot traffic**
+Crawlers get assigned to a variant but behave very differently from real users, and tend to cluster in one bucket.
+
+---
+
+### SRM check input: n must be unique user count
+
+The SRM check needs only one input: **the number of exposed users `n` per variant**.
+
+The script reads it directly from the primary metric in `input.json`:
+
+```python
+ns = [pm.get(v, {}).get("n", 0) for v in all_variants]
+srm_p = srm_check(ns)
+```
+
+**Critical: `n` must be unique user exposure count (DISTINCT users), not event count.**
+
+| Data source | Meaning | Valid for SRM? |
+|-------------|---------|----------------|
+| Flag evaluation count | Same user may be evaluated multiple times | ❌ Wrong |
+| Unique user exposure count | Each user counted once | ✅ Correct |
+
+Correct query:
+
+```sql
+SELECT variant, COUNT(DISTINCT user_key) AS n
+FROM exposures
+WHERE experiment_slug = '<slug>'
+  AND timestamp BETWEEN start AND end
+GROUP BY variant
+```
+
+---
+
+### The limitation of SRM checks
+
+SRM is **post-hoc verification** — it cannot guarantee the correctness of the input data. The script has no way to know whether your `n` is a unique user count or an event count. That responsibility sits in the data collection step.
+
+How to correctly interpret SRM results:
+
+- **SRM passes (p ≥ 0.01):** Based on the `n` values you provided, traffic allocation looks normal — assuming `n` is defined correctly.
+- **SRM fails (p < 0.01):** In addition to investigating the traffic split, check whether data collection is correct — a wrong definition of `n` can also trigger an SRM alarm.
+
+> The quality ceiling of the SRM check depends on whether `n` is correctly defined. The script cannot verify this — it can only make the contract explicit in documentation and leave the responsibility with the data collection step.
+
+---
+
 ## Learning Progress
 
 - [x] Chapter 1: Why Bayesian?
@@ -520,5 +635,5 @@ The engineering change takes half a day, and validating this direction is urgent
 - [x] Chapter 6: How this relates to Bayes
 - [x] Chapter 7: 95% Credible Interval
 - [x] Chapter 8: Risk (expected loss)
-- [ ] Chapter 9: SRM check
+- [x] Chapter 9: SRM check
 - [ ] Chapter 10: Using an informative prior
