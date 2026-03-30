@@ -400,21 +400,6 @@ CI = [+0.5%, +3%]   → entire interval below MDE — not worth shipping even if
 
 ---
 
-## Learning Progress
-
-- [x] Chapter 1: Why Bayesian?
-- [x] Chapter 2: Two metric types (proportion / continuous / inverse)
-- [x] Chapter 3: Every variable — definition and calculation (mean, var, μ_rel, se)
-- [x] Chapter 4: The posterior distribution N(μ_rel, se²)
-- [x] Chapter 5: How P(win) is computed
-- [x] Chapter 6: How this relates to Bayes
-- [x] Chapter 7: 95% Credible Interval
-- [x] Chapter 8: Risk (expected loss)
-- [ ] Chapter 9: SRM check
-- [ ] Chapter 10: Using an informative prior
-
----
-
 ## Chapter 8: Risk (Expected Loss)
 
 ### Intuition
@@ -522,3 +507,18 @@ Daily loss = $0.90 × 1,000 = $900/day
 The engineering change takes half a day, and validating this direction is urgent. → **Acceptable. Ship and monitor.**
 
 **Key takeaway:** `risk[trt]` gives you a **relative proportion**, not an absolute dollar amount. You need to convert it into business units yourself, then weigh it against shipping cost and business urgency. This judgment step belongs to `evidence-analysis` — the script does not make this call for you.
+
+---
+
+## Learning Progress
+
+- [x] Chapter 1: Why Bayesian?
+- [x] Chapter 2: Two metric types (proportion / continuous / inverse)
+- [x] Chapter 3: Every variable — definition and calculation (mean, var, μ_rel, se)
+- [x] Chapter 4: The posterior distribution N(μ_rel, se²)
+- [x] Chapter 5: How P(win) is computed
+- [x] Chapter 6: How this relates to Bayes
+- [x] Chapter 7: 95% Credible Interval
+- [x] Chapter 8: Risk (expected loss)
+- [ ] Chapter 9: SRM check
+- [ ] Chapter 10: Using an informative prior
