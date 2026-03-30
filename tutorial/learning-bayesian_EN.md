@@ -409,6 +409,116 @@ CI = [+0.5%, +3%]   → entire interval below MDE — not worth shipping even if
 - [x] Chapter 5: How P(win) is computed
 - [x] Chapter 6: How this relates to Bayes
 - [x] Chapter 7: 95% Credible Interval
-- [ ] Chapter 8: Risk (expected loss)
+- [x] Chapter 8: Risk (expected loss)
 - [ ] Chapter 9: SRM check
 - [ ] Chapter 10: Using an informative prior
+
+---
+
+## Chapter 8: Risk (Expected Loss)
+
+### Intuition
+
+Risk answers two symmetric questions:
+
+| Question | Corresponding risk |
+|----------|--------------------|
+| If I **don't ship** treatment, but treatment is actually better — how much opportunity did I lose? | `risk[ctrl]` |
+| If I **ship** treatment, but control is actually better — how much did I lose? | `risk[trt]` |
+
+Both values are "expected loss" — not the worst case, but the **probability-weighted average loss**.
+
+---
+
+### Formula
+
+```
+risk[ctrl] = E[max(0,  δ)] = ∫₀^∞  δ · p(δ) dδ
+risk[trt]  = E[max(0, -δ)] = ∫₋∞^0 |δ| · p(δ) dδ
+```
+
+In plain language:
+
+- `risk[ctrl]`: take the **δ > 0 portion** of the posterior curve, weighted by probability — if you stay on control while treatment is actually better, how much relative lift do you lose on average?
+- `risk[trt]`: take the **δ < 0 portion** of the posterior curve, weighted by probability — if you ship treatment while control is actually better, how much do you lose on average?
+
+---
+
+### Example 1: Proportion metric (CTA click-through rate)
+
+Posterior: `δ ~ N(+15.52%, 8.79%²)`, P(win) = 96.1%
+
+Because the posterior mean sits far to the right of 0:
+- Only 3.9% of the curve is in δ < 0 territory → `risk[trt]` is very small
+- 96.1% of the curve is in δ > 0 territory → `risk[ctrl]` is large
+
+Actual output:
+```
+risk[ctrl] = 0.1498   (not shipping costs ~15% of the control mean in expected opportunity)
+risk[trt]  = 0.0026   (shipping and being wrong costs ~0.26% of the control mean)
+```
+
+**Conclusion: the cost of shipping is negligible (0.26%), the cost of not shipping is high (15%). Ship it.**
+
+To interpret 0.26%: control click rate is 6%, so `risk[trt] = 0.0026` means an average loss of 0.0026 × 6% ≈ 0.016% in click rate — essentially negligible.
+
+---
+
+### Example 2: Continuous metric (revenue per user)
+
+Posterior: `δ ~ N(+5.65%, 1.64%²)`, P(win) = 99.97%
+
+The posterior mean is even further from 0 (~3.4 standard deviations), so results are highly certain:
+
+```
+risk[ctrl] = 0.0565   (not shipping costs ~5.65% of the control mean)
+risk[trt]  = 0.0000   (shipping and being wrong costs almost nothing)
+```
+
+**Conclusion: P(win) is extremely high, risk[trt] is near zero. Ship it.**
+
+To interpret: control mean is $9.0/user, so `risk[trt] ≈ 0` means the downside of being wrong is negligible.
+
+---
+
+### How this relates to "shipping cost"
+
+Before shipping treatment, you need to ask: **if I'm wrong, is the expected loss smaller than the cost of shipping itself?**
+
+`risk[trt]` is the precise quantification of that question:
+
+| risk[trt] | Interpretation |
+|-----------|----------------|
+| < 0.001 | Loss < 0.1% — safe to ship |
+| 0.001 – 0.01 | Loss 0.1%–1% — acceptable for most product decisions |
+| > 0.01 | Loss > 1% — weigh against business context before deciding |
+
+---
+
+### Example 3: What does "weigh against business context" mean?
+
+**Scenario:** Testing a new checkout flow:
+
+```
+P(win)          = 87%
+risk[trt]       = 0.018   (~1.8% of control mean)
+control mean    = $50/user revenue
+```
+
+`risk[trt] = 0.018` means: if you ship and you're wrong, average loss = 0.018 × $50 = **$0.90/user**.
+
+**Same numbers, two different business contexts, two different conclusions:**
+
+**Context A: E-commerce platform with 1M daily active users**
+```
+Daily loss = $0.90 × 1,000,000 = $900,000/day
+```
+P(win) is only 87% and the downside is large. → **Keep running. Wait until risk[trt] drops below 0.005.**
+
+**Context B: Early-stage product with 1,000 daily active users**
+```
+Daily loss = $0.90 × 1,000 = $900/day
+```
+The engineering change takes half a day, and validating this direction is urgent. → **Acceptable. Ship and monitor.**
+
+**Key takeaway:** `risk[trt]` gives you a **relative proportion**, not an absolute dollar amount. You need to convert it into business units yourself, then weigh it against shipping cost and business urgency. This judgment step belongs to `evidence-analysis` — the script does not make this call for you.
