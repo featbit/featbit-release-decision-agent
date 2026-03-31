@@ -44,14 +44,21 @@ Do not activate if:
     <experiment-slug>/
       definition.md            ← agent creates
       input.json               ← collect-input.py writes
-      analysis.md              ← analyze-bayesian.py writes
+      analysis.md              ← analyze-bayesian.py writes       [A/B]
+      bandit-weights.json      ← analyze-bandit.py writes         [Bandit]
       decision.md              ← agent writes after evidence-analysis
     archive/                   ← completed experiments moved here
   scripts/
-    analyze-bayesian.py        ← Bayesian analysis (complete, ready to run)
+    stats_utils.py             ← shared statistical utilities (imported by analysis scripts)
+    analyze-bayesian.py        ← Bayesian A/B analysis (complete, ready to run)
+    analyze-bandit.py          ← Thompson Sampling weight computation (complete, ready to run)
     collect-input.py           ← data collector placeholder (implement fetch_metric_summary)
     check-sample.sh            ← quick sample count check
 ```
+
+**Two experiment types:**
+- **A/B (default)**: fixed 50/50 traffic split, one-shot analysis → `analyze-bayesian.py`
+- **Bandit**: dynamic traffic reweighting via Thompson Sampling → `analyze-bandit.py` (requires FeatBit API integration for full automation)
 
 All agent-managed files for a project live under `.featbit-release-decision/`. The folder can be committed to git. No credentials or personally identifiable data should be stored here — `user_key` values should be pseudonymous identifiers.
 
@@ -62,11 +69,13 @@ All agent-managed files for a project live under `.featbit-release-decision/`. T
 ### "First time setup"
 
 1. Check whether `.featbit-release-decision/scripts/` exists in the project
-2. If not, copy the three scripts from `scripts/` into `.featbit-release-decision/scripts/`:
+2. If not, copy all scripts from `scripts/` into `.featbit-release-decision/scripts/`:
+   - `stats_utils.py` — shared utilities; must be present for both analysis scripts to run
    - `analyze-bayesian.py` — ready to run, no edits needed
+   - `analyze-bandit.py` — ready to run, no edits needed
    - `collect-input.py` — placeholder; user must implement `fetch_metric_summary()`
    - `check-sample.sh` — ready to run once `input.json` exists
-3. Tell the user: `collect-input.py` needs to be customized for their data source before it can be used. `analyze-bayesian.py` works out of the box once `input.json` exists.
+3. Tell the user: `collect-input.py` needs to be customized for their data source before it can be used. Both analysis scripts work out of the box once `input.json` exists. `stats_utils.py` must be in the same directory as the analysis scripts.
 
 This setup is idempotent — safe to re-run if files are already present.
 
@@ -160,6 +169,42 @@ For the full list of metric types and usage patterns (proportion, continuous, in
    ```
 3. `analysis.md` is overwritten with fresh numbers — both scripts are idempotent
 
+### "I want to run a Bandit experiment"
+
+A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It requires a continuous cycle of data collection → weight computation → FeatBit flag update.
+
+**Setup** (same as A/B — `definition.md` format is identical):
+1. Create `definition.md` following the standard template
+2. Choose `primary_metric_event` — bandit optimizes this single metric
+3. Note: bandit works best for proportion metrics (conversion rate, CTR)
+
+**Each reweighting cycle** (recommended every 6–24 hours):
+1. Collect fresh data → `input.json`
+2. Run:
+   ```bash
+   python .featbit-release-decision/scripts/analyze-bandit.py <slug>
+   ```
+3. Read `bandit-weights.json`:
+   - If `enough_units: false` → burn-in not complete, do not apply weights yet (need ≥ 100 users per arm)
+   - If `srm_p_value < 0.01` → SRM detected, investigate traffic split before applying weights
+   - Otherwise → apply `bandit_weights` to the FeatBit feature flag via API
+4. Update FeatBit feature flag rollout weights using the FeatBit API (see `references/analysis-bandit.md` for the conversion formula)
+
+**Stopping condition**: when `best_arm_probabilities[arm] >= 0.95` for any arm, stop reweighting.
+
+**After stopping — transition to final analysis**:
+1. Set winning arm to 100% in FeatBit
+2. Run final Bayesian analysis on full dataset:
+   ```bash
+   python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+   ```
+3. Hand off to `evidence-analysis` with:
+   - `analysis.md` (final Bayesian result — note: δ estimate may have wider uncertainty due to unequal traffic)
+   - `bandit-weights.json` (final `best_arm_probabilities` — most reliable decision signal)
+   - `definition.md`
+
+For full details on output interpretation and FeatBit API integration, see `references/analysis-bandit.md`.
+
 ### "I want to close the experiment"
 
 1. Ensure `decision.md` exists in `.featbit-release-decision/experiments/<slug>/` — written by agent after `evidence-analysis` framing
@@ -196,8 +241,11 @@ When handing off to `evidence-analysis`, pass the path to `analysis.md` and the 
 ## Reference Files
 
 - [references/experiment-folder-spec.md](references/experiment-folder-spec.md) — folder layout, file formats, `definition.md` template, `analysis.md` example, `decision.md` template
-- [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian analysis documentation, confidence interpretation, re-run instructions
+- [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian A/B analysis: metric types, prior patterns, output interpretation
+- [references/analysis-bandit.md](references/analysis-bandit.md) — Bandit analysis: Thompson Sampling, `bandit-weights.json` fields, FeatBit API integration, stopping condition
 - [references/data-source-guide.md](references/data-source-guide.md) — input contract and §FeatBit / §Database / §Custom patterns for producing `input.json`
-- [scripts/analyze-bayesian.py](scripts/analyze-bayesian.py) — ready-to-run Bayesian analysis script
+- [scripts/stats_utils.py](scripts/stats_utils.py) — shared statistical utilities (GaussianPrior, metric_moments, bayesian_result, srm_check, parse_*)
+- [scripts/analyze-bayesian.py](scripts/analyze-bayesian.py) — ready-to-run Bayesian A/B analysis script
+- [scripts/analyze-bandit.py](scripts/analyze-bandit.py) — ready-to-run Thompson Sampling weight computation script
 - [scripts/collect-input.py](scripts/collect-input.py) — data collector placeholder (implement `fetch_metric_summary`)
 - [scripts/check-sample.sh](scripts/check-sample.sh) — quick sample count check

@@ -49,304 +49,26 @@ Multiple treatment arms — add more variant keys matching definition.md.
 import json
 import re
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
-from scipy.stats import chi2 as chi2_dist
-from scipy.stats import norm
-from scipy.stats import truncnorm
-
-ALPHA = 0.05                      # credible interval = 1 − ALPHA
-
-
-@dataclass
-class GaussianPrior:
-    """
-    Gaussian prior on the relative effect δ = (mean_b − mean_a) / mean_a.
-
-    proper=False  → flat/improper prior (default); posterior = data likelihood only.
-    proper=True   → informative prior; posterior is the precision-weighted average
-                    of the prior and the data estimate (conjugate Gaussian update).
-
-    Recommended defaults when enabling a proper prior:
-        mean   = 0.0   (no expected direction)
-        stddev = 0.3   (±30% relative lift is the plausible range)
-    """
-    mean: float = 0.0
-    variance: float = 1e10   # effectively flat when proper=False
-    proper: bool = False
+from stats_utils import (
+    ALPHA,
+    GaussianPrior,
+    _pct,
+    bayesian_result,
+    load_definition,
+    metric_moments,
+    parse_guardrails,
+    parse_prior,
+    parse_variants,
+    srm_check,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 1. METRIC MOMENTS
+# FORMATTING
 # ══════════════════════════════════════════════════════════════════════════════
-
-def metric_moments(vdata: dict) -> tuple[float, float, int]:
-    """
-    Return (per-unit mean, per-unit variance, n) from a variant data dict.
-
-    Proportion  {"n": N, "k": K}                      → Bernoulli variance p(1−p)
-    Continuous  {"n": N, "sum": S, "sum_squares": SS}  → sample variance
-    """
-    n = int(vdata.get("n", 0))
-    if n == 0:
-        return 0.0, 0.0, 0
-    if "k" in vdata:
-        mean = float(vdata["k"]) / n
-        var  = mean * (1.0 - mean)
-    else:
-        s    = float(vdata.get("sum", 0.0))
-        ss   = float(vdata.get("sum_squares", 0.0))
-        mean = s / n
-        var  = (ss - s * s / n) / (n - 1) if n > 1 else 0.0
-    return mean, var, n
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. BAYESIAN ANALYSIS  (Gaussian posterior, flat / improper prior)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _delta_method_se(
-    mean_a: float, var_a: float, n_a: int,
-    mean_b: float, var_b: float, n_b: int,
-    relative: bool,
-) -> float:
-    """
-    Standard error for (mean_b − mean_a) [absolute] or
-    (mean_b − mean_a) / mean_a [relative] via the delta method.
-    """
-    if relative:
-        if mean_a == 0:
-            return 0.0
-        return float(np.sqrt(
-            var_b / (n_b * mean_a ** 2)
-            + var_a * mean_b ** 2 / (n_a * mean_a ** 4)
-        ))
-    return float(np.sqrt(var_b / n_b + var_a / n_a))
-
-
-def _truncated_normal_mean(mu: float, sigma: float, a: float, b: float) -> float:
-    """E[X | a < X ≤ b] for X ~ N(mu, sigma²)."""
-    alpha_tn = (a - mu) / sigma
-    beta_tn  = (b - mu) / sigma
-    return float(truncnorm.stats(alpha_tn, beta_tn, loc=mu, scale=sigma, moments="m"))
-
-
-def _risk(mu: float, sigma: float) -> tuple[float, float]:
-    """
-    (risk_ctrl, risk_trt) where δ ~ N(mu, sigma²) is the relative treatment effect.
-
-    risk_ctrl = E[max(0, δ)]  — expected opportunity cost of keeping control
-                                when treatment is actually better.
-    risk_trt  = E[max(0,−δ)] — expected loss from adopting treatment
-                                when control is actually better.
-
-    Both values are in the same unit as the relative effect (fractions, not %).
-    """
-    p_ctrl_better = float(norm.cdf(0.0, loc=mu, scale=sigma))
-    mn_neg = _truncated_normal_mean(mu, sigma, -np.inf, 0.0)
-    mn_pos = _truncated_normal_mean(mu, sigma,  0.0, np.inf)
-    return float((1.0 - p_ctrl_better) * mn_pos), float(-p_ctrl_better * mn_neg)
-
-
-def bayesian_result(
-    mean_a: float, var_a: float, n_a: int,
-    mean_b: float, var_b: float, n_b: int,
-    inverse: bool = False,
-    prior: GaussianPrior | None = None,
-) -> dict:
-    """
-    Analytical Gaussian-posterior Bayesian A/B test.
-
-    When prior is None or prior.proper is False: flat/improper prior — posterior equals
-    the data likelihood (original behaviour, fully backward-compatible).
-
-    When prior.proper is True: applies a conjugate Gaussian prior-posterior update.
-    The posterior is the precision-weighted average of the prior and the data estimate:
-
-        post_prec  = 1/data_var + 1/prior.variance
-        post_mean  = (data_mean/data_var + prior.mean/prior.variance) / post_prec
-        post_std   = sqrt(1 / post_prec)
-
-    Effect: with small samples the result is pulled toward the prior mean; as n grows
-    the data dominates and the prior is "washed out".  prior.mean = 0, prior.stddev = 0.3
-    This encodes "most experiments have a lift between −30% and +30%".
-
-    Returns a dict with:
-      chance_to_win    P(treatment is better)
-      relative_change  posterior mean of (mean_b − mean_a) / mean_a  (fraction)
-      absolute_change  mean_b − mean_a  (observed, not posterior-adjusted)
-      ci_rel_lower     lower bound of 95 % credible interval (relative, posterior)
-      ci_rel_upper     upper bound of 95 % credible interval (relative, posterior)
-      risk_ctrl        risk[ctrl]: opportunity cost of keeping control
-      risk_trt         risk[trt]:  downside risk of adopting treatment
-      prior_applied    True if a proper prior was used
-      error            None  or  an error string
-    """
-    if n_a == 0 or n_b == 0:
-        return {"error": "zero sample size"}
-    if mean_a == 0:
-        return {"error": "control mean is zero — cannot compute relative effect"}
-
-    se_rel = _delta_method_se(mean_a, var_a, n_a, mean_b, var_b, n_b, relative=True)
-    if se_rel == 0:
-        return {"error": "zero standard error (no variance in data)"}
-
-    mu_rel = (mean_b - mean_a) / mean_a
-    mu_abs = mean_b - mean_a
-
-    # ── Conjugate Gaussian prior update ───────────────────────────────────────
-    prior_applied = False
-    if prior is not None and prior.proper:
-        data_prec  = 1.0 / (se_rel ** 2)
-        prior_prec = 1.0 / prior.variance
-        post_prec  = data_prec + prior_prec
-        mu_rel     = (mu_rel * data_prec + prior.mean * prior_prec) / post_prec
-        se_rel     = float(np.sqrt(1.0 / post_prec))
-        prior_applied = True
-
-    z_half = float(norm.ppf(1.0 - ALPHA / 2))
-
-    ctw = float(norm.sf(0.0, loc=mu_rel, scale=se_rel))   # P(δ_rel > 0)
-    if inverse:
-        ctw = 1.0 - ctw
-
-    risk_c, risk_t = _risk(mu_rel, se_rel)
-    if inverse:
-        risk_c, risk_t = risk_t, risk_c   # flip: "winning" direction is reversed
-
-    return {
-        "error":           None,
-        "chance_to_win":   ctw,
-        "relative_change": mu_rel,
-        "absolute_change": mu_abs,
-        "ci_rel_lower":    mu_rel - z_half * se_rel,
-        "ci_rel_upper":    mu_rel + z_half * se_rel,
-        "risk_ctrl":       risk_c,
-        "risk_trt":        risk_t,
-        "prior_applied":   prior_applied,
-    }
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. SRM CHECK  (Sample Ratio Mismatch)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def srm_check(observed: list[int], expected_weights: list[float] | None = None) -> float:
-    """
-    Chi-squared SRM test.  Returns p-value; p < 0.01 is the common alarm threshold.
-    expected_weights defaults to equal allocation across all variants.
-    """
-    total = sum(observed)
-    if total == 0:
-        return 1.0
-    k = len(observed)
-    if expected_weights is None:
-        expected_weights = [1.0 / k] * k
-    total_w = sum(expected_weights)
-    chi_sq  = sum(
-        (o - w / total_w * total) ** 2 / (w / total_w * total)
-        for o, w in zip(observed, expected_weights)
-        if w > 0
-    )
-    return float(chi2_dist.sf(chi_sq, k - 1))
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 4. DEFINITION PARSING
-# ══════════════════════════════════════════════════════════════════════════════
-
-def load_definition(path: Path) -> tuple[dict, str]:
-    """Return (key→value dict, raw markdown text)."""
-    text = path.read_text()
-    kv = {}
-    for line in text.splitlines():
-        if line and not line.startswith(" ") and not line.startswith("#") and ":" in line:
-            key, _, value = line.partition(":")
-            kv[key.strip()] = value.strip()
-    return kv, text
-
-
-def parse_variants(text: str) -> tuple[str, list[str]]:
-    """
-    Extract (control_value, [treatment_values]) from definition.md.
-    Handles both a single  treatment:  key and multiple  treatment_a: / treatment_b:  keys.
-    """
-    ctrl_m   = re.search(r"^\s+control:\s*(\S+)", text, re.MULTILINE)
-    trt_list = re.findall(r"^\s+treatment[^:\n]*:\s*(\S+)", text, re.MULTILINE)
-    control    = ctrl_m.group(1) if ctrl_m else "control"
-    treatments = trt_list if trt_list else ["treatment"]
-    return control, treatments
-
-
-def parse_prior(text: str) -> GaussianPrior:
-    """
-    Read optional prior block from definition.md.
-
-    prior:
-      proper:  true
-      mean:    0.0
-      stddev:  0.3
-
-    Defaults to flat/improper prior if the block is absent.
-    """
-    proper, mean, stddev = False, 0.0, 0.3
-    in_prior = False
-    for line in text.splitlines():
-        if re.match(r"^prior\s*:", line):
-            in_prior = True
-            continue
-        if in_prior:
-            s = line.strip()
-            if not s or (not s.startswith("#") and ":" not in s):
-                in_prior = False
-                continue
-            if s.startswith("#"):
-                continue
-            key, _, val = s.partition(":")
-            key, val = key.strip(), val.strip()
-            if key == "proper":
-                proper = val.lower() == "true"
-            elif key == "mean":
-                try:
-                    mean = float(val)
-                except ValueError:
-                    pass
-            elif key == "stddev":
-                try:
-                    stddev = float(val)
-                except ValueError:
-                    pass
-            elif ":" not in line and not line.startswith(" "):
-                in_prior = False
-    return GaussianPrior(mean=mean, variance=stddev ** 2, proper=proper)
-
-
-def parse_guardrails(text: str) -> list[str]:
-    events: list[str] = []
-    in_block = False
-    for line in text.splitlines():
-        if "guardrail_events:" in line:
-            in_block = True
-            continue
-        if in_block:
-            s = line.strip()
-            if s.startswith("- "):
-                events.append(s[2:].strip())
-            elif s and not s.startswith("#"):
-                in_block = False
-    return events
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. FORMATTING
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _pct(x: float) -> str:
-    return f"{x * 100:+.2f}%"
-
 
 def format_metric_section(
     label: str,
@@ -379,7 +101,6 @@ def format_metric_section(
 
     lines = [f"{heading}: {label}", "", f"_type: {kind}_", ""]
 
-    # table header — proportions have two extra columns (conv, rate)
     if is_prop:
         h1  = "| variant | n | conv | rate | rel Δ | 95% credible CI | P(win) | risk[ctrl] | risk[trt] |"
         sep = "|---------|---|------|------|-------|-----------------|--------|------------|-----------|"
@@ -430,7 +151,6 @@ def format_metric_section(
 
     lines.append("")
 
-    # per-treatment decision hint
     for trt in treatments:
         trt_raw = mdata.get(trt, {})
         if not trt_raw or not isinstance(trt_raw, dict):
@@ -465,7 +185,7 @@ def format_metric_section(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 6. MAIN
+# MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main(slug: str) -> None:
@@ -480,7 +200,7 @@ def main(slug: str) -> None:
         sys.exit(1)
 
     raw          = json.loads(input_path.read_text())
-    metrics_data = raw.get("metrics", raw)   # accept both {metrics:{…}} and flat
+    metrics_data = raw.get("metrics", raw)
 
     control, treatments = parse_variants(text)
     guardrail_events    = parse_guardrails(text)
@@ -531,10 +251,6 @@ def main(slug: str) -> None:
     )
 
     # ── Gaussian approximation validity check (k ≥ 30 per variant) ──────────
-    # The Gaussian posterior approximation requires at least 30 conversions per
-    # variant. If k < 30, P(win) and risk values may be unreliable even when n
-    # passes the minimum_sample_per_variant floor (which is computed from an
-    # estimated baseline rate that may differ from the actual observed rate).
     approx_warnings: list[str] = []
     if primary_md:
         for v in all_variants:

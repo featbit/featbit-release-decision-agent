@@ -3,7 +3,11 @@
     "allow": [
       "Bash(xargs grep:*)",
       "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
-      "Bash(find C:/Code/featbit -maxdepth 3 -name *bayesian* -o -name *harness* -o -name experiment-workspace)"
+      "Bash(find C:/Code/featbit -maxdepth 3 -name *bayesian* -o -name *harness* -o -name experiment-workspace)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(find C:Codefeatbitfeatbit -name *openapi* -o -name *swagger*)",
+      "Bash(find C:Codefeatbitfeatbit-release-decision-agentskills -name *rest* -o -name *api*)"
     ]
   }
 }
