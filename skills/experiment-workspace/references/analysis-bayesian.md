@@ -495,3 +495,32 @@ python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
 ```
 
 `input.json` and `analysis.md` are both overwritten with fresh numbers. The decision in `decision.md` is not overwritten — that is written by the agent after `evidence-analysis`.
+
+---
+
+## On Sequential Testing (Peeking)
+
+This implementation does not include frequentist Sequential Testing (e.g. always-valid confidence sequences). This is intentional.
+
+**Why Bayesian analysis does not need it:**
+
+Bayesian posteriors have a property called *posterior coherence* — the posterior is a complete, valid description of current beliefs at any sample size. Unlike p-values, P(win) does not rely on a "look only once" assumption and does not inflate false positive rates when checked repeatedly.
+
+**What we use instead:**
+
+| Safeguard | How it helps |
+|-----------|-------------|
+| `minimum_sample_per_variant` | Prevents running analysis on noisy small-sample posteriors |
+| `risk[trt]` alongside P(win) | Harder to trigger spuriously — requires both correct direction and acceptable expected loss |
+
+**Recommended discipline:**
+
+- Fix the experiment horizon upfront; do not stop early because results look promising
+- If you must look mid-experiment, raise the stopping threshold (e.g. P(win) ≥ 98%)
+- Never act on P(win) alone — use `risk[trt]` as a second signal
+
+**Why not implement Bayesian sequential methods (Bayes Factors, ROPE+HDI)?**
+
+These methods are mathematically rigorous but add interpretation complexity that outweighs their benefit for typical product experimentation. The fixed-horizon approach with `minimum_sample_per_variant` covers the practical need.
+
+> *Experimentation for Engineers*, Chapter 8: fixed-horizon testing — decide sample size upfront, look exactly once — is the simplest and most reliable safeguard against peeking.

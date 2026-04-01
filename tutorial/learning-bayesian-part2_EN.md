@@ -198,9 +198,88 @@ What MAB needs on top: feed `P(win)` back to the **traffic allocation system** t
 
 ---
 
+---
+
+## Chapter 2: Sequential Testing in the Bayesian Framework
+
+### 2.1 What Is the Peeking Problem?
+
+Peeking means repeatedly checking statistical results during an experiment and stopping early the moment they "look good enough."
+
+**Why it is severe in frequentist statistics:**
+
+The p-value has an implicit assumption: you look at the result exactly once, at the end. If you check every day and stop as soon as `p < 0.05`, your actual false positive rate can reach 30%.
+
+The book quantifies this directly (Chapter 8):
+
+> "If you check results at every time step and stop as soon as P(win) > 95%, your actual false positive rate is not 5% — it can exceed 30% for long-running experiments."
+
+The reason: p-value random-walks during the experiment and will momentarily dip below 0.05 before recovering. If you stop at that peak, you lock in a noise signal.
+
+**Does the Bayesian framework have the same problem?**
+
+Theoretically more forgiving, but still requires care:
+
+- The Bayesian posterior is a **coherent, complete description of your beliefs given current data** at any point in time — this is called **posterior coherence**
+- Theoretically, you can look at P(win) at any time without needing a correction
+- But if you **stop the moment P(win) briefly exceeds 95%**, you are still making an implicit selection: you chose a moment when P(win) happened to spike due to noise, which inflates the δ (delta) estimate
+
+This is called the **Optional Stopping Problem**. Bayesian statisticians debate its severity, but practical safeguards are still warranted.
+
+---
+
+### 2.2 Why We Do Not Implement Sequential Testing
+
+This is a deliberate, principled design decision — not an oversight.
+
+**Reason 1: The Bayesian framework theoretically does not need it**
+
+Bayesian posteriors do not rely on a "look only once" assumption — the posterior is a valid description of current beliefs at any sample size. Sequential Testing addresses a problem that belongs to a different statistical framework, not ours.
+
+**Reason 2: We already have sufficient practical safeguards**
+
+| Safeguard | Purpose |
+|-----------|---------|
+| `minimum_sample_per_variant` | Burn-in: prevents analysis on noisy small-sample posteriors |
+| `risk[trt]` | More robust stopping signal than P(win) alone |
+
+`risk[trt]` is harder to trigger spuriously: it requires both the right direction **and** an acceptable expected loss — not just a probability crossing a threshold.
+
+**Reason 3: Rigorous Bayesian sequential methods exist but add complexity beyond practical benefit**
+
+Methods like Bayes Factors, ROPE+HDI, and Expected Loss Threshold (`risk[trt] < ε`) are mathematically valid Bayesian sequential approaches, but their interpretation and communication cost outweighs their benefit for typical product experimentation teams. Using `risk[trt]` as a second signal alongside P(win) covers the practical need.
+
+---
+
+### 2.3 What We Do Instead
+
+**Safeguards already in place:**
+
+**1. Burn-in guard** — configured in `definition.md`:
+```yaml
+minimum_sample_per_variant: 1000   # calculated from baseline conversion rate, not a fixed value
+```
+`analyze-bayesian.py` shows whether the current sample has reached this floor. Below it, P(win) and risk are still computed but should be treated as indicative, not actionable.
+
+**2. Robust stopping signal** — use both P(win) and `risk[trt]`:
+
+```
+P(win) ≥ 95%  AND  risk[trt] small enough for the business context  →  then consider stopping
+```
+
+**Recommended operating discipline (documentation, no code change needed):**
+
+1. **Fix the experiment horizon upfront** — do not stop early because results "look promising"
+2. **Use both signals**: P(win) ≥ 95% **and** risk[trt] small enough for the business context
+3. **If you must look mid-experiment**, raise the threshold (e.g. P(win) ≥ 98%) to compensate for the additional look
+
+> **Book's practical recommendation (Chapter 8)**: Fixed-horizon testing — deciding the sample size upfront and looking exactly once — is the simplest and most reliable safeguard. "Don't look early, don't stop early" is easier to execute than any statistical correction. Our `minimum_sample_per_variant` is the engineering implementation of this discipline.
+
+---
+
 ## Learning Progress
 
 - [x] Chapter 1: Multi-Armed Bandits (1.1 ~ 1.6)
-- [ ] Chapter 2: Sequential Testing in the Bayesian Framework
+- [x] Chapter 2: Sequential Testing in the Bayesian Framework
 - [ ] Chapter 3: Family-wise Error Correction
 - [ ] Chapter 4: Holdout Groups
