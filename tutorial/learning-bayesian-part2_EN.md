@@ -277,9 +277,110 @@ P(win) ≥ 95%  AND  risk[trt] small enough for the business context  →  then 
 
 ---
 
+---
+
+## Chapter 3: Family-wise Error (Multiple Comparisons Problem)
+
+### 3.1 Where the Problem Comes From
+
+Suppose your experiment tracks 5 metrics, each judged at P(win) ≥ 95%. Intuitively each metric has a 95% confidence — but is the overall picture really that certain?
+
+```
+P(at least one false positive) = 1 - (1 - 0.05)^M
+
+M=1  →  5%
+M=5  →  22.6%
+M=10 →  40.1%
+M=20 →  64.2%
+```
+
+**You believe each metric has a 95% confidence, but checking 5 metrics simultaneously gives a 22.6% chance of making a wrong call on at least one of them.** This is **Family-wise Error** — the overall error rate across a family of tests is far higher than the per-test error rate.
+
+> **Book reference (Chapter 8)**: The book explicitly identifies this problem and gives the Bonferroni correction formula: `adjusted threshold per metric = 1 - (alpha / M)`. For 5 metrics at alpha=0.05, use a 99% threshold per metric instead of 95%.
+
+---
+
+### 3.2 Primary vs. Guardrail Metrics: Asymmetric Logic
+
+This problem affects primary optimizing metrics and guardrail metrics **very differently**:
+
+**Primary optimizing metric:**
+- Question: "Is treatment better?"
+- False positive (wrongly concluding it works) is costly: you ship a useless or harmful feature
+- High threshold (95%) is appropriate; correction is only needed with multiple primary metrics
+
+**Guardrail metrics:**
+- Question: "Did anything break?"
+- False negative (missing real harm) is costly: you ship something harmful
+- Applying Bonferroni to guardrail metrics is **the wrong direction** — raising the threshold makes it harder to detect real problems
+
+**Conclusion: guardrail metrics should not be corrected for Family-wise Error. If anything, keep them sensitive.**
+
+---
+
+### 3.3 When Does It Actually Matter?
+
+**Case 1: Standard setup (1 primary metric + N guardrail metrics)**
+No correction needed. One primary metric means no multiple comparison problem; guardrail metrics should stay sensitive.
+
+**Case 2: Multi-arm experiment (A/B/C/n)**
+
+Comparing 3 arms simultaneously means 3 independent tests against control:
+
+```
+arm_B vs control: P(win) ≥ 95%?
+arm_C vs control: P(win) ≥ 95%?
+arm_D vs control: P(win) ≥ 95%?
+```
+
+The overall false positive rate inflates. Manually raise the threshold:
+
+```
+M arms being compared → suggested threshold = 1 - (0.05 / M)
+
+M=2  →  97.5%
+M=3  →  98.3%
+M=5  →  99%
+```
+
+**Case 3: Multiple primary optimizing metrics (uncommon)**
+Users should be aware and apply the same formula above.
+
+---
+
+### 3.4 Why We Do Not Implement Automatic Correction
+
+**Reason 1: The Bayesian framework is different from frequentist**
+
+Bonferroni and BH corrections are mathematically derived for p-values. The book's discussion is also in a frequentist context. P(win) is a posterior probability, not a p-value — the statistical properties are fundamentally different.
+
+**Reason 2: Our typical configuration is not affected**
+
+The standard "1 primary metric + N guardrail metrics" structure — which is what we recommend — does not require multiple comparison correction.
+
+**Reason 3: The corrected threshold should be a user decision**
+
+In multi-arm experiments, the right threshold depends on the user's business risk tolerance. Automatic correction may be too conservative (Bonferroni is strict when metrics are correlated) or not conservative enough (BH controls FDR, not FWER). Providing the formula is more transparent than auto-correcting.
+
+---
+
+### 3.5 Recommended Practice
+
+| Experiment setup | Recommendation |
+|-----------------|----------------|
+| 1 primary metric + N guardrails | Primary at 95%; guardrails check P(harm) < 5% |
+| 2-arm comparison (standard A/B) | 95% |
+| 3-arm comparison | Raise to 98.3% |
+| 5-arm comparison | Raise to 99% |
+| Multiple primary optimizing metrics | Reconsider the experiment design — usually better to split into separate experiments |
+
+> **Book's practical recommendation (Chapter 8)**: define exactly one primary optimizing metric and treat everything else as guardrails. This is good statistical hygiene and good product hygiene — one experiment should answer one question.
+
+---
+
 ## Learning Progress
 
 - [x] Chapter 1: Multi-Armed Bandits (1.1 ~ 1.6)
 - [x] Chapter 2: Sequential Testing in the Bayesian Framework
-- [ ] Chapter 3: Family-wise Error Correction
+- [x] Chapter 3: Family-wise Error Correction
 - [ ] Chapter 4: Holdout Groups
