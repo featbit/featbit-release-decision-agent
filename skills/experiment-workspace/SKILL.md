@@ -160,6 +160,16 @@ The agent does not need to touch any online dashboard. Creating `definition.md` 
 
 For the full list of metric types and usage patterns (proportion, continuous, inverse, multiple arms, informative prior), see `references/analysis-bayesian.md`.
 
+**Multi-arm threshold reminder:** if the experiment has more than 2 variants (A/B/C/n), raise the P(win) threshold to compensate for multiple comparisons:
+
+| Arms compared | Suggested threshold |
+|--------------|-------------------|
+| 2 | 95% |
+| 3 | 98.3% |
+| 5 | 99% |
+
+See `references/analysis-bayesian.md` → "On Family-wise Error" for details.
+
 ### "I want to update the data and re-run"
 
 1. Re-run `collect-input.py` to pull fresh counts — it overwrites `input.json`
@@ -205,6 +215,30 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 
 For full details on output interpretation and FeatBit API integration, see `references/analysis-bandit.md`.
 
+### "I want to track long-term effects after launch"
+
+A/B and Bandit experiments measure short-term behavior. Transient effects — novelty, seasonal spikes, event-driven traffic — can inflate results during the experiment window. A holdout group validates whether the effect persists over months.
+
+1. After full launch, adjust the feature flag traffic split to 95/5 — keep 5% of users on the old variant
+2. Add a `holdout` block to `definition.md` recording the plan:
+   ```yaml
+   holdout:
+     enabled: true
+     percentage: 5
+     check_at_days: [30, 60, 90]
+     launched_at: <launch date>
+   ```
+3. At each checkpoint (day 30, 60, 90):
+   - Collect fresh data for both groups → `input.json`
+   - Run analysis with a time-stamped slug:
+     ```bash
+     python .featbit-release-decision/scripts/analyze-bayesian.py <slug>-holdout-30d
+     ```
+4. Compare P(win) and rel Δ across checkpoints — look for stability, decay, or growth
+5. When holdout analysis is complete, remove the holdout split from the feature flag
+
+For full interpretation guidance (three patterns: holds / decays / improves), see `references/analysis-holdout.md`.
+
 ### "I want to close the experiment"
 
 1. Ensure `decision.md` exists in `.featbit-release-decision/experiments/<slug>/` — written by agent after `evidence-analysis` framing
@@ -241,8 +275,9 @@ When handing off to `evidence-analysis`, pass the path to `analysis.md` and the 
 ## Reference Files
 
 - [references/experiment-folder-spec.md](references/experiment-folder-spec.md) — folder layout, file formats, `definition.md` template, `analysis.md` example, `decision.md` template
-- [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian A/B analysis: metric types, prior patterns, output interpretation
+- [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian A/B analysis: metric types, prior patterns, output interpretation, sequential testing, family-wise error
 - [references/analysis-bandit.md](references/analysis-bandit.md) — Bandit analysis: Thompson Sampling, `bandit-weights.json` fields, FeatBit API integration, stopping condition
+- [references/analysis-holdout.md](references/analysis-holdout.md) — Holdout group: post-launch long-term validation, three effect patterns, checkpoint cadence
 - [references/data-source-guide.md](references/data-source-guide.md) — input contract and §FeatBit / §Database / §Custom patterns for producing `input.json`
 - [scripts/stats_utils.py](scripts/stats_utils.py) — shared statistical utilities (GaussianPrior, metric_moments, bayesian_result, srm_check, parse_*)
 - [scripts/analyze-bayesian.py](scripts/analyze-bayesian.py) — ready-to-run Bayesian A/B analysis script

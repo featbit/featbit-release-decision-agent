@@ -378,9 +378,131 @@ In multi-arm experiments, the right threshold depends on the user's business ris
 
 ---
 
+---
+
+## Chapter 4: Holdout Groups
+
+### 4.1 Why Holdout Groups?
+
+A/B experiments typically run for days or weeks. In that window, many **transient factors** can corrupt the conclusions:
+
+| Effect | Description |
+|--------|-------------|
+| **Novelty Effect** | Users temporarily change behavior out of curiosity; effect decays over time |
+| **Hot topic / event effect** | Launch coincides with a marketing spike or viral moment; traffic quality is abnormal |
+| **Seasonal effect** | Holiday or promotional periods produce behavior patterns that don't represent normal usage |
+| **Primacy Effect** | Existing users resist change short-term; a genuinely better feature looks worse during the experiment |
+| **Hawthorne Effect** | Users behave differently when they sense they are being observed or tested |
+
+These factors share one trait: **they are temporary**. A 14-day experiment can capture exactly the anomalous period and mistake a short-term behavioral shift for a long-term improvement.
+
+> **Book reference (Chapter 8)**: The book explicitly notes that short-term experiments cannot capture long-term behavioral changes, and recommends maintaining a permanent holdout group after full launch to track sustained effects.
+
+---
+
+### 4.2 What Is a Holdout Group?
+
+**When fully launching a new feature, keep a small percentage of users (typically 5%) permanently on the old version** — even after the feature is live for everyone else.
+
+```
+Traffic split after full launch:
+
+95% of users  →  new feature (fully launched)
+5% of users   →  old version (holdout group, kept indefinitely)
+```
+
+Then compare the holdout group against the full-launch group at 30, 60, and 90 days.
+
+**Why does this cancel out external factors?**
+
+Both groups experience **identical external conditions** — the same season, the same trending topics, the same market. The only difference is the feature version. External factors cancel out naturally; what remains is the feature's true long-term effect.
+
+---
+
+### 4.3 Fundamental Difference from A/B Testing
+
+| | A/B Test | Holdout Group |
+|--|---------|--------------|
+| **Purpose** | Launch decision (ship or not) | Long-term validation (was the decision right?) |
+| **Timing** | Before launch | After launch |
+| **Duration** | Days to weeks | Months |
+| **Traffic split** | 50/50 | 95/5 (small holdout) |
+| **Analysis method** | Same `analyze-bayesian.py` | Same `analyze-bayesian.py`, longer observation window |
+
+---
+
+### 4.4 Implementing Holdout Groups with FeatBit Feature Flags
+
+Feature flags make holdout groups natural to implement:
+
+**Step 1: At full launch, keep 5% of users on the old variant**
+
+```
+feature flag: new-onboarding-flow
+  control (old version):  5%   ← holdout group
+  treatment (new feature): 95%
+```
+
+Don't close the experiment — just adjust the traffic split.
+
+**Step 2: Collect data from both groups at each checkpoint**
+
+Same process as A/B — periodically pull metrics for both groups and write to `input.json`.
+
+**Step 3: Run analysis at each checkpoint**
+
+```bash
+python .featbit-release-decision/scripts/analyze-bayesian.py <slug>-holdout-30d
+python .featbit-release-decision/scripts/analyze-bayesian.py <slug>-holdout-60d
+python .featbit-release-decision/scripts/analyze-bayesian.py <slug>-holdout-90d
+```
+
+Create a separate experiment slug for each time point to track the trend.
+
+**Step 4: Watch whether the effect holds**
+
+```
+Original experiment (day 14):  P(win) = 97%,  rel Δ = +8%
+Holdout at 30 days:            P(win) = 85%,  rel Δ = +4%   ← effect decaying
+Holdout at 60 days:            P(win) = 62%,  rel Δ = +2%   ← still decaying
+Holdout at 90 days:            P(win) = 51%,  rel Δ = +0.5% ← nearly gone
+```
+
+This pattern reveals that the original +8% was mostly novelty effect. The feature's true long-term value is marginal.
+
+---
+
+### 4.5 Current Implementation Gap
+
+`experiment-workspace` has no built-in holdout workflow, but the existing tools cover the analysis:
+
+**Already available (reusable):**
+- `analyze-bayesian.py` works identically for holdout analysis — same input format
+- FeatBit feature flag traffic split can be set manually to 95/5
+
+**Not yet available (manual workaround needed):**
+- No automatic reminder to re-analyze at day 30/60/90
+- No multi-checkpoint summary report comparing effect size over time
+
+**Practical suggestion:**
+
+Record the holdout plan in `definition.md` as a comment:
+
+```yaml
+holdout:
+  enabled: true
+  percentage: 5
+  check_at_days: [30, 60, 90]
+  # reminder: collect data and re-run analyze-bayesian.py at these checkpoints
+```
+
+This is documentation only — it doesn't affect script behavior — but it serves as a reminder during the `evidence-analysis` handoff to flag that long-term tracking is planned.
+
+---
+
 ## Learning Progress
 
 - [x] Chapter 1: Multi-Armed Bandits (1.1 ~ 1.6)
 - [x] Chapter 2: Sequential Testing in the Bayesian Framework
 - [x] Chapter 3: Family-wise Error Correction
-- [ ] Chapter 4: Holdout Groups
+- [x] Chapter 4: Holdout Groups

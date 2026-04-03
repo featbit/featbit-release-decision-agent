@@ -52,6 +52,13 @@ prior:
   mean:    0.0           # expected relative lift (0 = no expected direction)
   stddev:  0.3           # uncertainty around prior mean (0.3 = ±30% plausible range)
 hypothesis:              <copied verbatim from .featbit-release-decision/intent.md>
+
+# Optional: holdout group plan (post-launch long-term tracking)
+# holdout:
+#   enabled: true
+#   percentage: 5
+#   check_at_days: [30, 60, 90]
+#   launched_at: <ISO 8601 date when feature went to 100%>
 ```
 
 Rules for `definition.md`:

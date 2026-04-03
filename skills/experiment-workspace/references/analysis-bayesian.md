@@ -524,3 +524,39 @@ Bayesian posteriors have a property called *posterior coherence* — the posteri
 These methods are mathematically rigorous but add interpretation complexity that outweighs their benefit for typical product experimentation. The fixed-horizon approach with `minimum_sample_per_variant` covers the practical need.
 
 > *Experimentation for Engineers*, Chapter 8: fixed-horizon testing — decide sample size upfront, look exactly once — is the simplest and most reliable safeguard against peeking.
+
+---
+
+## On Family-wise Error (Multiple Comparisons)
+
+When an experiment tests multiple metrics simultaneously, checking each at a 95% threshold means the **overall** false positive rate is higher than 5%.
+
+```
+P(at least one false positive) = 1 - (1 - 0.05)^M
+M=5  → 22.6%    M=10 → 40.1%
+```
+
+> *Experimentation for Engineers*, Chapter 8: the book identifies this as a significant source of false positives in multi-metric experiments and recommends Bonferroni correction (`adjusted threshold = 1 - alpha/M`) when testing multiple metrics simultaneously.
+
+**However, the correction applies differently by metric type:**
+
+| Metric type | Recommendation |
+|-------------|---------------|
+| Single primary optimizing metric | No correction needed — one metric, one test |
+| Guardrail metrics | Do **not** apply Bonferroni — raising the threshold makes it harder to detect real harm. Keep guardrails sensitive. |
+| Multiple treatment arms (A/B/C/n) | Raise threshold: `1 - (0.05 / M)` where M = number of arms |
+| Multiple primary optimizing metrics | Redesign — split into separate experiments, one question per experiment |
+
+**Threshold guidance for multi-arm experiments:**
+
+| Arms | Suggested P(win) threshold |
+|------|--------------------------|
+| 2    | 97.5% |
+| 3    | 98.3% |
+| 5    | 99.0% |
+
+**Why we do not implement automatic correction:**
+
+Bonferroni and Benjamini-Hochberg corrections are designed for p-values. P(win) is a posterior probability with different statistical properties. For the standard setup of 1 primary metric + N guardrail metrics, no correction is needed. For multi-arm experiments, the threshold adjustment is simple enough to apply manually and benefits from the user's judgment about risk tolerance.
+
+> *Experimentation for Engineers*, Chapter 8: "define exactly one primary optimizing metric and treat everything else as guardrails. One experiment should answer one question."
