@@ -149,8 +149,6 @@ The agent applies **CF-08** via `learning-capture` — it produces a structured 
 ## Project Structure
 
 ```
-instructions/
-  release-decision.prompt.md       ← agent entry point
 skills/
   featbit-release-decision/        ← hub control framework (CF-01…CF-08)
     SKILL.md
@@ -163,9 +161,34 @@ skills/
   experiment-workspace/            ← CF-05+: local experiment folder + analysis scripts
   evidence-analysis/               ← CF-06/CF-07: sufficiency check + decision framing
   learning-capture/                ← CF-08: structured learning for next cycle
+agent/                             ← Web UI (Next.js) for the release decision agent
+  src/
+    app/                           ← pages, layouts, API routes
+    components/                    ← React components + shadcn/ui primitives
+    lib/                           ← utilities, API clients, types
+    hooks/                         ← custom React hooks
 ```
 
-During a session the agent also writes to your project:
+### Agent (Web UI)
+
+The `agent/` folder contains a **Next.js 16** application that provides a visual interface for the release decision agent. Built with **TypeScript**, **Tailwind CSS v4**, and **shadcn/ui**.
+
+What the UI enables:
+
+- **Manage experiments** — Create, track, and iterate on experiments through a dashboard.
+- **Run agent-guided experimentation** — Walk through the full loop (intent → hypothesis → exposure → measurement → decision → learning) via an interactive UI powered by the agent skills.
+- **Configure data connections** — Connect databases, data warehouses, and FeatBit instances to feed experiment metrics.
+- **View analysis results** — See Bayesian analysis, sample size checks, and decision outcomes in real time.
+- **Track decisions and learnings** — Record CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE decisions and structured learnings across cycles.
+
+```bash
+# Run the web UI locally
+cd agent
+npm install
+npm run dev
+```
+
+During a session the agent writes to your project:
 
 ```
 .featbit-release-decision/
@@ -177,6 +200,17 @@ During a session the agent also writes to your project:
       input.json     ← collected data
       analysis.md    ← Bayesian analysis output
 ```
+
+### Agent Tech Stack
+
+| Layer | Technology | Version |
+|---|---|---|
+| Framework | Next.js (App Router) | 16 |
+| Language | TypeScript | 5 |
+| UI | React | 19 |
+| Styling | Tailwind CSS | 4 |
+| Components | shadcn/ui (base-nova) | latest |
+| Skills | vercel-react-best-practices | latest |
 
 ---
 
