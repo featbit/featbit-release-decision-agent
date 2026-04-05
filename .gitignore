@@ -20,3 +20,27 @@ secrets.json
 Thumbs.db
 
 tutorial/experimentation-for-engineers.md
+
+
+# =======
+# agent/ (Next.js)
+# =======
+agent/node_modules/
+agent/.pnp
+agent/.pnp.*
+agent/.yarn/*
+!agent/.yarn/patches
+!agent/.yarn/plugins
+!agent/.yarn/releases
+!agent/.yarn/versions
+agent/coverage/
+agent/.next/
+agent/out/
+agent/build/
+agent/.vercel/
+agent/next-env.d.ts
+agent/*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
