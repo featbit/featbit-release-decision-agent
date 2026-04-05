@@ -23,23 +23,23 @@ tutorial/experimentation-for-engineers.md
 
 
 # =======
-# agent/ (Next.js)
+# agent/web/ (Next.js)
 # =======
-agent/node_modules/
-agent/.pnp
-agent/.pnp.*
-agent/.yarn/*
-!agent/.yarn/patches
-!agent/.yarn/plugins
-!agent/.yarn/releases
-!agent/.yarn/versions
-agent/coverage/
-agent/.next/
-agent/out/
-agent/build/
-agent/.vercel/
-agent/next-env.d.ts
-agent/*.tsbuildinfo
+agent/web/node_modules/
+agent/web/.pnp
+agent/web/.pnp.*
+agent/web/.yarn/*
+!agent/web/.yarn/patches
+!agent/web/.yarn/plugins
+!agent/web/.yarn/releases
+!agent/web/.yarn/versions
+agent/web/coverage/
+agent/web/.next/
+agent/web/out/
+agent/web/build/
+agent/web/.vercel/
+agent/web/next-env.d.ts
+agent/web/*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
