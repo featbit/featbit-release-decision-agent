@@ -6,11 +6,11 @@ The next paradigm for product experimentation — AI agents run the full loop fr
 
 ## What This Project Does
 
-Silicon Valley spent two decades turning product experimentation into a billion-dollar market — Optimizely, Amplitude, LaunchDarkly, Statsig, PostHog — built on the assumption that every step requires a senior PM or data scientist. AI has made coding 10x faster and product iteration faster. But if experimentation doesn't keep up, that acceleration is fake growth.
+AI has made code generation 10x faster — features get built and shipped in hours, not weeks. FeatBit feature flags give teams the stability layer: observable, risk-controlled rollouts that can be reversed in seconds. But there's a gap. Whether a feature is actually useful, how to optimize it, how to prove its value — the data experimentation layer hasn't kept up with the speed of shipping.
 
-Most teams still ship without a hypothesis, measure five metrics and pick the one that looks good, and start the next cycle from gut feeling. **The tooling got faster. The thinking didn't.**
+Most teams still ship without a hypothesis, measure five metrics and pick the one that looks good, and start the next cycle from gut feeling. **The code got faster. The thinking didn't.**
 
-This agent skill set closes that gap. It activates a set of **control lenses** — not a fixed workflow, but a set of principles that apply at whatever stage of the loop the user is currently in — and routes to the right implementation tools only after the decision thinking is clear. Humans can step in at any point, or just make the final call.
+Data-driven decisions used to require a senior PM and a data scientist. This agent changes that. A junior engineer or PM — without a statistics background — can run a scientifically sound experiment, reach a statistically significant conclusion, and feed the result back into the next build cycle. Fast enough to keep up with the code generator.
 
 The agent keeps a live decision state file (`.featbit-release-decision/intent.md`) across the session so context is never lost between steps.
 
