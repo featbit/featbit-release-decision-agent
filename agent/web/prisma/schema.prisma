@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  stage       String   @default("intent") // intent | hypothesis | implementing | exposing | measuring | deciding | learning
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Feature Flag configuration
+  flagKey        String?
+  envSecret      String?
+  accessToken    String?
+  flagServerUrl  String?
+
+  // Sandbox configuration
+  sandboxId      String?
+  sandboxStatus  String?  @default("idle") // idle | running | completed | error
+
+  // Decision state (mirrors intent.md)
+  goal           String?
+  intent         String?
+  hypothesis     String?
+  change         String?
+  variants       String?
+  primaryMetric  String?
+  guardrails     String?
+  constraints    String?
+  openQuestions   String?
+  lastAction     String?
+  lastLearning   String?
+
+  experiments Experiment[]
+  activities  Activity[]
+  messages    Message[]
+}
+
+model Experiment {
+  id          String   @id @default(cuid())
+  projectId   String
+  slug        String
+  status      String   @default("draft") // draft | running | analyzing | decided | archived
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Definition
+  primaryMetricEvent String?
+  guardrailEvents    String?  // JSON array stored as string
+  controlVariant     String?
+  treatmentVariant   String?
+  minimumSample      Int?
+  observationStart   DateTime?
+  observationEnd     DateTime?
+
+  // Analysis results
+  analysisResult     String?  // JSON stored as string
+  decision           String?  // CONTINUE | PAUSE | ROLLBACK_CANDIDATE | INCONCLUSIVE
+  decisionReason     String?
+
+  // Learning
+  whatChanged         String?
+  whatHappened         String?
+  confirmedOrRefuted  String?
+  whyItHappened       String?
+  nextHypothesis      String?
+
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, slug])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  projectId String
+  type      String   // stage_change | sandbox_event | decision | note
+  title     String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  projectId String
+  role      String   // "user" | "assistant" | "system"
+  content   String
+  metadata  String?  // JSON — stage updates, data changes, tool calls, etc.
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
