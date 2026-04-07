@@ -38,18 +38,34 @@ function parseArgs(args: string[]): Record<string, string> {
 async function api(
   method: string,
   path: string,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  options?: { exitOnError?: boolean }
 ): Promise<unknown> {
   const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const exitOnError = options?.exitOnError ?? true;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (exitOnError) {
+      console.error(`Unable to reach sync API at ${API_BASE}. ${message}`);
+      process.exit(1);
+    }
+    return null;
+  }
+
   const data = await res.json();
   if (!res.ok) {
-    console.error(`ERROR ${res.status}:`, data);
-    process.exit(1);
+    if (exitOnError) {
+      console.error(`ERROR ${res.status}:`, data);
+      process.exit(1);
+    }
+    return null;
   }
   return data;
 }
@@ -57,7 +73,20 @@ async function api(
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 async function getProject(projectId: string) {
-  const project = await api("GET", `/api/projects/${projectId}`);
+  const project = await api("GET", `/api/projects/${projectId}`, undefined, {
+    exitOnError: false,
+  });
+  if (project === null) {
+    // Return a blank-project placeholder so the agent can proceed
+    console.log(
+      JSON.stringify(
+        { status: "unavailable", projectId, message: "Database unreachable — treat as blank project" },
+        null,
+        2
+      )
+    );
+    return;
+  }
   console.log(JSON.stringify(project, null, 2));
 }
 
@@ -118,61 +147,69 @@ async function upsertExperiment(
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-const [command, ...rest] = process.argv.slice(2);
+async function main() {
+  const [command, ...rest] = process.argv.slice(2);
 
-switch (command) {
-  case "get-project": {
-    const projectId = rest[0];
-    if (!projectId) {
-      console.error("Usage: sync.ts get-project <project-id>");
-      process.exit(1);
+  switch (command) {
+    case "get-project": {
+      const projectId = rest[0];
+      if (!projectId) {
+        console.error("Usage: sync.ts get-project <project-id>");
+        process.exit(1);
+      }
+      await getProject(projectId);
+      break;
     }
-    await getProject(projectId);
-    break;
-  }
-  case "update-state": {
-    const projectId = rest[0];
-    if (!projectId) {
-      console.error("Usage: sync.ts update-state <project-id> --goal '...' --intent '...'");
-      process.exit(1);
+    case "update-state": {
+      const projectId = rest[0];
+      if (!projectId) {
+        console.error("Usage: sync.ts update-state <project-id> --goal '...' --intent '...'");
+        process.exit(1);
+      }
+      const flags = parseArgs(rest.slice(1));
+      await updateState(projectId, flags);
+      break;
     }
-    const flags = parseArgs(rest.slice(1));
-    await updateState(projectId, flags);
-    break;
-  }
-  case "set-stage": {
-    const projectId = rest[0];
-    const stage = rest[1];
-    if (!projectId || !stage) {
-      console.error("Usage: sync.ts set-stage <project-id> <stage>");
-      process.exit(1);
+    case "set-stage": {
+      const projectId = rest[0];
+      const stage = rest[1];
+      if (!projectId || !stage) {
+        console.error("Usage: sync.ts set-stage <project-id> <stage>");
+        process.exit(1);
+      }
+      await setStage(projectId, stage);
+      break;
     }
-    await setStage(projectId, stage);
-    break;
-  }
-  case "add-activity": {
-    const projectId = rest[0];
-    if (!projectId) {
-      console.error("Usage: sync.ts add-activity <project-id> --type '...' --title '...'");
-      process.exit(1);
+    case "add-activity": {
+      const projectId = rest[0];
+      if (!projectId) {
+        console.error("Usage: sync.ts add-activity <project-id> --type '...' --title '...'");
+        process.exit(1);
+      }
+      const flags = parseArgs(rest.slice(1));
+      await addActivity(projectId, flags);
+      break;
     }
-    const flags = parseArgs(rest.slice(1));
-    await addActivity(projectId, flags);
-    break;
-  }
-  case "upsert-experiment": {
-    const projectId = rest[0];
-    const slug = rest[1];
-    if (!projectId || !slug) {
-      console.error("Usage: sync.ts upsert-experiment <project-id> <slug> --status running ...");
-      process.exit(1);
+    case "upsert-experiment": {
+      const projectId = rest[0];
+      const slug = rest[1];
+      if (!projectId || !slug) {
+        console.error("Usage: sync.ts upsert-experiment <project-id> <slug> --status running ...");
+        process.exit(1);
+      }
+      const flags = parseArgs(rest.slice(2));
+      await upsertExperiment(projectId, slug, flags);
+      break;
     }
-    const flags = parseArgs(rest.slice(2));
-    await upsertExperiment(projectId, slug, flags);
-    break;
+    default:
+      console.error(`Unknown command: ${command}`);
+      console.error("Commands: get-project, update-state, set-stage, add-activity, upsert-experiment");
+      process.exit(1);
   }
-  default:
-    console.error(`Unknown command: ${command}`);
-    console.error("Commands: get-project, update-state, set-stage, add-activity, upsert-experiment");
-    process.exit(1);
 }
+
+main().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`sync.ts failed: ${message}`);
+  process.exit(1);
+});

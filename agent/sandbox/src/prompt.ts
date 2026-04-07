@@ -17,13 +17,14 @@ const INITIAL_SLASH_COMMAND = `/featbit-release-decision $1 $2`;
  * - **Resumed session** (projectId already seen): return the user prompt as-is.
  */
 export function buildEffectivePrompt(body: QueryRequestBody): string {
+  const userPrompt = body.prompt?.trim() ?? "";
   const projectId =
     body.projectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
   const sessionUuid = projectIdToSessionId(projectId);
 
   // Already-known session → pass prompt through
   if (isKnownSession(sessionUuid)) {
-    return body.prompt;
+    return userPrompt;
   }
 
   const accessToken =

@@ -66,15 +66,26 @@ The server starts on `http://localhost:3000` (or `PORT` from `.env`).
 
 ```json
 {
-  "prompt": "Read the sample data and summarise the disabled flags",
-  "sessionId": "optional-client-id",
+  "projectId": "681e90cf-fdf5-4c57-8a8d-a15274ffe40f",
   "maxTurns": 10,
   "allowedTools": ["Bash", "Read"],
   "cwd": "/optional/working/directory"
 }
 ```
 
-Only `prompt` is required.
+For a brand-new release-decision session, `prompt` is optional. The server will send the slash command automatically from `projectId` and `accessToken`.
+
+For later turns on the same session, send a normal user `prompt`.
+
+Example follow-up turn:
+
+```json
+{
+  "projectId": "681e90cf-fdf5-4c57-8a8d-a15274ffe40f",
+  "prompt": "We want to improve activation on the first-run page.",
+  "maxTurns": 10
+}
+```
 
 **Response:** `text/event-stream` — each SSE event has the form:
 

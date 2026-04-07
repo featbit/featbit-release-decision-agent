@@ -19,7 +19,7 @@ const DEFAULT_MAX_TURNS = 50;
  * automatically loaded.
  */
 export async function runAgentStream(
-  body: QueryRequestBody,
+  body: QueryRequestBody & { prompt: string },
   res: Response,
   abortController: AbortController
 ): Promise<void> {

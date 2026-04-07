@@ -274,6 +274,7 @@ For a detailed routing guide, see [references/skill-routing-guide.md](references
 - Do not ask the user to choose many metrics to compensate for a vague hypothesis.
 - Do not claim certainty when the evidence only supports a directional judgment.
 - Do not finish a cycle without recording the learning state for the next one.
+- Do not narrate internal tool debugging, script fixes, path resolution, or runtime diagnosis to the user unless a blocker remains after you have already tried to recover.
 
 ---
 
@@ -284,22 +285,50 @@ For a detailed routing guide, see [references/skill-routing-guide.md](references
 Two parameters are passed as invocation arguments when the slash command is activated:
 
 - `project-id` — the unique project identifier in the web app
-- `access-token` — the API token for the `project-sync` skill
+- `access-token` — (optional) the API token for the `project-sync` skill
 
 Invocation pattern:
 ```
-/featbit-release-decision <project-id> <access-token>
+/featbit-release-decision <project-id> [access-token]
 ```
 
-Parse `project-id` and `access-token` from the starting prompt. If either value is missing, ask the user before proceeding.
+Parse `project-id` and `access-token` from the starting prompt. If `project-id` is missing, ask the user before proceeding. If `access-token` is missing or empty, proceed without it — only ask for it later if a database write operation actually requires authentication.
 
 ### State loading
 
 Before asking or saying anything, read the current project state from the database using the `project-sync` skill's `get-project` command with the `project-id` parsed from the invocation arguments.
 
+If the command returns `"status": "unavailable"`, the database is unreachable. Treat this exactly like a blank new project and proceed with the greeting — do not retry, do not diagnose, do not mention the database.
+
+Treat the project as a blank new project when the decision fields are empty and there are no meaningful experiments or learnings yet.
+
 ### First interaction
 
-After loading state, greet the user briefly, then ask them to describe the experiment or feature change they want to work on. Example opening question:
+After loading state, greet the user briefly, then ask them to describe the experiment or feature change they want to work on.
+
+If this is a blank new project:
+
+- Do not enumerate empty fields.
+- Do not explain that the stage is `intent`.
+- Do not say there are no experiments, no prior learnings, or that the slate is clean.
+- Do not say "I already loaded the workspace state", "Here's the full picture", "Context scan complete", or similar recap framing.
+- Do not use headings, bullets, or section dividers.
+- Keep the whole reply to at most two short sentences.
+- Ask one short direct question instead.
+
+Preferred opening for a blank new project:
+
+> What are you trying to improve or learn?
+
+If the user is resuming the same conversation but asks to start again, and the project is still blank, apply the same concise opening instead of recapping state again.
+
+If the project already has meaningful state:
+
+- Summarize only the non-empty fields that matter for the next decision.
+- Keep the recap to at most two short sentences.
+- Do not preface it with meta narration such as "Project state loaded".
+
+Example opening question for a non-empty project:
 
 > Please describe the experiment or feature change you'd like to work on, and I'll guide you through the process.
 

@@ -18,6 +18,9 @@ const router = Router();
  *
  * Body: QueryRequestBody
  *
+ * `prompt` is optional for a brand-new project session bootstrap. In that case
+ * the server injects the release-decision slash command automatically.
+ *
  * SSE events emitted:
  *   stream_event  – SDKPartialAssistantMessage (text/tool deltas)
  *   message       – SDKAssistantMessage (complete turn)
@@ -30,14 +33,21 @@ const router = Router();
 router.post("/", async (req: Request, res: Response) => {
   const body = req.body as QueryRequestBody;
 
-  if (!body.prompt || typeof body.prompt !== "string" || body.prompt.trim() === "") {
-    res.status(400).json({ error: "prompt is required" });
+  if (body.prompt !== undefined && typeof body.prompt !== "string") {
+    res.status(400).json({ error: "prompt must be a string when provided" });
     return;
   }
 
   // For new sessions, prepend the initial skill command;
   // for resumed sessions, pass the user prompt as-is.
   const effectivePrompt = buildEffectivePrompt(body);
+  if (effectivePrompt.trim() === "") {
+    res.status(400).json({
+      error: "prompt is required for resumed sessions",
+    });
+    return;
+  }
+
   const effectiveBody = { ...body, prompt: effectivePrompt };
 
   const serverId = randomUUID();

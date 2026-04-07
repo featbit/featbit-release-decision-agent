@@ -35,8 +35,13 @@ function prompt(): void {
   });
 }
 
-async function sendQuery(userPrompt: string): Promise<void> {
-  const body: Record<string, unknown> = { prompt: userPrompt, maxTurns: 50 };
+async function sendQuery(userPrompt?: string): Promise<void> {
+  const body: Record<string, unknown> = { maxTurns: 50 };
+  const trimmedPrompt = userPrompt?.trim();
+  if (trimmedPrompt) {
+    body.prompt = trimmedPrompt;
+  }
+
   // Always send projectId – the server derives a deterministic session UUID from it
   if (PROJECT_ID) {
     body.projectId = PROJECT_ID;
@@ -168,6 +173,6 @@ console.log(`Type your message and press Enter. Type "exit" to quit.\n`);
 // the agent greets the user with guidance based on its entry protocol.
 (async () => {
   console.log("[new session] Initializing...\n");
-  await sendQuery("I'm starting a new release decision session. Please scan the workspace for existing context and guide me on what to do next.");
+  await sendQuery();
   prompt();
 })();

@@ -19,8 +19,8 @@ export interface SseEvent {
 // ── HTTP request body for POST /query ─────────────────────────────────────────
 
 export interface QueryRequestBody {
-  /** User prompt text */
-  prompt: string;
+  /** User prompt text. Optional for a brand-new project session bootstrap. */
+  prompt?: string;
   /** Project ID – used to derive a deterministic session UUID and for skill context */
   projectId?: string;
   /** Access token for the initial skill invocation (new session only) */
