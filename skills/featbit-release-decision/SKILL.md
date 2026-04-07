@@ -4,7 +4,7 @@ description: FeatBit release decision philosophy and control framework. Activate
 license: MIT
 metadata:
   author: FeatBit
-  version: "4.0.0"
+  version: "4.2.0"
   category: release-management
 ---
 
@@ -58,7 +58,11 @@ The skill should never let a tool define the problem prematurely.
 
 ## Session Memory
 
-Maintain `.featbit-release-decision/intent.md`. Create it on first contact and keep it current.
+The web database (via `project-sync` skill) is the canonical source for project state. All satellite skills read from and write to the database.
+
+Optionally maintain `.featbit-release-decision/intent.md` as a human-readable working state for local visibility, but the database is the source of truth.
+
+Project state fields:
 
 ```
 goal:            <the business outcome the user wants>
@@ -67,15 +71,31 @@ hypothesis:      <the falsifiable claim being tested>
 change:          <what is being built, gated, measured, or rolled out>
 stage:           <intent | hypothesis | implementing | exposing | measuring | deciding | learning>
 variants:        <baseline / candidate if applicable>
-primary_metric:  <the metric that decides success>
+primaryMetric:   <the metric that decides success>
 guardrails:      <metrics that must not degrade>
 constraints:     <protected audiences, rollout caps, operational limits>
-open_questions:  <what is still unclear>
-last_action:     <last thing proposed or executed>
-last_learning:   <what was learned from the previous cycle>
+openQuestions:    <what is still unclear>
+lastAction:      <last thing proposed or executed>
+lastLearning:    <what was learned from the previous cycle>
 ```
 
-This file is not a log. It is the current decision state.
+This is not a log. It is the current decision state.
+
+Use `camelCase` for all field keys.
+
+## Project Sync Rules
+
+Every stage transition must persist state to the database before handing off to the next skill.
+
+All satellite skills use the `project-sync` skill to read and write state. The required pattern:
+
+1. **Read** — use `get-project` to load current state on entry
+2. **Write state** — use `update-state` to persist field values
+3. **Advance stage** — use `set-stage` to move the lifecycle forward
+4. **Log transition** — use `add-activity` to record what happened
+5. **Experiment data** — use `upsert-experiment` when experiment records change
+
+See the `project-sync` skill for full command reference. Set `SYNC_API_URL` if the web app is not at `http://localhost:3000`.
 
 ---
 
@@ -259,17 +279,31 @@ For a detailed routing guide, see [references/skill-routing-guide.md](references
 
 ## Entry Protocol
 
-Before asking or saying anything, scan the workspace for existing context:
+### Project credentials
 
+Two parameters are passed as invocation arguments when the slash command is activated:
+
+- `project-id` — the unique project identifier in the web app
+- `access-token` — the API token for the `project-sync` skill
+
+Invocation pattern:
 ```
-.featbit-release-decision/intent.md  → Prior decision state and last learning
-artifacts/results.json       → Evidence already interpreted?
-artifacts/plan.json          → Evaluation structure already proposed?
-artifacts/catalog.json       → Evidence source already inspected?
-existing docs or notes       → Any prior human-written problem framing?
+/featbit-release-decision <project-id> <access-token>
 ```
 
-Identify which control lenses are relevant based on the scan and the current message. Ask only what you cannot infer. One question at a time.
+Parse `project-id` and `access-token` from the starting prompt. If either value is missing, ask the user before proceeding.
+
+### State loading
+
+Before asking or saying anything, read the current project state from the database using the `project-sync` skill's `get-project` command with the `project-id` parsed from the invocation arguments.
+
+### First interaction
+
+After loading state, greet the user briefly, then ask them to describe the experiment or feature change they want to work on. Example opening question:
+
+> Please describe the experiment or feature change you'd like to work on, and I'll guide you through the process.
+
+Identify which control lenses are relevant based on the project state and the user's response. Ask only what you cannot infer. One question at a time.
 
 ---
 

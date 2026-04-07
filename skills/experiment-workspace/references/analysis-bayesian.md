@@ -1,6 +1,6 @@
 # Bayesian Analysis — How It Works and How to Use It
 
-The analysis script reads `input.json` from an experiment folder and writes `analysis.md`.
+The analysis script reads `inputData` from the experiment's database record and writes `analysisResult` back.
 No dashboard required. No online account. Runs locally.
 
 ---
@@ -8,31 +8,26 @@ No dashboard required. No online account. Runs locally.
 ## Requirements
 
 ```
-python >= 3.10
-numpy
-scipy
-```
-
-Install once:
-
-```bash
+Python >= 3.10
 pip install numpy scipy
 ```
+
+The analysis is implemented in Python using numpy and scipy for statistical computation.
 
 ---
 
 ## What the Script Does
 
-1. Reads `definition.md` — variant names, metric events, observation window, optional prior
-2. Loads `input.json` — aggregated per-variant counts
+1. Reads the experiment record from the DB — variant names, metric events, observation window, optional prior
+2. Parses `inputData` — aggregated per-variant counts
 3. For each metric and each treatment arm:
    - Computes the **Bayesian posterior** over the relative effect δ = (mean_trt − mean_ctrl) / mean_ctrl
    - Derives **P(win)**, **95% credible interval**, and **risk / expected loss**
 4. Runs an **SRM check** — flags trafficking imbalances before you interpret any result
 5. Runs two validity checks on the primary metric:
-   - `n ≥ minimum_sample_per_variant` — exposure floor from `definition.md`
+   - `n ≥ minimumSample` — exposure floor from the experiment record
    - `k ≥ 30` per variant — conversion floor for Gaussian approximation reliability; warns if not met even when n passes
-6. Writes `analysis.md`
+6. Writes `analysisResult` to the experiment's database record
 
 ---
 
@@ -100,7 +95,7 @@ These ranges are heuristics, not hard rules. Calibrate against the business impa
 
 By default the script uses a **flat (improper) prior**: the posterior equals the data likelihood. This is the safest default — no assumptions injected.
 
-If you set `proper: true` in `definition.md`, the script applies a **conjugate Gaussian prior update**:
+If you set `priorProper: true` in the experiment record, the script applies a **conjugate Gaussian prior update**:
 
 ```
 post_mean = (data_mean/data_var + prior_mean/prior_var) / (1/data_var + 1/prior_var)
@@ -127,9 +122,9 @@ With `proper: false` (the default), the flat prior means the posterior equals th
 
 ---
 
-## Before You Run: Setting `minimum_sample_per_variant`
+## Before You Run: Setting `minimumSample`
 
-`minimum_sample_per_variant` in `definition.md` is a **validity floor** — the minimum number of exposed users per variant before the script's Gaussian approximation can be trusted. It is not a stopping rule.
+`minimumSample` in the experiment record is a **validity floor** — the minimum number of exposed users per variant before the script's Gaussian approximation can be trusted. It is not a stopping rule.
 
 The Bayesian stopping criterion is different and comes later: you stop when `risk[trt]` or `risk[ctrl]` falls below an acceptable threshold (see Decision Guide). The validity floor just ensures the math is reliable enough to read at all.
 
@@ -170,7 +165,7 @@ minimum_sample_per_variant  =  30 / p_baseline
 minimum_sample_per_variant = 30 / 0.05 = 600
 ```
 
-Set `minimum_sample_per_variant: 600` in `definition.md`.
+Set `minimumSample: 600` in the experiment record.
 
 ---
 
@@ -189,11 +184,11 @@ Reaching `minimum_sample_per_variant` only means the results are safe to read. I
 After reaching the floor, re-run the analysis periodically:
 
 ```bash
-python .featbit-release-decision/scripts/collect-input.py <slug>
-python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+npx tsx skills/experiment-workspace/scripts/collect-input.ts <project-id> <slug>
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
 ```
 
-Then open `analysis.md` and read `risk[trt]` and `risk[ctrl]`. These are outputs computed by the script — there is no configuration field for them. The judgment of "low enough" is made by you or the agent running `evidence-analysis` by comparing the values to the reference ranges in the Decision Guide below.
+Then read `analysisResult` from the experiment record and check `risk[trt]` and `risk[ctrl]`. These are outputs computed by the script — there is no configuration field for them. The judgment of "low enough" is made by you or the agent running `evidence-analysis` by comparing the values to the reference ranges in the Decision Guide below.
 
 How risk behaves as sample grows:
 
@@ -236,7 +231,7 @@ Input data: `n` users exposed, `k` who converted.
 Run:
 
 ```bash
-python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
 ```
 
 Output table includes: `n`, `conv`, `rate`, `rel Δ`, `95% credible CI`, `P(win)`, `risk[ctrl]`, `risk[trt]`.
@@ -278,7 +273,7 @@ Risk directions are also flipped: `risk[trt]` is the cost of adopting treatment 
 
 ### Pattern 4 — Multiple treatment arms (A/B/C test)
 
-Add variant keys in `definition.md` and `input.json` matching each arm. The script runs a separate Bayesian comparison (each treatment vs. the single control) for every arm.
+Add variant keys in the experiment record and `inputData` matching each arm. The script runs a separate Bayesian comparison (each treatment vs. the single control) for every arm.
 
 ```json
 "cta_clicked": {
@@ -304,13 +299,12 @@ The same caution applies to guardrail metrics (documented in the Decision Guide)
 
 Use when you have historical data from similar experiments and want to regularise noisy early results.
 
-In `definition.md`:
+In the experiment record:
 
-```markdown
-prior:
-  proper:  true
-  mean:    0.0    # no expected direction (use historical lift if available)
-  stddev:  0.3    # ±30% is the plausible lift range for this product area
+```
+priorProper:  true
+priorMean:    0.0    # no expected direction (use historical lift if available)
+priorStddev:  0.3    # ±30% is the plausible lift range for this product area
 ```
 
 Effect by sample size:
@@ -329,11 +323,11 @@ When to keep flat (`proper: false`):
 - First experiment in this area — no prior knowledge to encode
 - You want results to be purely data-driven
 
-The `analysis.md` header always states which mode was used: `flat/improper (data-only)` or `proper (mean=X, stddev=Y)`.
+The `analysisResult` output always states which mode was used: `flat/improper (data-only)` or `proper (mean=X, stddev=Y)`.
 
 #### How to derive `mean` and `stddev` from historical experiments
 
-If you have results from a past experiment, read `rel Δ` and the `95% credible CI` from its `analysis.md`:
+If you have results from a past experiment, read `rel Δ` and the `95% credible CI` from its `analysisResult`:
 
 ```
 prior mean   = rel Δ  (e.g. +0.12 for a +12% lift)
@@ -341,7 +335,7 @@ prior stddev = (ci_upper − ci_lower) / (2 × 1.96)
                (e.g. CI [+4%, +20%] → stddev = (0.20 − 0.04) / 3.92 ≈ 0.041)
 ```
 
-Note: `se` is not directly shown in `analysis.md`. Derive it from the credible interval width as above.
+Note: `se` is not directly shown in `analysisResult`. Derive it from the credible interval width as above.
 
 If you have multiple past experiments, use the average `rel Δ` as `mean` and the standard deviation across those lifts as `stddev`.
 
@@ -352,33 +346,31 @@ A valid and practical workflow when you have no prior history:
 ```
 Phase A — pilot (days 1–5):
   Run the experiment normally with proper: false (flat prior).
-  After phase A, read rel Δ and 95% credible CI from analysis.md.
+  After phase A, read rel Δ and 95% credible CI from analysisResult.
   Compute: mean = rel Δ,  stddev = (ci_upper − ci_lower) / (2 × 1.96)
 
 Phase B — main experiment (day 6 onward):
-  Reset the observation window. input.json must contain only data from day 6 onward.
+  Reset the observation window. inputData must contain only data from day 6 onward.
   Set prior using phase A results:
     mean:   <rel Δ from phase A>
     stddev: <derived from CI above>
     proper: true
 ```
 
-**Critical rule:** the data from phase A and phase B must never overlap. If you re-use phase A data in phase B's `input.json`, the early data is counted twice and the posterior will be biased. Reset the window completely before collecting phase B data.
+**Critical rule:** the data from phase A and phase B must never overlap. If you re-use phase A data in phase B's `inputData`, the early data is counted twice and the posterior will be biased. Reset the window completely before collecting phase B data.
 
 ---
 
 ### Pattern 6 — Primary metric + guardrail metrics
 
-`definition.md` supports one primary metric and multiple guardrails. The script runs Bayesian analysis on all of them.
+The experiment record supports one primary metric and multiple guardrails. The script runs Bayesian analysis on all of them.
 
-```markdown
-primary_metric_event:    cta_clicked
-guardrail_events:
-  - error_rate
-  - page_load_time
+```
+primaryMetricEvent:    cta_clicked
+guardrailEvents:      ["error_rate", "page_load_time"]
 ```
 
-In `analysis.md`, the primary metric section is labelled `### Primary Metric` and guardrail sections are labelled `### Guardrail`. Decision hints are only generated for the primary metric — guardrails are checked separately for harm signals.
+In `analysisResult`, the primary metric is in the `primary_metric` object and guardrails are in the `guardrails` array. Decision hints are only generated for the primary metric — guardrails are checked separately for harm signals.
 
 ---
 
@@ -472,16 +464,16 @@ This script sits between data collection and the final decision:
 ```
 measurement-design           ← defines the metric and instrumentation
     ↓
-experiment-workspace         ← creates definition.md, collects input.json
+experiment-workspace         ← creates experiment record, collects inputData
     ↓
-analyze-bayesian.py          ← YOU ARE HERE: produces analysis.md
+analyze-bayesian.py          ← YOU ARE HERE: produces analysisResult
     ↓
-evidence-analysis            ← reads analysis.md, frames CONTINUE / PAUSE / ROLLBACK
+evidence-analysis            ← reads analysisResult, frames CONTINUE / PAUSE / ROLLBACK
     ↓
 learning-capture             ← records what was learned
 ```
 
-The agent runs this script as the "run the analysis" step inside `experiment-workspace`. After `analysis.md` is written, the agent hands off to `evidence-analysis` along with `definition.md` so the decision can be tied back to the original hypothesis.
+The agent runs this script as the "run the analysis" step inside `experiment-workspace`. After `analysisResult` is written to the experiment record, the agent hands off to `evidence-analysis` so the decision can be tied back to the original hypothesis.
 
 ---
 
@@ -490,11 +482,11 @@ The agent runs this script as the "run the analysis" step inside `experiment-wor
 Both scripts are idempotent — re-run whenever you want fresh numbers:
 
 ```bash
-python .featbit-release-decision/scripts/collect-input.py <slug>
-python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+npx tsx skills/experiment-workspace/scripts/collect-input.ts <project-id> <slug>
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
 ```
 
-`input.json` and `analysis.md` are both overwritten with fresh numbers. The decision in `decision.md` is not overwritten — that is written by the agent after `evidence-analysis`.
+`inputData` and `analysisResult` in the experiment record are both updated with fresh numbers.
 
 ---
 

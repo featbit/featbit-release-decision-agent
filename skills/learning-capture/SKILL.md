@@ -4,7 +4,7 @@ description: Captures structured learnings at the end of an experiment or releas
 license: MIT
 metadata:
   author: FeatBit
-  version: "1.0.0"
+  version: "1.1.0"
   category: release-management
 ---
 
@@ -19,7 +19,25 @@ Its job is to produce a reusable learning at the end of every cycle — good, ba
 - A decision has been made (CONTINUE, PAUSE, ROLLBACK CANDIDATE, or INCONCLUSIVE)
 - The experiment window has closed
 - The user says "what did we learn" or "next iteration"
-- `.featbit-release-decision/intent.md` shows `stage: deciding` and a decision exists
+- Project stage is `deciding` and a decision exists
+
+## On Entry — Read Current State
+
+Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+
+Check these fields:
+
+| Field | Purpose |
+|---|---|
+| `hypothesis` | The claim that was tested |
+| `primaryMetric` | What was measured |
+| `stage` | Current lifecycle position |
+| `experiments` | Experiment records with decision data |
+| `lastLearning` | Previous learning (if iterating) |
+
+- If no experiment has a `decision` field → redirect to `evidence-analysis` first
+- If `stage` is not `deciding` → a decision may not have been made yet
+- If `lastLearning` already contains a learning for this cycle → review rather than recreate
 
 ## What a Complete Learning Contains
 
@@ -39,10 +57,7 @@ Work through each of the five components with the user. Prompt for missing parts
 
 ### Write to decision context
 
-Update `.featbit-release-decision/intent.md`:
-- Set `last_learning:` to a summary of the learning
-- Set `stage: learning` then immediately `stage: intent` (ready for the next cycle)
-- Clear `hypothesis:`, `primary_metric:`, `guardrails:` — they belong to the next cycle's form
+Use the `project-sync` skill to persist the learning to the database (see Persist State below).
 
 ### Surface the next hypothesis
 
@@ -55,6 +70,15 @@ The learning must always end with a directional suggestion for what to test next
 - Do not let the learning become a post-mortem — it is forward-facing input
 - For longer cycles, write a fuller document to `artifacts/learning-[date].md`
 - Hand off to `intent-shaping` for the next cycle
+
+### Persist State
+
+After completing work, use the `project-sync` skill to persist state to the database:
+
+1. `update-state` — save `--lastLearning "..." --lastAction "Learning captured"`
+2. `set-stage` — set to `learning`
+3. `upsert-experiment` — save `--whatChanged "..." --whatHappened "..." --confirmedOrRefuted "..." --whyItHappened "..." --nextHypothesis "..."`
+4. `add-activity` — record what happened, e.g. `--type learning --title "Learning captured"`
 
 ## Reference Files
 

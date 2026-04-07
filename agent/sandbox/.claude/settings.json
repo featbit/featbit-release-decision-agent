@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(tsx:*)",
+      "Read(**)",
+      "Write(data/**)",
+      "Edit(data/**)"
+    ],
+    "deny": []
+  }
+}

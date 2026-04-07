@@ -1,6 +1,6 @@
 # experiment-workspace
 
-This skill manages the A/B experiment lifecycle as local files — from starting an experiment to running analysis and archiving results.
+This skill manages the A/B experiment lifecycle through the database — from starting an experiment to running analysis and reviewing results. All data flows through the HTTP API backed by Prisma + SQLite.
 
 ---
 
@@ -15,10 +15,13 @@ The framework's core logic and data contracts. These define what an experiment *
 | File | Purpose |
 |------|---------|
 | `SKILL.md` | Agent instructions — the skill's reasoning and decision logic |
-| `scripts/analyze-bayesian.py` | Bayesian analysis engine — reads `input.json`, writes `analysis.md` |
-| `scripts/check-sample.sh` | Sample size checker — reads `input.json` and `definition.md` |
-| `references/experiment-folder-spec.md` | Data contract — defines the exact shape of `definition.md`, `input.json`, `analysis.md` |
-| `references/analysis-bayesian.md` | Documentation for `analyze-bayesian.py` — explains the algorithm and output format |
+| `scripts/analyze-bayesian.py` | Bayesian analysis engine — reads `inputData` from DB, writes `analysisResult` to DB |
+| `scripts/analyze-bandit.py` | Thompson Sampling bandit — reads `inputData`, writes bandit `analysisResult` to DB |
+| `scripts/stats_utils.py` | Python statistical utilities — posteriors, SRM check, risk, bandit weights |
+| `scripts/db_client.py` | Python HTTP API wrapper — `get_experiment()`, `upsert_experiment()` |
+| `scripts/db-client.ts` | TypeScript HTTP API wrapper — `getExperiment()`, `upsertExperiment()` |
+| `references/experiment-folder-spec.md` | Data contract — defines the exact shape of the experiment record, `inputData`, `analysisResult` |
+| `references/analysis-bayesian.md` | Documentation for `analyze-bayesian.ts` — explains the algorithm and output format |
 
 ### Tier 2 — Practice defaults 📋 Replace or extend for your stack
 
@@ -27,22 +30,21 @@ These files implement a default approach. If the default works for you, use it a
 | File | Default | What to replace it with |
 |------|---------|------------------------|
 | `references/data-source-guide.md` | FeatBit API, PostgreSQL, custom HTTP | Your own data source patterns — add a `§YourTool` section, or replace entirely |
-| `scripts/collect-input.py` | Python script scaffolding for `fetch_metric_summary()` | Any tool that produces `input.json` in the correct format (CLI, MCP, SQL export, etc.) |
+| `scripts/collect-input.ts` | TypeScript script scaffolding for `fetchMetricSummary()` | Any tool that produces `inputData` in the correct format (CLI, MCP, SQL export, etc.) |
 
-> If you replace `collect-input.py` with a different mechanism (e.g. an MCP tool or a shell script), remove it from `scripts/` and update the "I want to update the data" action in `SKILL.md`.
+> If you replace `collect-input.ts` with a different mechanism (e.g. an MCP tool or a shell script), remove it from `scripts/` and update the "I want to update the data" action in `SKILL.md`.
 
-> If you add a new statistical method (e.g. frequentist), add a new `scripts/analyze-frequentist.py` and `references/analysis-frequentist.md`, then update `SKILL.md` to route to the right script based on context.
+> If you add a new statistical method (e.g. frequentist), add a new `scripts/analyze-frequentist.ts` and `references/analysis-frequentist.md`, then update `SKILL.md` to route to the right script based on context.
 
-### Tier 3 — User-defined ✏️ You create and own these
+### Tier 3 — User-defined ✏️ Stored in the database
 
-These files do not exist until you create them. They represent your specific experiment context and data. The agent will help you create them, but the content is yours.
+These are not files — they are fields in the experiment's database record. The agent will help you create them, but the content is yours.
 
-| File (in your project) | Purpose | Who writes it |
-|------------------------|---------|---------------|
-| `.featbit-release-decision/experiments/<slug>/definition.md` | Your experiment's parameters — flag key, variants, metrics, observation window | Agent creates from template; you validate |
-| `.featbit-release-decision/experiments/<slug>/input.json` | Raw metric data — exposed counts and conversion counts per variant | Your data collection mechanism produces this |
-| `.featbit-release-decision/experiments/<slug>/analysis.md` | Analysis results | `analyze-bayesian.py` writes this automatically |
-| `.featbit-release-decision/experiments/<slug>/decision.md` | Structured release decision | Agent writes after `evidence-analysis` |
+| DB Field | Purpose | Who writes it |
+|----------|---------|---------------|
+| Experiment record (slug, variants, metrics, observation window, etc.) | Your experiment's parameters | Agent creates via API; you validate |
+| `inputData` | Raw metric data — exposed counts and conversion counts per variant | `collect-input.ts` (or your data collection mechanism) writes this via API |
+| `analysisResult` | Analysis results | `analyze-bayesian.ts` / `analyze-bandit.ts` writes this via API |
 
 ---
 
@@ -52,10 +54,10 @@ The usual customization path is:
 
 1. Your data lives somewhere specific (FeatBit API, a Postgres DB, a Redshift table, an MCP tool)
 2. You implement the collection step in whatever way fits your stack — script, CLI command, MCP call
-3. That step writes `input.json` in the format defined in `references/experiment-folder-spec.md`
-4. Everything downstream (`check-sample.sh`, `analyze-bayesian.py`) works unchanged
+3. That step writes `inputData` in the format defined in `references/experiment-folder-spec.md`
+4. Everything downstream (`analyze-bayesian.ts`, `analyze-bandit.ts`) works unchanged
 
-The only file you must produce is `input.json`. How you produce it is your choice.
+The only data you must produce is `inputData`. How you produce it is your choice.
 
 ---
 

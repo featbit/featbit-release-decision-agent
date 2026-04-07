@@ -1,20 +1,20 @@
 ---
 name: experiment-workspace
-description: Creates and manages experiments as local files — the offline replacement for an online A/B test dashboard. Activate when user is ready to start collecting data for a hypothesis, wants to set up an experiment, needs to pull or organize experiment data, wants to run analysis calculations, or asks "how do I track this experiment", "set up the experiment", "run the analysis", "pull results", "compute the stats". Sits between measurement-design (instrumentation confirmed) and evidence-analysis (results interpreted). Do not use before a hypothesis and primary metric exist.
+description: Creates and manages experiments as database-backed records — the unified replacement for an online A/B test dashboard. Activate when user is ready to start collecting data for a hypothesis, wants to set up an experiment, needs to pull or organize experiment data, wants to run analysis calculations, or asks "how do I track this experiment", "set up the experiment", "run the analysis", "pull results", "compute the stats". Sits between measurement-design (instrumentation confirmed) and evidence-analysis (results interpreted). Do not use before a hypothesis and primary metric exist.
 license: MIT
 metadata:
   author: FeatBit
-  version: "1.0.0"
+  version: "2.0.0"
   category: release-management
 ---
 
 # Experiment Workspace
 
-This skill manages the full experiment lifecycle as local files.
+This skill manages the full experiment lifecycle through the database.
 
-It replaces what an online experiment dashboard does — experiment creation, data collection tracking, analysis computation, and result storage — with a shared folder that any team member can read, commit to git, and reason about without a browser.
+It replaces what an online experiment dashboard does — experiment creation, data collection tracking, analysis computation, and result storage — with database records accessible via HTTP API. All data flows through a single SQLite database shared by the web UI, sandbox agent, and analysis scripts.
 
-The folder is the experiment. The script is the dashboard.
+The database is the experiment. The script is the dashboard.
 
 ---
 
@@ -25,42 +25,73 @@ The folder is the experiment. The script is the dashboard.
 - User wants to pull data and run analysis
 - User wants to check whether enough data has accumulated
 - User wants to archive a completed experiment result
-- `.featbit-release-decision/intent.md` shows `stage: measuring`
+- Project stage is `measuring`
 
 Do not activate if:
 - Hypothesis is not yet written → go to `hypothesis-design`
 - Primary metric is undefined → go to `measurement-design`
 - Data already exists and the user only wants a decision → go to `evidence-analysis` directly
 
+## On Entry — Read Current State
+
+Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+
+Check these fields:
+
+| Field | Purpose |
+|---|---|
+| `hypothesis` | The causal claim being tested |
+| `primaryMetric` | What is being measured |
+| `stage` | Current lifecycle position |
+| `experiments` | Existing experiment records and their status |
+
+- If `hypothesis` is empty → redirect to `hypothesis-design`
+- If `primaryMetric` is empty → redirect to `measurement-design`
+- If an experiment already exists for this hypothesis → resume from its current status rather than creating a new one
+
 ---
 
 ## What This Skill Manages
 
+### Database Records (Experiment model)
+
+Each experiment is stored as a row in the `Experiment` table (Prisma schema). Key fields:
+
+| DB Field | Purpose |
+|---|---|
+| `slug` | Experiment identifier (kebab-case) |
+| `hypothesis` | The causal claim being tested |
+| `primaryMetricEvent` | Event name for the primary metric |
+| `guardrailEvents` | JSON array string of guardrail event names |
+| `controlVariant` / `treatmentVariant` | Variant values |
+| `minimumSample` | Validity floor per variant |
+| `observationStart` / `observationEnd` | Observation window |
+| `priorProper` / `priorMean` / `priorStddev` | Prior configuration |
+| `inputData` | Collected metric data (JSON string) |
+| `analysisResult` | Computed analysis output (JSON string) |
+| `status` | `draft` / `collecting` / `analyzing` / `decided` |
+| `decision` / `decisionSummary` / `decisionReason` | Final decision (summary = plain-language action, reason = technical rationale) |
+
+### Scripts (Hybrid: TypeScript for I/O, Python for algorithms)
+
 ```
-.featbit-release-decision/
-  intent.md                    ← current run state (CF-01 through CF-08)
-  decision.md                  ← decision output (written by evidence-analysis)
-  experiments/
-    <experiment-slug>/
-      definition.md            ← agent creates
-      input.json               ← collect-input.py writes
-      analysis.md              ← analyze-bayesian.py writes       [A/B]
-      bandit-weights.json      ← analyze-bandit.py writes         [Bandit]
-      decision.md              ← agent writes after evidence-analysis
-    archive/                   ← completed experiments moved here
-  scripts/
-    stats_utils.py             ← shared statistical utilities (imported by analysis scripts)
-    analyze-bayesian.py        ← Bayesian A/B analysis (complete, ready to run)
-    analyze-bandit.py          ← Thompson Sampling weight computation (complete, ready to run)
-    collect-input.py           ← data collector placeholder (implement fetch_metric_summary)
-    check-sample.sh            ← quick sample count check
+skills/experiment-workspace/scripts/
+  db-client.ts           ← HTTP API wrapper for DB read/write (TypeScript)
+  db_client.py           ← HTTP API wrapper for DB read/write (Python)
+  collect-input.ts       ← data collector placeholder (TypeScript, implement fetchMetricSummary)
+  stats_utils.py         ← statistical utilities: GaussianPrior, bayesian_result, srm_check (Python, numpy/scipy)
+  analyze-bayesian.py    ← Bayesian A/B analysis (Python, reads/writes DB)
+  analyze-bandit.py      ← Thompson Sampling weight computation (Python, reads/writes DB)
 ```
+
+**TypeScript scripts** (data I/O): `npx tsx <script>.ts <project-id> <experiment-slug>`
+**Python scripts** (algorithms): `python <script>.py <project-id> <experiment-slug>`
 
 **Two experiment types:**
 - **A/B (default)**: fixed 50/50 traffic split, one-shot analysis → `analyze-bayesian.py`
 - **Bandit**: dynamic traffic reweighting via Thompson Sampling → `analyze-bandit.py` (requires FeatBit API integration for full automation)
 
-All agent-managed files for a project live under `.featbit-release-decision/`. The folder can be committed to git. No credentials or personally identifiable data should be stored here — `user_key` values should be pseudonymous identifiers.
+All experiment data lives in the shared SQLite database, accessible via the web app's HTTP API (`SYNC_API_URL`, default `http://localhost:3000`). No local experiment files needed — the web UI, sandbox agent, and scripts all read/write the same database.
 
 ---
 
@@ -68,29 +99,29 @@ All agent-managed files for a project live under `.featbit-release-decision/`. T
 
 ### "First time setup"
 
-1. Check whether `.featbit-release-decision/scripts/` exists in the project
-2. If not, copy all scripts from `scripts/` into `.featbit-release-decision/scripts/`:
-   - `stats_utils.py` — shared utilities; must be present for both analysis scripts to run
-   - `analyze-bayesian.py` — ready to run, no edits needed
-   - `analyze-bandit.py` — ready to run, no edits needed
-   - `collect-input.py` — placeholder; user must implement `fetch_metric_summary()`
-   - `check-sample.sh` — ready to run once `input.json` exists
-3. Tell the user: `collect-input.py` needs to be customized for their data source before it can be used. Both analysis scripts work out of the box once `input.json` exists. `stats_utils.py` must be in the same directory as the analysis scripts.
+No file copying is needed. All scripts run from `skills/experiment-workspace/scripts/` using `npx tsx`. The only prerequisite is:
 
-This setup is idempotent — safe to re-run if files are already present.
+1. The web app must be running (provides the HTTP API that scripts use for DB access)
+2. `collect-input.ts` must be customized with a `fetchMetricSummary()` implementation for your data source (see `references/data-source-guide.md`)
+3. Both analysis scripts (`analyze-bayesian.py`, `analyze-bandit.py`) work out of the box once `inputData` exists in the DB
+
+Python with numpy/scipy is required for the analysis scripts. Install once:
+```bash
+pip install numpy scipy
+```
 
 ---
 
 ### "I want to start an experiment"
 
 1. Confirm the hypothesis slug — derive from the flag key, e.g. `chat-cta-v2`
-2. Run setup if not done: copy scripts from `scripts/` to `.featbit-release-decision/scripts/`
-3. Create `.featbit-release-decision/experiments/<slug>/definition.md` from the template in `references/experiment-folder-spec.md`
-4. Copy `hypothesis:` verbatim from `.featbit-release-decision/intent.md`
+2. Ensure the web app is running (scripts need the HTTP API)
+3. Persist the experiment to the database using the `project-sync` skill's `upsert-experiment` command (see Persist State section below)
+4. Copy `hypothesis:` verbatim from the project state read on entry
 5. Confirm the `observation_window.start` date — this is today if the flag was just enabled
 6. Set `minimum_sample_per_variant` using the following fallback chain. Do not expose the formula to the user at any step.
 
-   **Step 1 — read the hypothesis in `intent.md`:**
+   **Step 1 — read the hypothesis from project state (loaded on entry):**
    - Does it mention a current baseline rate? (e.g. "increase signup rate from 4% to 5%" → p_baseline = 0.04)
    - Does it mention an expected lift that implies a current level? Extract the number and compute `ceil(30 / p_baseline)`
 
@@ -120,43 +151,41 @@ This setup is idempotent — safe to re-run if files are already present.
 
    **Step 5 — if no estimate is available from any source:**
    - Use 1,000 as a safe conservative default (assumes ~3% baseline)
-   - Record the assumption explicitly in `definition.md` as a comment so it can be revised once real data arrives
+   - Record the assumption explicitly in the experiment record so it can be revised once real data arrives
 7. Ask the user whether they have prior knowledge about the expected lift for this metric:
    - "Do you have results from a similar past experiment? If so, what was the approximate lift and how uncertain was it?"
-   - If the user provides a past `μ_rel` and `se` (or a rough range): set `proper: true`, `mean: <μ_rel>`, `stddev: <se>` in `definition.md`
-   - If the user ran a pilot phase (separate experiment window) and has its `analysis.md`: read `μ_rel` and `se` from it and use those as the prior — but only if the pilot data will **not** be included in the new experiment's `input.json`
-   - If no prior knowledge is available: set `proper: false` (flat prior, the safe default) and note this in `definition.md`
-8. Update `.featbit-release-decision/intent.md`: `stage: measuring`
-9. Tell the user: the next step is to collect data (customize `collect-input.py` if needed), then run the analysis
+   - If the user provides a past `μ_rel` and `se` (or a rough range): set `priorProper: true`, `priorMean: <μ_rel>`, `priorStddev: <se>` in the experiment
+   - If the user ran a pilot phase (separate experiment window) and has its `analysisResult`: read `μ_rel` and `se` from it and use those as the prior — but only if the pilot data will **not** be included in the new experiment's `inputData`
+   - If no prior knowledge is available: set `priorProper: false` (flat prior, the safe default)
+8. Persist state to the database (see Persist State section below)
+9. Tell the user: the next step is to collect data (customize `collect-input.ts` if needed), then run the analysis
 
-The agent does not need to touch any online dashboard. Creating `definition.md` is the equivalent of "creating an experiment".
+The agent does not need to touch any online dashboard. Persisting the experiment record to the database is the equivalent of "creating an experiment".
 
 ### "I want to check if we have enough data"
 
-1. Check if `input.json` exists at `.featbit-release-decision/experiments/<slug>/input.json`
-   - If not, data has not been collected yet — direct to `references/data-source-guide.md` or `collect-input.py`
-2. If it exists, run the sample check:
-   ```bash
-   bash .featbit-release-decision/scripts/check-sample.sh <slug>
-   ```
-3. Compare the printed counts against `minimum_sample_per_variant` in `definition.md`
-4. If below minimum: do not proceed to analysis — wait and re-check later
-5. If above minimum: proceed to run the analysis
+1. Read the experiment from the database and check `inputData`
+   - If `inputData` is empty, data has not been collected yet — direct to `references/data-source-guide.md` or customize `collect-input.ts`
+2. If `inputData` exists, check the `n` (total users) per variant against `minimumSample`
+   - You can inspect this from the web UI or by reading the experiment record via the API
+3. If below minimum: do not proceed to analysis — wait and re-check later
+4. If above minimum: proceed to run the analysis
 
 ### "I want to run the analysis"
 
-1. Confirm `input.json` is present at `.featbit-release-decision/experiments/<slug>/input.json`
-2. If missing: run `collect-input.py` or follow `references/data-source-guide.md` to produce it
+1. Confirm `inputData` exists in the experiment record (read from the database)
+2. If missing: customize and run `collect-input.ts` or follow `references/data-source-guide.md` to populate it
 3. Run:
    ```bash
-   python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+   python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
    ```
-4. Read the output in `.featbit-release-decision/experiments/<slug>/analysis.md`
-5. Key outputs to check before handing off:
+4. The script reads `inputData` from the DB, computes results, and writes `analysisResult` back to the DB
+5. Key outputs to check before handing off (read `analysisResult` from the experiment record):
    - **P(win)** ≥ 95% → strong signal; ≤ 5% → likely harmful; 20–80% → inconclusive
    - **risk[trt]** — if P(win) is near a boundary, this tells you how costly a wrong call is
    - **SRM check** — if χ² p-value < 0.01, stop and investigate traffic split before interpreting metrics
-6. Hand off to `evidence-analysis` with both `analysis.md` and `definition.md` as inputs
+6. Hand off to `evidence-analysis` with the experiment's `analysisResult` and definition fields
+7. Persist experiment status to the database (see Persist State section below)
 
 For the full list of metric types and usage patterns (proportion, continuous, inverse, multiple arms, informative prior), see `references/analysis-bayesian.md`.
 
@@ -172,29 +201,30 @@ See `references/analysis-bayesian.md` → "On Family-wise Error" for details.
 
 ### "I want to update the data and re-run"
 
-1. Re-run `collect-input.py` to pull fresh counts — it overwrites `input.json`
+1. Re-run `collect-input.ts` to pull fresh counts — it overwrites `inputData` in the DB
 2. Re-run:
    ```bash
-   python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+   python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
    ```
-3. `analysis.md` is overwritten with fresh numbers — both scripts are idempotent
+3. `analysisResult` is overwritten with fresh numbers — both scripts are idempotent
+4. Persist updated experiment status to the database (see Persist State section below)
 
 ### "I want to run a Bandit experiment"
 
 A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It requires a continuous cycle of data collection → weight computation → FeatBit flag update.
 
-**Setup** (same as A/B — `definition.md` format is identical):
-1. Create `definition.md` following the standard template
-2. Choose `primary_metric_event` — bandit optimizes this single metric
+**Setup** (same as A/B — uses the same experiment record in the DB):
+1. Create the experiment record following the standard workflow (see "I want to start an experiment")
+2. Choose `primaryMetricEvent` — bandit optimizes this single metric
 3. Note: bandit works best for proportion metrics (conversion rate, CTR)
 
 **Each reweighting cycle** (recommended every 6–24 hours):
-1. Collect fresh data → `input.json`
+1. Collect fresh data → update `inputData` in DB
 2. Run:
    ```bash
-   python .featbit-release-decision/scripts/analyze-bandit.py <slug>
+   python skills/experiment-workspace/scripts/analyze-bandit.py <project-id> <experiment-slug>
    ```
-3. Read `bandit-weights.json`:
+3. Read `analysisResult` from the experiment record:
    - If `enough_units: false` → burn-in not complete, do not apply weights yet (need ≥ 100 users per arm)
    - If `srm_p_value < 0.01` → SRM detected, investigate traffic split before applying weights
    - Otherwise → apply `bandit_weights` to the FeatBit feature flag via API
@@ -206,12 +236,12 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 1. Set winning arm to 100% in FeatBit
 2. Run final Bayesian analysis on full dataset:
    ```bash
-   python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+   python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
    ```
-3. Hand off to `evidence-analysis` with:
-   - `analysis.md` (final Bayesian result — note: δ estimate may have wider uncertainty due to unequal traffic)
-   - `bandit-weights.json` (final `best_arm_probabilities` — most reliable decision signal)
-   - `definition.md`
+3. Hand off to `evidence-analysis` with the experiment record containing:
+   - `analysisResult` (final Bayesian result — note: δ estimate may have wider uncertainty due to unequal traffic)
+   - Previous bandit `analysisResult` (final `best_arm_probabilities` — most reliable decision signal)
+   - Experiment definition fields from the DB
 
 For full details on output interpretation and FeatBit API integration, see `references/analysis-bandit.md`.
 
@@ -220,19 +250,15 @@ For full details on output interpretation and FeatBit API integration, see `refe
 A/B and Bandit experiments measure short-term behavior. Transient effects — novelty, seasonal spikes, event-driven traffic — can inflate results during the experiment window. A holdout group validates whether the effect persists over months.
 
 1. After full launch, adjust the feature flag traffic split to 95/5 — keep 5% of users on the old variant
-2. Add a `holdout` block to `definition.md` recording the plan:
-   ```yaml
-   holdout:
-     enabled: true
-     percentage: 5
-     check_at_days: [30, 60, 90]
-     launched_at: <launch date>
-   ```
+2. Record the holdout plan in the experiment record (e.g. in a note or dedicated field):
+   - `holdout percentage: 5%`
+   - `check_at_days: [30, 60, 90]`
+   - `launched_at: <launch date>`
 3. At each checkpoint (day 30, 60, 90):
-   - Collect fresh data for both groups → `input.json`
+   - Collect fresh data for both groups → update `inputData` in the DB
    - Run analysis with a time-stamped slug:
      ```bash
-     python .featbit-release-decision/scripts/analyze-bayesian.py <slug>-holdout-30d
+     python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>-holdout-30d
      ```
 4. Compare P(win) and rel Δ across checkpoints — look for stability, decay, or growth
 5. When holdout analysis is complete, remove the holdout split from the feature flag
@@ -241,21 +267,46 @@ For full interpretation guidance (three patterns: holds / decays / improves), se
 
 ### "I want to close the experiment"
 
-1. Ensure `decision.md` exists in `.featbit-release-decision/experiments/<slug>/` — written by agent after `evidence-analysis` framing
-2. Archive by moving folder to `.featbit-release-decision/experiments/archive/<slug>/` (optional)
-3. Update `.featbit-release-decision/intent.md`: `stage: learning`
-4. Hand off to `learning-capture`
+1. Set experiment status to `decided` and record `observationEnd`, `decision`, `decisionSummary`, `decisionReason` in the DB
+2. Persist experiment closure to the database (see Persist State section below)
+3. Hand off to `learning-capture`
 
 ---
 
 ## Operating Rules
 
-- `definition.md` is the contract. Do not change `flag_key`, `primary_metric_event`, or `variants` after data collection starts — it would invalidate the data already collected.
-- `observation_window.start` must match when the flag was actually enabled. Do not backfill earlier — pre-flag data is not part of the experiment.
-- Verify `input.json` sanity before running analysis: `k` ≤ `n` for every row, variant keys match `definition.md`, no zero `n` values.
-- Do not interpret results by eyeballing `input.json`. Always run `analyze-bayesian.py` and read `analysis.md`.
+- The experiment record in the database is the contract. Do not change `primaryMetricEvent`, `controlVariant`, or `treatmentVariant` after data collection starts — it would invalidate the data already collected.
+- `observationStart` must match when the flag was actually enabled. Do not backfill earlier — pre-flag data is not part of the experiment.
+- Verify `inputData` sanity before running analysis: `k` ≤ `n` for every row, variant keys match the experiment record, no zero `n` values.
+- Do not interpret results by eyeballing `inputData`. Always run `analyze-bayesian.py` and read `analysisResult`.
 - If the SRM check flags an imbalance (χ² p < 0.01), do not proceed to `evidence-analysis` — the data is unreliable.
 - "The script says 97% confidence" does not mean "ship it." That is `evidence-analysis`'s job.
+
+### Persist State
+
+After completing work, use the `project-sync` skill to persist state to the database. The specific commands depend on the action performed:
+
+**Starting an experiment:**
+1. `upsert-experiment` — save all definition fields:
+   - `--status draft`
+   - `--hypothesis "..."` — verbatim from project state
+   - `--primaryMetricEvent "..."`
+   - `--guardrailEvents "..."` — JSON array as string, e.g. `'["chat_opened"]'`
+   - `--controlVariant "..."` and `--treatmentVariant "..."`
+   - `--minimumSample <N>`
+   - `--observationStart "YYYY-MM-DD"`
+   - `--priorProper false` (or `true` if informative prior was chosen)
+   - `--priorMean <float>` and `--priorStddev <float>` (only when `priorProper true`)
+2. `update-state` — save `--lastAction "Created experiment <slug>"`
+3. `set-stage` — set to `measuring`
+4. `add-activity` — e.g. `--type stage_update --title "Experiment <slug> created"`
+
+**Running / re-running analysis:**
+1. `upsert-experiment` — save `--status analyzing --inputData "<JSON>" --analysisResult "<JSON>"` (scripts do this automatically)
+
+**Closing an experiment:**
+1. `upsert-experiment` — save `--status decided --observationEnd "YYYY-MM-DD"`
+2. `update-state` — save `--lastAction "Experiment <slug> closed"`
 
 ---
 
@@ -268,19 +319,20 @@ measurement-design
           → learning-capture
 ```
 
-When handing off to `evidence-analysis`, pass the path to `analysis.md` and the original `definition.md` so the decision can be tied back to the hypothesis.
+When handing off to `evidence-analysis`, pass the experiment's `analysisResult` and definition fields (hypothesis, primaryMetricEvent, variants, etc.) so the decision can be tied back to the hypothesis.
 
 ---
 
 ## Reference Files
 
-- [references/experiment-folder-spec.md](references/experiment-folder-spec.md) — folder layout, file formats, `definition.md` template, `analysis.md` example, `decision.md` template
+- [references/experiment-folder-spec.md](references/experiment-folder-spec.md) — DB schema reference, experiment fields, `inputData` format, `analysisResult` JSON examples
 - [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian A/B analysis: metric types, prior patterns, output interpretation, sequential testing, family-wise error
-- [references/analysis-bandit.md](references/analysis-bandit.md) — Bandit analysis: Thompson Sampling, `bandit-weights.json` fields, FeatBit API integration, stopping condition
+- [references/analysis-bandit.md](references/analysis-bandit.md) — Bandit analysis: Thompson Sampling, `analysisResult` fields, FeatBit API integration, stopping condition
 - [references/analysis-holdout.md](references/analysis-holdout.md) — Holdout group: post-launch long-term validation, three effect patterns, checkpoint cadence
-- [references/data-source-guide.md](references/data-source-guide.md) — input contract and §FeatBit / §Database / §Custom patterns for producing `input.json`
-- [scripts/stats_utils.py](scripts/stats_utils.py) — shared statistical utilities (GaussianPrior, metric_moments, bayesian_result, srm_check, parse_*)
-- [scripts/analyze-bayesian.py](scripts/analyze-bayesian.py) — ready-to-run Bayesian A/B analysis script
-- [scripts/analyze-bandit.py](scripts/analyze-bandit.py) — ready-to-run Thompson Sampling weight computation script
-- [scripts/collect-input.py](scripts/collect-input.py) — data collector placeholder (implement `fetch_metric_summary`)
-- [scripts/check-sample.sh](scripts/check-sample.sh) — quick sample count check
+- [references/data-source-guide.md](references/data-source-guide.md) — input contract and §FeatBit / §Database / §Custom patterns for producing `inputData`
+- [scripts/db-client.ts](scripts/db-client.ts) — HTTP API wrapper for DB read/write (TypeScript)
+- [scripts/db_client.py](scripts/db_client.py) — HTTP API wrapper for DB read/write (Python)
+- [scripts/collect-input.ts](scripts/collect-input.ts) — data collector placeholder (implement `fetchMetricSummary`)
+- [scripts/stats_utils.py](scripts/stats_utils.py) — statistical utilities: GaussianPrior, bayesian_result, srm_check (Python, numpy/scipy)
+- [scripts/analyze-bayesian.py](scripts/analyze-bayesian.py) — ready-to-run Bayesian A/B analysis script (Python)
+- [scripts/analyze-bandit.py](scripts/analyze-bandit.py) — ready-to-run Thompson Sampling weight computation script (Python)

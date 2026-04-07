@@ -12,7 +12,7 @@ Most teams still ship without a hypothesis, measure five metrics and pick the on
 
 Data-driven decisions used to require a senior PM and a data scientist. This agent changes that. A junior engineer or PM — without a statistics background — can run a scientifically sound experiment, reach a statistically significant conclusion, and feed the result back into the next build cycle. Fast enough to keep up with the code generator.
 
-The agent keeps a live decision state file (`.featbit-release-decision/intent.md`) across the session so context is never lost between steps.
+The agent persists decision state to the web database via the `project-sync` skill so context is never lost between steps and the web UI can render each stage in real time.
 
 ---
 
@@ -126,7 +126,7 @@ The agent applies **CF-01** via `intent-shaping` — it separates your goal from
 
 > "We believe adding an in-context tooltip will increase feature activation rate for new users by 15%, because they don't know the feature exists."
 
-The agent applies **CF-02** via `hypothesis-design` — it validates all five components (change, metric, direction, audience, causal reason) and writes the hypothesis to `.featbit-release-decision/intent.md`.
+The agent applies **CF-02** via `hypothesis-design` — it validates all five components (change, metric, direction, audience, causal reason) and persists the hypothesis to the project database.
 
 **3. You implement the change behind a feature flag.**
 
@@ -138,7 +138,7 @@ The agent applies **CF-05** via `measurement-design` — one primary metric, two
 
 **5. Data accumulates. You want to decide.**
 
-The agent applies **CF-06 / CF-07** via `evidence-analysis` — it checks that the evidence is simultaneous, sufficient, and clean before framing an outcome. The decision is one of: **CONTINUE**, **PAUSE**, **ROLLBACK CANDIDATE**, or **INCONCLUSIVE**. It writes the outcome to `.featbit-release-decision/decision.md`.
+The agent applies **CF-06 / CF-07** via `evidence-analysis` — it checks that the evidence is simultaneous, sufficient, and clean before framing an outcome. The decision is one of: **CONTINUE**, **PAUSE**, **ROLLBACK CANDIDATE**, or **INCONCLUSIVE**. It persists the decision to the project database.
 
 **6. The cycle ends.**
 
@@ -192,14 +192,14 @@ During a session the agent writes to your project:
 
 ```
 .featbit-release-decision/
-  intent.md          ← live decision state (goal, hypothesis, stage, metrics…)
-  decision.md        ← decision output after evidence-analysis
   experiments/
     <slug>/
       definition.md  ← experiment spec
       input.json     ← collected data
       analysis.md    ← Bayesian analysis output
 ```
+
+All decision state (goal, hypothesis, stage, metrics, decisions, learnings) is persisted to the web database via the `project-sync` skill (see [skills/project-sync/SKILL.md](skills/project-sync/SKILL.md)).
 
 ### Agent Tech Stack
 

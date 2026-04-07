@@ -34,12 +34,7 @@ const STAGE_FIELDS: Record<
   implementing: {
     fields: ["goal", "hypothesis", "change", "primaryMetric"],
     icon: <FlaskConical className="size-4" />,
-    hint: "The sandbox agent will use reversible-exposure-control (CF-03/04) to create a feature flag, set rollout %, and define rollback triggers.",
-  },
-  exposing: {
-    fields: ["goal", "hypothesis", "change", "primaryMetric"],
-    icon: <FlaskConical className="size-4" />,
-    hint: "Traffic is being exposed to variants. The sandbox manages targeting rules and expansion schedule.",
+    hint: "The sandbox agent will use reversible-exposure-control (CF-03/04) to create a feature flag, set rollout %, define targeting rules, and manage traffic exposure.",
   },
   measuring: {
     fields: [

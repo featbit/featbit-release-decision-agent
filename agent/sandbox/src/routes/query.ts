@@ -1,0 +1,108 @@
+import { Router } from "express";
+import type { Request, Response } from "express";
+import { randomUUID } from "crypto";
+import { runAgentStream } from "../agent.js";
+import { registerSession, removeSession, getSession, listSessions } from "../session-store.js";
+import type { QueryRequestBody } from "../types.js";
+import { buildEffectivePrompt } from "../prompt.js";
+
+const router = Router();
+
+/**
+ * POST /query
+ *
+ * Starts a new agent query session. The response is an SSE stream.
+ * The client should read `event: system` for the session init message
+ * (which contains the real Claude session_id), then stream text via
+ * `event: stream_event`, and await `event: result` for the final summary.
+ *
+ * Body: QueryRequestBody
+ *
+ * SSE events emitted:
+ *   stream_event  – SDKPartialAssistantMessage (text/tool deltas)
+ *   message       – SDKAssistantMessage (complete turn)
+ *   result        – SDKResultMessage
+ *   system        – SDKSystemMessage / status / boundary
+ *   tool_progress – SDKToolProgressMessage
+ *   error         – { message: string }
+ *   done          – {} (stream finished)
+ */
+router.post("/", async (req: Request, res: Response) => {
+  const body = req.body as QueryRequestBody;
+
+  if (!body.prompt || typeof body.prompt !== "string" || body.prompt.trim() === "") {
+    res.status(400).json({ error: "prompt is required" });
+    return;
+  }
+
+  // For new sessions, prepend the initial skill command;
+  // for resumed sessions, pass the user prompt as-is.
+  const effectivePrompt = buildEffectivePrompt(body);
+  const effectiveBody = { ...body, prompt: effectivePrompt };
+
+  const serverId = randomUUID();
+  const abortController = new AbortController();
+
+  registerSession({
+    sessionId: serverId,
+    abortController,
+    startedAt: Date.now(),
+  });
+
+  // Attach our internal serverId as a response header so callers can
+  // abort the session via DELETE /sessions/:id
+  res.setHeader("X-Session-Id", serverId);
+
+  // Prevent socket-level EPIPE from propagating
+  res.socket?.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE" || err.code === "ECONNRESET") return;
+    console.error("[sse] Socket error:", err);
+  });
+
+  // Track whether the stream ended naturally
+  let streamDone = false;
+
+  // Clean up when the *response* closes (client disconnect or normal end)
+  res.on("close", () => {
+    console.log(`[session:${serverId}] res close – streamDone=${streamDone}`);
+    if (!streamDone) {
+      abortController.abort();
+    }
+    removeSession(serverId);
+  });
+
+  await runAgentStream(effectiveBody, res, abortController);
+  streamDone = true;
+  console.log(`[session:${serverId}] runAgentStream returned`);
+  removeSession(serverId);
+});
+
+/**
+ * GET /query/sessions
+ * Returns a list of currently active (streaming) sessions.
+ */
+router.get("/sessions", (_req: Request, res: Response) => {
+  const active = listSessions().map(({ sessionId, startedAt }) => ({
+    sessionId,
+    startedAt,
+    runningMs: Date.now() - startedAt,
+  }));
+  res.json({ sessions: active });
+});
+
+/**
+ * DELETE /query/sessions/:id
+ * Aborts an active session by its server-assigned ID.
+ */
+router.delete("/sessions/:id", (req: Request, res: Response) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    res.status(404).json({ error: "session not found" });
+    return;
+  }
+  session.abortController.abort();
+  removeSession(req.params.id);
+  res.json({ ok: true });
+});
+
+export default router;

@@ -4,7 +4,7 @@ description: Extracts the real business outcome when the user has a vague direct
 license: MIT
 metadata:
   author: FeatBit
-  version: "1.0.0"
+  version: "1.1.0"
   category: release-management
 ---
 
@@ -19,7 +19,17 @@ Its job is to extract a real, measurable business outcome from a vague or tactic
 - User describes a desire without a measurable outcome ("we want more engagement")
 - User names a solution before naming the problem ("we should add a better CTA")
 - User mixes goal and implementation ("improve the onboarding flow so users see the feature")
-- `.featbit-release-decision/intent.md` has `goal:` empty or vague
+- `goal` field is empty or vague
+
+## On Entry — Read Current State
+
+Use the `project-sync` skill's `get-project` command to load the current project state from the database. Check:
+
+- `goal` and `intent` — are they already filled from a previous cycle? If so, confirm with the user whether to refine or start fresh.
+- `lastLearning` — was there a prior cycle? Use it as context for the new intent.
+- `stage` — if already past `intent`, confirm the user wants to revisit.
+
+This read is required. Do not rely on conversation memory alone — the database is the canonical source.
 
 ## Core Principle
 
@@ -51,8 +61,15 @@ Confirm the goal belongs to this iteration — not a 6-month vision.
 
 - Ask one question at a time
 - Never proceed to hypothesis or implementation until goal is measurable
-- Update `.featbit-release-decision/intent.md` `goal:` and `intent:` fields when clarity is reached
 - Hand off to `hypothesis-design` once the goal is sharp
+
+### Persist State
+
+Use the `project-sync` skill to sync state to the web database:
+
+- `update-state <project-id> --goal "[measurable business outcome]" --intent "[what the user is trying to improve or learn]"`
+- `set-stage <project-id> intent`
+- `add-activity <project-id> --type stage_update --title "Intent clarified"`
 
 ## Reference Files
 

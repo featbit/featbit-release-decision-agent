@@ -4,7 +4,7 @@ description: Defines the primary success metric, guardrails, and event instrumen
 license: MIT
 metadata:
   author: FeatBit
-  version: "1.0.0"
+  version: "1.1.0"
   category: release-management
 ---
 
@@ -20,7 +20,24 @@ Its job is to ensure every hypothesis has exactly one primary metric, a small se
 - User names multiple competing success metrics
 - User mixes goals, proxies, and diagnostics together
 - Instrumentation does not exist for the desired outcome
-- `.featbit-release-decision/intent.md` has `primary_metric:` empty or contains a list
+- Project `primaryMetric` field is empty or contains a list
+
+## On Entry — Read Current State
+
+Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+
+Check these fields:
+
+| Field | Purpose |
+|---|---|
+| `hypothesis` | Confirms causal claim exists |
+| `primaryMetric` | Current metric definition (may be empty) |
+| `guardrails` | Existing guardrail metrics |
+| `stage` | Current lifecycle position |
+
+- If `hypothesis` is empty → redirect to `hypothesis-design`
+- If `primaryMetric` is already defined and instrumentation is confirmed → may not need this skill
+- If `guardrails` already exist → build on existing rather than overwriting
 
 ## Core Principle
 
@@ -62,9 +79,17 @@ Check: can the current codebase emit this event? If not, instrumentation must be
 - Do not allow exposure to start without confirmed instrumentation
 - One primary metric only — push back on lists
 - Guardrails protect against harm, not success. They should not be optimized for.
-- Update `.featbit-release-decision/intent.md` `primary_metric:` and `guardrails:` fields
+- When multiple experiments share a flag or user pool, verify traffic allocation strategy before calculating sample size. Sequential experiments get full traffic; concurrent experiments with mutual exclusion get only their slice. An underpowered experiment due to traffic splitting is worse than waiting for a sequential slot. See `reversible-exposure-control` → [multi-experiment-traffic.md](../reversible-exposure-control/references/multi-experiment-traffic.md) for patterns.
 - Hand off to `reversible-exposure-control` when instrumentation is complete
 - Hand off to `evidence-analysis` once data collection is underway
+
+### Persist State
+
+After completing work, use the `project-sync` skill to persist state to the database:
+
+1. `update-state` — save `--primaryMetric "<metric>"` and `--guardrails "<guardrail list>"`
+2. `set-stage` — set to `measuring`
+3. `add-activity` — record what happened, e.g. `--type stage_update --title "Metrics defined"`
 
 ## Reference Files
 

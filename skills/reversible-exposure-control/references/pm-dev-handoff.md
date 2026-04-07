@@ -16,7 +16,8 @@ Every handoff should let the implementation team answer these questions without 
 6. How should traffic be assigned consistently?
 7. What is the initial rollout, and what evidence allows expansion?
 8. What signals require pause or rollback?
-9. Who owns implementation, rollout approval, and emergency disable?
+9. If multiple experiments share this flag, what is the traffic isolation strategy?
+10. Who owns implementation, rollout approval, and emergency disable?
 
 ## Required fields
 
@@ -109,6 +110,14 @@ Include these fields in the ticket, spec, or handoff message.
 - Move to 25% when:
 - Move to 50% when:
 - Move to 100% when:
+
+## Multi-experiment coordination (if applicable)
+- Number of planned experiments on this flag:
+- Experiment sequence: [sequential / mutual exclusion / orthogonal]
+- If sequential: predecessor experiment must reach decision before this starts
+- If mutual exclusion: traffic partition method and bucket allocation
+- Predecessor experiment slug (if any):
+- Variants active in this experiment vs reserved for later:
 
 ## Pause / rollback plan
 - Pause if:

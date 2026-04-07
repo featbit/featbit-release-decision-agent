@@ -44,3 +44,24 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# =======
+# agent/sandbox/ (ts)
+# =======
+agent/sandbox/node_modules/
+agent/sandbox/.pnp
+agent/sandbox/.pnp.*
+agent/sandbox/.yarn/*
+!agent/sandbox/.yarn/patches
+!agent/sandbox/.yarn/plugins
+!agent/sandbox/.yarn/releases
+!agent/sandbox/.yarn/versions
+agent/sandbox/coverage/
+agent/sandbox/.next/
+agent/sandbox/out/
+agent/sandbox/build/
+agent/sandbox/.vercel/
+agent/sandbox/next-env.d.ts
+agent/sandbox/*.tsbuildinfo
+agent/sandbox/.env
+!agent/sandbox/.env.example

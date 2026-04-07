@@ -4,7 +4,7 @@ description: Converts a clear business goal into a falsifiable hypothesis before
 license: MIT
 metadata:
   author: FeatBit
-  version: "1.0.0"
+  version: "1.1.0"
   category: release-management
 ---
 
@@ -18,8 +18,18 @@ Its job is to convert a goal into a testable, falsifiable statement before any i
 
 - Goal exists but no causal claim links the change to the outcome
 - User says "we think this will help" without explaining the mechanism
-- `hypothesis:` in `.featbit-release-decision/intent.md` is empty or non-falsifiable
+- `hypothesis` field is empty or non-falsifiable
 - User is about to build without stating what they expect
+
+## On Entry — Read Current State
+
+Use the `project-sync` skill's `get-project` command to load the current project state from the database. Check:
+
+- `goal` and `intent` — were they set by `intent-shaping`? If empty, go back to `intent-shaping` first.
+- `hypothesis`, `change`, `variants`, `primaryMetric` — are they already filled? If so, verify with the user whether to refine or start fresh.
+- `stage` — confirms where the project is in the loop.
+
+This read is required. Do not rely on conversation memory alone — the database is the canonical source.
 
 ## Core Template
 
@@ -55,8 +65,15 @@ The hypothesis does not need a specific number at this stage. It needs a directi
 
 - Do not proceed to implementation planning until all five components are present
 - Do not conflate the hypothesis with the success threshold (that belongs in `evidence-analysis`)
-- Update `.featbit-release-decision/intent.md` `hypothesis:`, `variants:`, and `primary_metric:` when complete
 - Hand off to `reversible-exposure-control` once hypothesis is confirmed
+
+### Persist State
+
+Use the `project-sync` skill to sync state to the web database:
+
+- `update-state <project-id> --hypothesis "We believe [change] will [move metric] for [audience] because [reason]" --change "[specific change]" --variants "[control / treatment]" --primaryMetric "[metric name]"`
+- `set-stage <project-id> hypothesis`
+- `add-activity <project-id> --type stage_update --title "Hypothesis formed"`
 
 ## Reference Files
 

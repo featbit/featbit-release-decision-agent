@@ -6,9 +6,8 @@ Used by:
     analyze-bandit.py    — Thompson Sampling MAB weight computation
 """
 
-import re
+import json
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 from scipy.stats import chi2 as chi2_dist
@@ -197,89 +196,37 @@ def srm_check(observed: list[int], expected_weights: list[float] | None = None) 
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DEFINITION PARSING
+# EXPERIMENT RECORD HELPERS  (extract structured fields from DB experiment dict)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def load_definition(path: Path) -> tuple[dict, str]:
-    """Return (key→value dict, raw markdown text)."""
-    text = path.read_text()
-    kv = {}
-    for line in text.splitlines():
-        if line and not line.startswith(" ") and not line.startswith("#") and ":" in line:
-            key, _, value = line.partition(":")
-            kv[key.strip()] = value.strip()
-    return kv, text
-
-
-def parse_variants(text: str) -> tuple[str, list[str]]:
+def extract_variants(experiment: dict) -> tuple[str, list[str]]:
     """
-    Extract (control_value, [treatment_values]) from definition.md.
-    Handles both a single  treatment:  key and multiple  treatment_a: / treatment_b:  keys.
+    Return (control, [treatments]) from a DB experiment record.
+
+    `treatmentVariant` may be a single value or comma-separated for multi-arm.
     """
-    ctrl_m   = re.search(r"^\s+control:\s*(\S+)", text, re.MULTILINE)
-    trt_list = re.findall(r"^\s+treatment[^:\n]*:\s*(\S+)", text, re.MULTILINE)
-    control    = ctrl_m.group(1) if ctrl_m else "control"
-    treatments = trt_list if trt_list else ["treatment"]
+    control = experiment.get("controlVariant") or "control"
+    treatment_raw = experiment.get("treatmentVariant") or "treatment"
+    treatments = [t.strip() for t in treatment_raw.split(",") if t.strip()]
     return control, treatments
 
 
-def parse_prior(text: str) -> GaussianPrior:
-    """
-    Read optional prior block from definition.md.
-
-    prior:
-      proper:  true
-      mean:    0.0
-      stddev:  0.3
-
-    Defaults to flat/improper prior if the block is absent.
-    """
-    proper, mean, stddev = False, 0.0, 0.3
-    in_prior = False
-    for line in text.splitlines():
-        if re.match(r"^prior\s*:", line):
-            in_prior = True
-            continue
-        if in_prior:
-            s = line.strip()
-            if not s or (not s.startswith("#") and ":" not in s):
-                in_prior = False
-                continue
-            if s.startswith("#"):
-                continue
-            key, _, val = s.partition(":")
-            key, val = key.strip(), val.strip()
-            if key == "proper":
-                proper = val.lower() == "true"
-            elif key == "mean":
-                try:
-                    mean = float(val)
-                except ValueError:
-                    pass
-            elif key == "stddev":
-                try:
-                    stddev = float(val)
-                except ValueError:
-                    pass
-            elif ":" not in line and not line.startswith(" "):
-                in_prior = False
+def extract_prior(experiment: dict) -> GaussianPrior:
+    """Build a GaussianPrior from DB experiment fields."""
+    proper = bool(experiment.get("priorProper", False))
+    mean = float(experiment.get("priorMean") or 0.0)
+    stddev = float(experiment.get("priorStddev") or 0.3)
     return GaussianPrior(mean=mean, variance=stddev ** 2, proper=proper)
 
 
-def parse_guardrails(text: str) -> list[str]:
-    events: list[str] = []
-    in_block = False
-    for line in text.splitlines():
-        if "guardrail_events:" in line:
-            in_block = True
-            continue
-        if in_block:
-            s = line.strip()
-            if s.startswith("- "):
-                events.append(s[2:].strip())
-            elif s and not s.startswith("#"):
-                in_block = False
-    return events
+def extract_guardrails(experiment: dict) -> list[str]:
+    """Parse guardrail event names from the DB experiment record."""
+    raw = experiment.get("guardrailEvents")
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return list(raw)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -31,14 +31,14 @@ Bandit is **not** appropriate when:
 
 Every time you run `analyze-bandit.py`:
 
-1. Builds a Gaussian posterior for each arm from current data (same CLT approximation as `analyze-bayesian.py`)
+1. Builds a Gaussian posterior for each arm from current data (same CLT approximation as `analyze-bayesian.ts`)
 2. Draws 10,000 samples from a multivariate normal across all arm posteriors
 3. Computes `best_arm_probabilities`: how often each arm drew the highest value
 4. Applies **Top-Two strategy**: only the top two arms compete for majority traffic; all others hold the minimum floor
 5. Enforces a **1% minimum floor** on every arm — no arm is ever fully cut off
 
 > **Book reference** — *Experimentation for Engineers*, Chapter 3: the book warns against allocating zero traffic to any arm. Early data is noisy; an arm that looks bad after 50 samples may be the true winner. The minimum floor ensures you can always recover from early misreadings. The Top-Two strategy is the book's recommended refinement for reducing regret while keeping exploration focused on real contenders.
-6. Outputs recommended weights to `bandit-weights.json`
+6. Outputs recommended weights to the experiment's `analysisResult` in the database
 
 **Burn-in guard**: if any arm has fewer than 100 users, dynamic weighting does not activate. The script reports the shortfall and exits without writing weights. This prevents early noise from corrupting allocation decisions.
 
@@ -49,29 +49,30 @@ Every time you run `analyze-bandit.py`:
 ## Running the Script
 
 ```bash
-python .featbit-release-decision/scripts/analyze-bandit.py <slug>
+python skills/experiment-workspace/scripts/analyze-bandit.py <project-id> <slug>
 ```
 
 Reads:
-- `.featbit-release-decision/experiments/<slug>/definition.md`
-- `.featbit-release-decision/experiments/<slug>/input.json`
+- Experiment record from the database (`inputData`, variant names, metric events)
 
 Writes:
-- `.featbit-release-decision/experiments/<slug>/bandit-weights.json`
+- `analysisResult` back to the experiment's database record
 
 Input format is identical to `analyze-bayesian.py` — proportion `{"n", "k"}` or continuous `{"n", "sum", "sum_squares"}`.
 
 ---
 
-## Output: `bandit-weights.json`
+## Output: `analysisResult` (bandit type)
 
 ```json
 {
-  "experiment":   "my-feature-v2",
-  "computed_at":  "2026-04-01T08:00:00Z",
-  "metric":       "signup_click",
-  "srm_p_value":  0.42,
-  "enough_units": true,
+  "type":          "bandit",
+  "algorithm":     "thompson_sampling_top_two",
+  "experiment":    "my-feature-v2",
+  "computed_at":   "2026-04-01T08:00:00Z",
+  "metric":        "signup_click",
+  "srm_p_value":   0.42,
+  "enough_units":  true,
   "update_message": "successfully updated",
   "best_arm_probabilities": {
     "control":   0.12,
@@ -98,21 +99,22 @@ Input format is identical to `analyze-bayesian.py` — proportion `{"n", "k"}` o
 
 ## Applying Weights to FeatBit
 
-After reading `bandit-weights.json`, update the feature flag's variant rollout via the FeatBit API.
+After reading the `analysisResult`, update the feature flag's variant rollout via the FeatBit API.
 
 FeatBit uses cumulative range format for rollout: `[start, end]` where end − start = weight.
 
 **Converting `bandit_weights` to FeatBit rollout ranges:**
 
-```python
-# Example: {"control": 0.10, "treatment": 0.90}
-# → control:   rollout [0.00, 0.10]
-# → treatment: rollout [0.10, 1.00]
+```typescript
+// Example: {"control": 0.10, "treatment": 0.90}
+// → control:   rollout [0.00, 0.10]
+// → treatment: rollout [0.10, 1.00]
 
-cumulative = 0.0
-for arm, weight in bandit_weights.items():
-    rollout = [cumulative, cumulative + weight]
-    cumulative += weight
+let cumulative = 0.0;
+for (const [arm, weight] of Object.entries(banditWeights)) {
+  const rollout = [cumulative, cumulative + weight];
+  cumulative += weight;
+}
 ```
 
 **FeatBit API endpoint:**
@@ -149,18 +151,18 @@ At this point:
 After stopping, run the standard Bayesian analysis on the full collected dataset:
 
 ```bash
-python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
 ```
 
 **Important caveat**: bandit experiments produce unequal traffic splits (e.g. 90/10 by the end). This means:
-- The δ (delta) estimate in `analysis.md` is valid but has wider uncertainty than a balanced 50/50 design
-- `best_arm_probabilities` from the final `bandit-weights.json` is the most reliable decision signal
+- The δ (delta) estimate in `analysisResult` is valid but has wider uncertainty than a balanced 50/50 design
+- `best_arm_probabilities` from the final bandit `analysisResult` is the most reliable decision signal
 - Use both together when handing off to `evidence-analysis`
 
 Hand off to `evidence-analysis` with:
-- `analysis.md` (final Bayesian analysis)
-- `bandit-weights.json` (final best_arm_probabilities)
-- `definition.md`
+- The experiment's `analysisResult` (final Bayesian analysis)
+- The bandit `analysisResult` (final best_arm_probabilities)
+- The experiment record fields
 
 ---
 

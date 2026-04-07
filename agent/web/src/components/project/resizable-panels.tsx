@@ -92,8 +92,11 @@ export function ResizablePanels({
       {/* ── Left panel ── */}
       {!leftCollapsed ? (
         <div
-          className="shrink-0 flex flex-col min-h-0 overflow-hidden"
-          style={{ width: rightCollapsed ? "100%" : leftWidth }}
+          className={cn(
+            "flex flex-col min-h-0 overflow-hidden",
+            rightCollapsed ? "flex-1" : "shrink-0"
+          )}
+          style={rightCollapsed ? undefined : { width: leftWidth }}
         >
           {left}
         </div>

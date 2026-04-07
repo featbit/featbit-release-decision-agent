@@ -4,7 +4,7 @@ description: Makes product or AI changes reversible before they are visible, and
 license: MIT
 metadata:
   author: FeatBit
-  version: "1.1.0"
+  version: "1.2.0"
   category: release-management
 ---
 
@@ -21,7 +21,24 @@ These two control principles are handled together because they represent a singl
 - A feature flag exists but exposure strategy is undefined or implicit
 - User asks about rollout percentages, targeting, or who should see a variant
 - The user owns the decision but not the codebase, the wrapper around FeatBit, or the flag operations
-- `.featbit-release-decision/intent.md` shows `stage: implementing` or `stage: exposing`
+- Project stage is `implementing` or `exposing`
+
+## On Entry — Read Current State
+
+Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+
+Check these fields:
+
+| Field | Purpose |
+|---|---|
+| `goal` | Confirms business outcome exists |
+| `hypothesis` | Confirms causal claim exists |
+| `constraints` | Existing flag contract / rollout constraints |
+| `stage` | Current lifecycle position |
+
+- If `hypothesis` is empty → redirect to `hypothesis-design`
+- If `stage` is already `exposing` → resume from rollout / expansion rather than restarting
+- If `constraints` already has flag contract details → build on existing rather than overwriting
 
 ## Default Operating Mode
 
@@ -83,6 +100,16 @@ Use this path only if the current user can change application code. If not, crea
 3. Follow the SDK skill to add the `variation()` call at the correct point in the code path
 4. Use [references/tool-featbit-cli.md](references/tool-featbit-cli.md) to verify the flag key matches what is in the codebase
 
+### "I have multiple experiments planned on the same flag or surface"
+
+1. Determine whether experiments are sequential or must run concurrently
+2. Default to **sequential** design: run Experiment 1 to conclusion, then start Experiment 2. This avoids mutual-exclusion complexity and gives each experiment the full traffic pool
+3. If experiments must run concurrently on the same surface, use **mutual exclusion**: partition traffic into non-overlapping segments via hashed dispatch key. Each experiment gets its own slice
+4. If experiments are concurrent but on independent surfaces with no shared metrics, use **orthogonal** design: no traffic splitting needed
+5. Run sample-size calculations on the reduced traffic pool for concurrent designs — underpowered experiments are worse than sequential with a wait
+6. Document the chosen strategy in the handoff spec and in the exposure activity log
+7. Read: [references/multi-experiment-traffic.md](references/multi-experiment-traffic.md) for detailed patterns and anti-patterns
+
 ## Operating Rules
 
 - Reversibility (feature flag exists) must be confirmed before exposure begins
@@ -90,13 +117,20 @@ Use this path only if the current user can change application code. If not, crea
 - Default to a written implementation handoff when the user cannot operate the flag system or edit code directly
 - Treat FeatBit CLI and Web UI as optional adapters, not the required workflow of this skill
 - The important artifact is the flag contract and rollout intent; the vendor tool is secondary
-- Document expansion and rollback criteria in `.featbit-release-decision/intent.md` under `constraints:`
 - Hand off to `measurement-design` if instrumentation is not confirmed before exposure begins
-- Update `stage: exposing` in `.featbit-release-decision/intent.md` when exposure begins
+
+### Persist State
+
+After completing work, use the `project-sync` skill to persist state to the database:
+
+1. `update-state` — save `--constraints "<flag contract and rollout criteria>"` and `--lastAction "<what was done>"`
+2. `set-stage` — set to `implementing` (flag contract defined, not yet live) or `exposing` (traffic is live)
+3. `add-activity` — record what happened, e.g. `--type stage_update --title "Flag contract ready"`
 
 ## Reference Files
 
 - [references/rollout-patterns.md](references/rollout-patterns.md) — vendor-agnostic rollout strategy, progressive exposure, protected audience guidance
+- [references/multi-experiment-traffic.md](references/multi-experiment-traffic.md) — sequential, mutual-exclusion, and orthogonal patterns for multi-experiment traffic allocation
 - [references/pm-dev-handoff.md](references/pm-dev-handoff.md) — PM or experiment owner handoff template for the team that owns code, wrappers, and flag operations
 - [references/tool-featbit-cli.md](references/tool-featbit-cli.md) — FeatBit CLI: config, inspect, flag create/toggle/archive/set-rollout/evaluate, SDK integration via featbit-skills
 - [references/tool-featbit-webui.md](references/tool-featbit-webui.md) — FeatBit web UI: targeting rules, multi-variant setup, audit trail, RBAC management

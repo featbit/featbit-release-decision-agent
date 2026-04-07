@@ -23,14 +23,13 @@ Burn-in guard:
   ~100 samples), and acting on it would introduce harmful early skew.
 
 Usage:
-    python .featbit-release-decision/scripts/analyze-bandit.py <experiment-slug>
+    python skills/experiment-workspace/scripts/analyze-bandit.py <project-id> <experiment-slug>
 
 Reads:
-    .featbit-release-decision/experiments/<slug>/definition.md
-    .featbit-release-decision/experiments/<slug>/input.json
+    Experiment record from the database via HTTP API (inputData, definition fields)
 
 Writes:
-    .featbit-release-decision/experiments/<slug>/bandit-weights.json
+    analysisResult back to the database via HTTP API
 
 Requirements:
     pip install numpy scipy
@@ -39,16 +38,15 @@ Requirements:
 import json
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 import numpy as np
 
+from db_client import get_experiment, upsert_experiment
 from stats_utils import (
     GaussianPrior,
-    load_definition,
+    extract_prior,
+    extract_variants,
     metric_moments,
-    parse_prior,
-    parse_variants,
     srm_check,
 )
 
@@ -200,25 +198,24 @@ def compute_bandit_weights(
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
-def main(slug: str) -> None:
-    base = Path(".featbit-release-decision") / "experiments" / slug
-    defn, text = load_definition(base / "definition.md")
+def main(project_id: str, slug: str) -> None:
+    experiment = get_experiment(project_id, slug)
 
-    input_path = base / "input.json"
-    if not input_path.exists():
-        print(f"ERROR: {input_path} not found.")
+    raw_input = experiment.get("inputData")
+    if not raw_input:
+        print("ERROR: inputData is empty in the experiment record.")
         sys.exit(1)
 
-    raw          = json.loads(input_path.read_text())
+    raw          = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
     metrics_data = raw.get("metrics", raw)
 
-    control, treatments = parse_variants(text)
-    prior               = parse_prior(text)
-    primary_event       = defn.get("primary_metric_event", "")
+    control, treatments = extract_variants(experiment)
+    prior               = extract_prior(experiment)
+    primary_event       = experiment.get("primaryMetricEvent") or ""
     all_arms            = [control] + treatments
 
     if not primary_event or primary_event not in metrics_data:
-        print(f"ERROR: primary_metric_event '{primary_event}' not found in input.json")
+        print(f"ERROR: primaryMetricEvent '{primary_event}' not found in inputData")
         sys.exit(1)
 
     pm      = metrics_data[primary_event]
@@ -252,8 +249,9 @@ def main(slug: str) -> None:
         top_two=True,
     )
 
-    # ── Write output ──────────────────────────────────────────────────────────
+    # ── Write to DB ──────────────────────────────────────────────────────────
     output = {
+        "type": "bandit",
         "experiment":   slug,
         "computed_at":  datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "metric":       primary_event,
@@ -261,9 +259,11 @@ def main(slug: str) -> None:
         **result,
     }
 
-    out_path = base / "bandit-weights.json"
-    out_path.write_text(json.dumps(output, indent=2) + "\n")
-    print(f"Written: {out_path}")
+    upsert_experiment(project_id, slug, {
+        "analysisResult": json.dumps(output),
+        "status": "analyzing",
+    })
+    print(f"Written analysisResult to DB for experiment: {slug}")
 
     # ── Human-readable summary ────────────────────────────────────────────────
     if result["enough_units"]:
@@ -278,7 +278,7 @@ def main(slug: str) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python analyze-bandit.py <experiment-slug>")
+    if len(sys.argv) != 3:
+        print("Usage: python analyze-bandit.py <project-id> <experiment-slug>")
         sys.exit(1)
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2])

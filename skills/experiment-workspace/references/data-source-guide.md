@@ -1,6 +1,6 @@
 # Data Source Guide
 
-How to produce `input.json` for the experiment analysis.
+How to produce `inputData` for the experiment analysis.
 
 The analysis script needs two numbers per variant per metric — `n` (unique users exposed) and `k` (unique users who converted). How you obtain those numbers depends on your infrastructure. This guide covers three patterns.
 
@@ -8,7 +8,7 @@ The analysis script needs two numbers per variant per metric — `n` (unique use
 
 ## Input Contract
 
-`input.json` lives at `.featbit-release-decision/experiments/<slug>/input.json`:
+`inputData` is stored as a JSON string in the experiment's database record:
 
 ```json
 {
@@ -26,22 +26,22 @@ The analysis script needs two numbers per variant per metric — `n` (unique use
 ```
 
 Keys:
-- Outer keys are metric event names — must match `primary_metric_event` and `guardrail_events` in `definition.md`
-- Inner keys are variant values — must match `variants.control` and `variants.treatment` in `definition.md`
+- Outer keys are metric event names — must match `primaryMetricEvent` and `guardrailEvents` in the experiment record
+- Inner keys are variant values — must match `controlVariant` and `treatmentVariant` in the experiment record
 - `n` = unique users exposed to that variant in the observation window
 - `k` = unique users who fired the metric event at least once, out of those `n`
 
 ---
 
-## How to Produce `input.json`
+## How to Produce `inputData`
 
-Open `collect-input.py` (at `.featbit-release-decision/scripts/collect-input.py`), implement the one function `fetch_metric_summary()` using whichever pattern fits your infrastructure below, then run:
+Open `collect-input.ts` (at `skills/experiment-workspace/scripts/collect-input.ts`), implement the one function `fetchMetricSummary()` using whichever pattern fits your infrastructure below, then run:
 
 ```bash
-python .featbit-release-decision/scripts/collect-input.py <slug>
+npx tsx skills/experiment-workspace/scripts/collect-input.ts <project-id> <experiment-slug>
 ```
 
-The script reads `definition.md`, calls `fetch_metric_summary()` once per variant × metric combination, and writes `input.json`.
+The script reads the experiment record from the DB, calls `fetchMetricSummary()` once per variant × metric combination, and writes `inputData` back to the DB.
 
 ---
 
@@ -49,33 +49,32 @@ The script reads `definition.md`, calls `fetch_metric_summary()` once per varian
 
 If your FeatBit instance has an experiment results endpoint, it already computes `(n, k)` server-side. No raw exports needed.
 
-```python
-import os, requests
+```typescript
+const FEATBIT_API_BASE  = process.env.FEATBIT_API_BASE!;   // e.g. https://your-featbit.example.com
+const FEATBIT_API_TOKEN = process.env.FEATBIT_API_TOKEN!;
+const ENV_ID            = process.env.FEATBIT_ENV_ID!;
 
-FEATBIT_API_BASE  = os.environ["FEATBIT_API_BASE"]   # e.g. https://your-featbit.example.com
-FEATBIT_API_TOKEN = os.environ["FEATBIT_API_TOKEN"]
-ENV_ID            = os.environ["FEATBIT_ENV_ID"]
+async function fetchMetricSummary(
+  flagKey: string, variant: string, metric: string, start: string, end: string
+): Promise<[number, number]> {
+  const url = new URL(`${FEATBIT_API_BASE}/api/v1/envs/${ENV_ID}/experiments/results`);
+  url.searchParams.set('flagKey', flagKey);
+  url.searchParams.set('metric', metric);
+  url.searchParams.set('variant', variant);
+  url.searchParams.set('from', start);
+  url.searchParams.set('to', end);
 
-def fetch_metric_summary(flag_key, variant, metric, start, end):
-    url = f"{FEATBIT_API_BASE}/api/v1/envs/{ENV_ID}/experiments/results"
-    resp = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {FEATBIT_API_TOKEN}"},
-        params={
-            "flagKey": flag_key,
-            "metric":  metric,
-            "variant": variant,
-            "from":    start,
-            "to":      end,
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    body = resp.json()
-    return body["exposed"], body["converted"]
+  const resp = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${FEATBIT_API_TOKEN}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!resp.ok) throw new Error(`FeatBit API ${resp.status}: ${await resp.text()}`);
+  const body = await resp.json();
+  return [body.exposed, body.converted];
+}
 ```
 
-Consult your FeatBit instance's REST API docs for the exact endpoint and response field names — they may vary by version. Install `requests` if needed: `pip install requests`.
+Consult your FeatBit instance's REST API docs for the exact endpoint and response field names — they may vary by version.
 
 ---
 
@@ -83,36 +82,38 @@ Consult your FeatBit instance's REST API docs for the exact endpoint and respons
 
 If your application logs flag evaluations and analytics events to its own database, a single aggregating query can return `(n, k)` directly without exporting raw rows.
 
-```python
-import os, psycopg2
+```typescript
+import postgres from 'postgres';  // or your preferred SQL client
 
-DB_DSN = os.environ["DATABASE_URL"]  # postgres://user:pass@host/db
+const sql = postgres(process.env.DATABASE_URL!);
 
-def fetch_metric_summary(flag_key, variant, metric, start, end):
-    sql = """
-        SELECT
-            COUNT(DISTINCT e.user_key)                                       AS n,
-            COUNT(DISTINCT CASE WHEN ev.user_key IS NOT NULL
-                                THEN e.user_key END)                         AS k
-        FROM flag_evaluations e
-        LEFT JOIN analytics_events ev
-               ON ev.user_key   = e.user_key
-              AND ev.event_name = %(metric)s
-              AND ev.fired_at  >= %(start)s
-              AND (%(end)s = 'open' OR ev.fired_at < %(end)s)
-        WHERE e.flag_key     = %(flag_key)s
-          AND e.variant      = %(variant)s
-          AND e.evaluated_at >= %(start)s
-          AND (%(end)s = 'open' OR e.evaluated_at < %(end)s)
-    """
-    with psycopg2.connect(DB_DSN) as conn, conn.cursor() as cur:
-        cur.execute(sql, {"flag_key": flag_key, "variant": variant,
-                          "metric": metric, "start": start, "end": end})
-        n, k = cur.fetchone()
-    return int(n), int(k)
+async function fetchMetricSummary(
+  flagKey: string, variant: string, metric: string, start: string, end: string
+): Promise<[number, number]> {
+  const endClause = end === 'open' ? sql`` : sql`AND ev.fired_at < ${end}`;
+  const endClause2 = end === 'open' ? sql`` : sql`AND e.evaluated_at < ${end}`;
+
+  const [row] = await sql`
+    SELECT
+      COUNT(DISTINCT e.user_key)                                       AS n,
+      COUNT(DISTINCT CASE WHEN ev.user_key IS NOT NULL
+                          THEN e.user_key END)                         AS k
+    FROM flag_evaluations e
+    LEFT JOIN analytics_events ev
+           ON ev.user_key   = e.user_key
+          AND ev.event_name = ${metric}
+          AND ev.fired_at  >= ${start}
+          ${endClause}
+    WHERE e.flag_key     = ${flagKey}
+      AND e.variant      = ${variant}
+      AND e.evaluated_at >= ${start}
+      ${endClause2}
+  `;
+  return [Number(row.n), Number(row.k)];
+}
 ```
 
-Adapt `flag_evaluations` and `analytics_events` to your actual table and column names. Install `psycopg2-binary` if needed: `pip install psycopg2-binary`.
+Adapt `flag_evaluations` and `analytics_events` to your actual table and column names.
 
 ---
 
@@ -120,27 +121,31 @@ Adapt `flag_evaluations` and `analytics_events` to your actual table and column 
 
 If your team has an internal metrics API that already tracks funnel data, call it directly.
 
-```python
-import os, requests
+```typescript
+const METRICS_API_BASE  = process.env.METRICS_API_BASE!;
+const METRICS_API_TOKEN = process.env.METRICS_API_TOKEN!;
 
-METRICS_API_BASE  = os.environ["METRICS_API_BASE"]
-METRICS_API_TOKEN = os.environ["METRICS_API_TOKEN"]
-
-def fetch_metric_summary(flag_key, variant, metric, start, end):
-    resp = requests.post(
-        f"{METRICS_API_BASE}/v1/experiment-summary",
-        headers={"Authorization": f"Bearer {METRICS_API_TOKEN}"},
-        json={
-            "experiment_id": flag_key,
-            "group":         variant,
-            "event":         metric,
-            "period":        {"from": start, "to": end},
-        },
-        timeout=30,
-    )
-    resp.raise_for_status()
-    body = resp.json()
-    return body["unique_users"], body["unique_converters"]
+async function fetchMetricSummary(
+  flagKey: string, variant: string, metric: string, start: string, end: string
+): Promise<[number, number]> {
+  const resp = await fetch(`${METRICS_API_BASE}/v1/experiment-summary`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${METRICS_API_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      experiment_id: flagKey,
+      group: variant,
+      event: metric,
+      period: { from: start, to: end },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!resp.ok) throw new Error(`Metrics API ${resp.status}: ${await resp.text()}`);
+  const body = await resp.json();
+  return [body.unique_users, body.unique_converters];
+}
 ```
 
 Replace the endpoint, headers, and response field names with your service's actual API contract.
@@ -149,23 +154,18 @@ Replace the endpoint, headers, and response field names with your service's actu
 
 ## Verifying Your Input
 
-Print and sanity-check `input.json` before running analysis:
-
-```bash
-cat .featbit-release-decision/experiments/<slug>/input.json
-```
+After running `collect-input.ts`, sanity-check the `inputData` stored in the experiment record:
 
 Check:
-- Both variant keys match `variants.control` and `variants.treatment` in `definition.md`
+- Both variant keys match `controlVariant` and `treatmentVariant` in the experiment record
 - `n` values are plausible — not 0, not absurdly high
 - `k` ≤ `n` for every row
-- All metrics in `definition.md` are present
+- All metrics listed in `primaryMetricEvent` and `guardrailEvents` are present
 
-Then run:
+Then run the analysis:
 
 ```bash
-bash .featbit-release-decision/scripts/check-sample.sh <slug>
-python .featbit-release-decision/scripts/analyze-bayesian.py <slug>
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
 ```
 
 See `analysis-bayesian.md` for output format and interpretation.

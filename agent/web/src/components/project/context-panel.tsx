@@ -21,10 +21,6 @@ const STAGE_FIELDS: Record<string, { fields: string[]; icon: React.ReactNode }> 
     fields: ["goal", "hypothesis", "change", "primaryMetric"],
     icon: <FlaskConical className="size-3.5" />,
   },
-  exposing: {
-    fields: ["goal", "hypothesis", "change", "primaryMetric"],
-    icon: <FlaskConical className="size-3.5" />,
-  },
   measuring: {
     fields: ["goal", "hypothesis", "primaryMetric", "guardrails"],
     icon: <BarChart3 className="size-3.5" />,

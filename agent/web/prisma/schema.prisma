@@ -11,7 +11,7 @@ model Project {
   id          String   @id @default(cuid())
   name        String
   description String?
-  stage       String   @default("intent") // intent | hypothesis | implementing | exposing | measuring | deciding | learning
+  stage       String   @default("intent") // intent | hypothesis | implementing | measuring | deciding | learning
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -52,18 +52,31 @@ model Experiment {
   updatedAt   DateTime @updatedAt
 
   // Definition
+  hypothesis         String?  // copy of project hypothesis at experiment start
+  method             String?  // bayesian_ab | bandit
+  methodReason       String?  // why this method was chosen
   primaryMetricEvent String?
+  metricDescription  String?  // human-readable description of primary metric
   guardrailEvents    String?  // JSON array stored as string
+  guardrailDescriptions String? // JSON object {"event_name": "description", ...}
   controlVariant     String?
   treatmentVariant   String?
+  trafficAllocation  String?  // how traffic is split: dispatch key, split ratios, staining
   minimumSample      Int?
   observationStart   DateTime?
   observationEnd     DateTime?
+  priorProper        Boolean  @default(false)
+  priorMean          Float?
+  priorStddev        Float?
+
+  // Raw data snapshot
+  inputData          String?  // JSON stored as string (mirrors input.json)
 
   // Analysis results
-  analysisResult     String?  // JSON stored as string
+  analysisResult     String?  // Markdown output from analysis script
   decision           String?  // CONTINUE | PAUSE | ROLLBACK_CANDIDATE | INCONCLUSIVE
-  decisionReason     String?
+  decisionSummary    String?  // Plain-language action recommendation for non-technical readers
+  decisionReason     String?  // Technical rationale with data points
 
   // Learning
   whatChanged         String?

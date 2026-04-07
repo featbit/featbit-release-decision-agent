@@ -21,18 +21,9 @@ export const STAGES = [
     label: "Implementing",
     cf: "CF-03/04",
     skill: "reversible-exposure-control",
-    description: "Feature flag + rollout strategy",
+    description: "Feature flag, rollout strategy & traffic exposure",
     color:
       "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  },
-  {
-    key: "exposing",
-    label: "Exposing",
-    cf: "CF-03/04",
-    skill: "reversible-exposure-control",
-    description: "Controlled traffic exposure",
-    color:
-      "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
   },
   {
     key: "measuring",

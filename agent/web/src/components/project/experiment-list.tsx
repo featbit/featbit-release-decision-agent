@@ -86,9 +86,9 @@ export function ExperimentList({
                     </span>
                   </div>
                 )}
-                {exp.decisionReason && (
+                {(exp.decisionSummary || exp.decisionReason) && (
                   <p className="text-xs text-muted-foreground">
-                    {exp.decisionReason}
+                    {exp.decisionSummary ?? exp.decisionReason}
                   </p>
                 )}
               </div>

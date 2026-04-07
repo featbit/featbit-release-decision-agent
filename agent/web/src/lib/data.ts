@@ -62,11 +62,19 @@ export async function updateProjectStage(id: string, stage: string) {
 
 export async function createExperiment(
   projectId: string,
-  data: { slug: string; primaryMetricEvent?: string }
+  data: { slug: string; [key: string]: unknown }
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.experiment.create({
-    data: { projectId, ...data },
+    data: { projectId, ...data } as any,
   });
+}
+
+export async function updateExperiment(
+  id: string,
+  data: Record<string, unknown>
+) {
+  return prisma.experiment.update({ where: { id }, data });
 }
 
 export async function addActivity(

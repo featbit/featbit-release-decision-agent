@@ -14,9 +14,7 @@ function stageHasContent(project: ProjectLike, stageKey: string): boolean {
     case "hypothesis":
       return Boolean(project.hypothesis || project.change);
     case "implementing":
-      return Boolean(project.flagKey || project.change);
-    case "exposing":
-      return Boolean(project.flagKey || project.variants);
+      return Boolean(project.flagKey || project.change || project.variants);
     case "measuring":
       return Boolean(
         project.primaryMetric ||

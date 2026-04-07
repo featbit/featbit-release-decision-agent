@@ -39,7 +39,6 @@ These are the actual flags and targeting rules that live in your project. The ag
 |---------------------------|---------|----------------|
 | Implementation handoff spec / ticket | Explains the flag contract, rollout plan, and rollback rules to the team that owns code and flag operations | PM, experiment owner, or agent |
 | Feature flag in FeatBit (or your vendor) | The reversibility gate for your change | Agent issues CLI commands or guides Web UI steps |
-| `.featbit-release-decision/intent.md` → `stage: exposing` | Records that exposure is active | Agent updates |
 | Rollout percentage and targeting rules | Who sees the candidate variant and how much | You decide; agent proposes based on `rollout-patterns.md` |
 | Expansion and rollback criteria | What evidence triggers moving forward or reverting | You define; agent prompts you to make it explicit |
 

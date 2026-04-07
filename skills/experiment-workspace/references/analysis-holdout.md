@@ -44,20 +44,20 @@ Both groups experience identical external conditions — same season, same trend
 
 ## Running Holdout Analysis
 
-Create a separate experiment slug for each time checkpoint:
+Create a separate experiment record for each time checkpoint:
 
 ```bash
 # 30 days after launch
-python .featbit-release-decision/scripts/analyze-bayesian.py <original-slug>-holdout-30d
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <original-slug>-holdout-30d
 
 # 60 days after launch
-python .featbit-release-decision/scripts/analyze-bayesian.py <original-slug>-holdout-60d
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <original-slug>-holdout-60d
 
 # 90 days after launch
-python .featbit-release-decision/scripts/analyze-bayesian.py <original-slug>-holdout-90d
+python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <original-slug>-holdout-90d
 ```
 
-Each checkpoint needs its own `definition.md` and `input.json`. The `definition.md` is identical to the original experiment except for `observation_window` dates.
+Each checkpoint needs its own experiment record with `inputData`. The experiment record is identical to the original except for `observationStart` / `observationEnd` dates.
 
 ---
 
@@ -94,9 +94,9 @@ Users initially resisted the change; after adaptation the feature's value become
 
 ---
 
-## Holdout Block in `definition.md`
+## Holdout Plan in Experiment Record
 
-Add an optional `holdout` block to record the plan:
+Record the holdout plan in the experiment record (e.g. in a `holdoutPlan` JSON field or as part of the experiment's notes):
 
 ```yaml
 holdout:
@@ -104,7 +104,7 @@ holdout:
   percentage: 5
   check_at_days: [30, 60, 90]
   launched_at: 2026-04-01
-  # Reminder: collect fresh input.json and re-run analyze-bayesian.py at each checkpoint.
+  # Reminder: collect fresh inputData and re-run analyze-bayesian.ts at each checkpoint.
   # Use slugs: <original-slug>-holdout-30d, -60d, -90d
 ```
 
@@ -130,8 +130,8 @@ Holdout groups sit **after** the A/B or Bandit experiment concludes. They are no
 
 | Checkpoint | Action |
 |-----------|--------|
-| Launch day | Set feature flag to 95/5; note `launched_at` in `definition.md` |
-| Day 30 | Collect data → `input.json`; run `analyze-bayesian.py <slug>-holdout-30d` |
+| Launch day | Set feature flag to 95/5; note `launched_at` in experiment record |
+| Day 30 | Collect data → `inputData`; run `python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>-holdout-30d` |
 | Day 60 | Repeat |
 | Day 90 | Repeat; decide whether to fully close the holdout group |
 | Any point | If effect has clearly collapsed, consider rollback investigation |

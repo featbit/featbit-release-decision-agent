@@ -16,7 +16,7 @@ These are **action categories**, not statistical verdicts. They exist to produce
 
 **Meaning:** The evidence supports proceeding with the planned rollout expansion.
 
-**Conditions (read from `analysis.md`):**
+**Conditions (read from experiment's `analysisResult`):**
 - Primary metric P(win) ≥ 95%
 - Primary metric risk[trt] is low (< 0.01 as a general reference — calibrate to your metric's business impact)
 - All guardrail P(win) > 20% (no harm signal on any guardrail)
@@ -32,7 +32,7 @@ These are **action categories**, not statistical verdicts. They exist to produce
 
 **Meaning:** Something needs investigation before the rollout expands. Not necessarily harmful — signal is mixed or incomplete.
 
-**Conditions (read from `analysis.md`):**
+**Conditions (read from experiment's `analysisResult`):**
 - Primary metric P(win) is 80–95% (leaning positive but not conclusive)
 - Or a guardrail P(win) ≤ 20% (possible harm — not yet confirmed)
 - Or risk[trt] is above 0.01 despite high P(win) (the downside of being wrong is meaningful)
@@ -48,7 +48,7 @@ These are **action categories**, not statistical verdicts. They exist to produce
 
 **Meaning:** Evidence indicates the candidate variant is causing harm.
 
-**Conditions (read from `analysis.md`):**
+**Conditions (read from experiment's `analysisResult`):**
 - A guardrail P(win) ≤ 5% (strong harm signal on a protected metric)
 - Or primary metric P(win) ≤ 5% (treatment is very likely worse)
 - Or critical errors or regressions are directly attributable to the candidate variant
@@ -64,8 +64,8 @@ Do NOT soften ROLLBACK CANDIDATE language. Clarity is operational here.
 
 **Meaning:** The collected evidence is genuinely insufficient to support a directional decision.
 
-**Conditions (read from `analysis.md`):**
-- Sample per variant is below `minimum_sample_per_variant` in `definition.md`
+**Conditions (read from experiment's `analysisResult`):**
+- Sample per variant is below `minimumSample` in the experiment record
 - Or risk[trt] and risk[ctrl] are both still high (> 0.02) — posterior has not yet narrowed enough
 - Or primary metric P(win) is 20–80% after a full observation window has elapsed
 - Or external contamination (holiday, marketing event, outage) compromised the window
@@ -102,12 +102,12 @@ Observation window: [start date] to [end date]
 Sample:             [N users per variant] — minimum required: [minimum_sample_per_variant]
 SRM check:          [✓ ok / ⚠ failed — p = X]
 
-Hypothesis: [paste from intent.md]
+Hypothesis: [from project state]
 
 Primary metric: [metric name]
   Baseline (control):  [rate or mean]
   Candidate:           [rate or mean]
-  Relative change:     [rel Δ from analysis.md]
+  Relative change:     [rel Δ from analysisResult]
   P(win):              [X]%
   risk[trt]:           [value]
   risk[ctrl]:          [value]
