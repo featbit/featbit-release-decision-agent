@@ -2,8 +2,13 @@ import type { Response } from "express";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { initSseHeaders, sendSseEvent, closeSseStream } from "./sse.js";
 import type { QueryRequestBody } from "./types.js";
+import {
+  projectIdToSessionId,
+  isKnownSession,
+  markSessionKnown,
+} from "./session-id.js";
 
-const DEFAULT_MAX_TURNS = 10;
+const DEFAULT_MAX_TURNS = 50;
 
 /**
  * Run a single Claude agent query and stream all SDK messages back to
@@ -22,14 +27,20 @@ export async function runAgentStream(
 
   const {
     prompt,
-    sessionId,
+    projectId,
     maxTurns = DEFAULT_MAX_TURNS,
     allowedTools = ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch", "Skill"],
     cwd = process.cwd(),
   } = body;
 
+  // Derive a deterministic UUID from the projectId
+  const pid = projectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
+  const sessionUuid = projectIdToSessionId(pid);
+  const resuming = isKnownSession(sessionUuid);
+
   try {
     console.log("[agent] Starting query with prompt:", prompt.slice(0, 80));
+    console.log(`[agent] projectId="${pid}" sessionUuid=${sessionUuid} resuming=${resuming}`);
 
     const agentQuery = query({
       prompt,
@@ -41,9 +52,13 @@ export async function runAgentStream(
         includePartialMessages: true,
         settingSources: ["user", "project"],
         systemPrompt: { type: "preset", preset: "claude_code" },
-        ...(sessionId ? { resume: sessionId } : {}),
+        // New session → set the UUID; resumed session → resume it
+        ...(resuming ? { resume: sessionUuid } : { sessionId: sessionUuid }),
       },
     });
+
+    // Mark session as known so subsequent calls resume instead of create
+    markSessionKnown(sessionUuid);
 
     let messageCount = 0;
     for await (const message of agentQuery) {

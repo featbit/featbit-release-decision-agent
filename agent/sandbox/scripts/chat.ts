@@ -14,7 +14,6 @@ import * as readline from "readline";
 const BASE_URL = process.argv[2] ?? "http://localhost:3001";
 const PROJECT_ID = process.argv[3] ?? undefined;
 const ACCESS_TOKEN = process.argv[4] ?? undefined;
-let sessionId: string | null = null;
 let turnCount = 0;
 
 const rl = readline.createInterface({
@@ -23,7 +22,7 @@ const rl = readline.createInterface({
 });
 
 function prompt(): void {
-  const label = sessionId ? `[turn ${turnCount + 1}]` : "[new session]";
+  const label = `[turn ${turnCount + 1}]`;
   rl.question(`\n${label} You: `, async (input) => {
     const trimmed = input.trim();
     if (!trimmed || trimmed.toLowerCase() === "exit") {
@@ -37,14 +36,13 @@ function prompt(): void {
 }
 
 async function sendQuery(userPrompt: string): Promise<void> {
-  const body: Record<string, unknown> = { prompt: userPrompt };
-  if (sessionId) {
-    body.sessionId = sessionId;
-  }
-  if (!sessionId && PROJECT_ID) {
+  const body: Record<string, unknown> = { prompt: userPrompt, maxTurns: 50 };
+  // Always send projectId – the server derives a deterministic session UUID from it
+  if (PROJECT_ID) {
     body.projectId = PROJECT_ID;
   }
-  if (!sessionId && ACCESS_TOKEN) {
+  // Send accessToken on every turn (server only uses it for the first)
+  if (ACCESS_TOKEN) {
     body.accessToken = ACCESS_TOKEN;
   }
 
@@ -112,9 +110,9 @@ function handleEvent(event: string, rawData: string): void {
 
   switch (event) {
     case "system": {
-      // Capture session_id from init
+      // Log session info
       if (data.session_id && typeof data.session_id === "string") {
-        sessionId = data.session_id;
+        console.log(`\n[session: ${data.session_id}]`);
       }
       break;
     }
@@ -140,7 +138,7 @@ function handleEvent(event: string, rawData: string): void {
         process.stdout.write(`\n\n--- Result ---\n${data.result}`);
       }
       if (data.session_id && typeof data.session_id === "string") {
-        sessionId = data.session_id;
+        process.stdout.write(`\n[session: ${data.session_id}]`);
       }
       const cost = data.total_cost_usd;
       if (typeof cost === "number") {

@@ -95,13 +95,14 @@ router.get("/sessions", (_req: Request, res: Response) => {
  * Aborts an active session by its server-assigned ID.
  */
 router.delete("/sessions/:id", (req: Request, res: Response) => {
-  const session = getSession(req.params.id);
+  const id = req.params.id as string;
+  const session = getSession(id);
   if (!session) {
     res.status(404).json({ error: "session not found" });
     return;
   }
   session.abortController.abort();
-  removeSession(req.params.id);
+  removeSession(id);
   res.json({ ok: true });
 });
 

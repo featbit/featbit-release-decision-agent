@@ -21,9 +21,7 @@ export interface SseEvent {
 export interface QueryRequestBody {
   /** User prompt text */
   prompt: string;
-  /** Optional session ID to resume an existing session */
-  sessionId?: string;
-  /** Project ID for the initial skill invocation (new session only) */
+  /** Project ID – used to derive a deterministic session UUID and for skill context */
   projectId?: string;
   /** Access token for the initial skill invocation (new session only) */
   accessToken?: string;
