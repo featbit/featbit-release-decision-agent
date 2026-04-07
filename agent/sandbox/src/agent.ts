@@ -6,7 +6,9 @@ import {
   projectIdToSessionId,
   isKnownSession,
   markSessionKnown,
+  unmarkSession,
 } from "./session-id.js";
+import { buildEffectivePrompt } from "./prompt.js";
 
 const DEFAULT_MAX_TURNS = 50;
 
@@ -14,54 +16,60 @@ const DEFAULT_MAX_TURNS = 50;
  * Run a single Claude agent query and stream all SDK messages back to
  * the HTTP client via SSE.
  *
- * The agent uses `settingSources: ["project"]` so that any .claude/
- * directory alongside this server (skills, CLAUDE.md, settings) is
- * automatically loaded.
+ * Includes retry logic: if the first attempt fails before any data is
+ * streamed (e.g. resume/create mismatch after restart or session store
+ * corruption), the opposite session mode is tried once.
  */
 export async function runAgentStream(
-  body: QueryRequestBody & { prompt: string },
+  body: QueryRequestBody,
+  effectivePrompt: string,
   res: Response,
   abortController: AbortController
 ): Promise<void> {
   initSseHeaders(res);
 
   const {
-    prompt,
-    projectId,
+    projectId: rawProjectId,
     maxTurns = DEFAULT_MAX_TURNS,
     allowedTools = ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebFetch", "WebSearch", "Skill"],
     cwd = process.cwd(),
   } = body;
 
-  // Derive a deterministic UUID from the projectId
-  const pid = projectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
+  const pid = rawProjectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
   const sessionUuid = projectIdToSessionId(pid);
-  const resuming = isKnownSession(sessionUuid);
+  let resuming = isKnownSession(sessionUuid);
 
-  try {
+  const baseOptions = {
+    abortController,
+    cwd,
+    maxTurns,
+    allowedTools,
+    includePartialMessages: true,
+    settingSources: ["user", "project"],
+    systemPrompt: { type: "preset", preset: "claude_code" },
+  };
+
+  let hasStreamedData = false;
+
+  /** Stream a single query attempt and dispatch SSE events. */
+  const doStream = async (prompt: string, isResuming: boolean) => {
     console.log("[agent] Starting query with prompt:", prompt.slice(0, 80));
-    console.log(`[agent] projectId="${pid}" sessionUuid=${sessionUuid} resuming=${resuming}`);
+    console.log(`[agent] projectId="${pid}" sessionUuid=${sessionUuid} resuming=${isResuming}`);
 
     const agentQuery = query({
       prompt,
       options: {
-        abortController,
-        cwd,
-        maxTurns,
-        allowedTools,
-        includePartialMessages: true,
-        settingSources: ["user", "project"],
-        systemPrompt: { type: "preset", preset: "claude_code" },
-        // New session → set the UUID; resumed session → resume it
-        ...(resuming ? { resume: sessionUuid } : { sessionId: sessionUuid }),
+        ...baseOptions,
+        ...(isResuming ? { resume: sessionUuid } : { sessionId: sessionUuid }),
       },
     });
 
-    // Mark session as known so subsequent calls resume instead of create
-    markSessionKnown(sessionUuid);
-
     let messageCount = 0;
     for await (const message of agentQuery) {
+      if (!hasStreamedData) {
+        hasStreamedData = true;
+        markSessionKnown(sessionUuid);
+      }
       messageCount++;
       console.log(`[agent] Message #${messageCount} type=${message.type}`);
       if (abortController.signal.aborted) break;
@@ -83,11 +91,47 @@ export async function runAgentStream(
     }
 
     console.log(`[agent] Stream finished. Total messages: ${messageCount}`);
+  };
+
+  try {
+    await doStream(effectivePrompt, resuming);
   } catch (err: unknown) {
-    console.error("[agent] Error:", err);
-    if (!abortController.signal.aborted) {
-      const message = err instanceof Error ? err.message : String(err);
-      sendSseEvent(res, "error", { message });
+    if (!hasStreamedData && !abortController.signal.aborted) {
+      // First attempt failed before any data was streamed.
+      // Retry with the opposite session mode (resume ↔ create).
+      const retryResuming = !resuming;
+      const retryPrompt = buildEffectivePrompt(body, retryResuming);
+
+      if (retryPrompt.trim() === "") {
+        // Can't retry — no prompt available for this mode
+        const message = err instanceof Error ? err.message : String(err);
+        sendSseEvent(res, "error", { message });
+        closeSseStream(res);
+        return;
+      }
+
+      console.log(
+        `[agent] ${resuming ? "Resume" : "Create"} failed, retrying with ${retryResuming ? "resume" : "create"} mode`
+      );
+
+      // If flipping to create, clear the persisted "known" flag
+      if (!retryResuming) unmarkSession(sessionUuid);
+
+      try {
+        await doStream(retryPrompt, retryResuming);
+      } catch (retryErr: unknown) {
+        console.error("[agent] Retry also failed:", retryErr);
+        if (!abortController.signal.aborted) {
+          const message = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          sendSseEvent(res, "error", { message });
+        }
+      }
+    } else {
+      console.error("[agent] Error:", err);
+      if (!abortController.signal.aborted) {
+        const message = err instanceof Error ? err.message : String(err);
+        sendSseEvent(res, "error", { message });
+      }
     }
   } finally {
     closeSseStream(res);

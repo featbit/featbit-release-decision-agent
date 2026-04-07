@@ -48,8 +48,6 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  const effectiveBody = { ...body, prompt: effectivePrompt };
-
   const serverId = randomUUID();
   const abortController = new AbortController();
 
@@ -81,7 +79,7 @@ router.post("/", async (req: Request, res: Response) => {
     removeSession(serverId);
   });
 
-  await runAgentStream(effectiveBody, res, abortController);
+  await runAgentStream(body, effectivePrompt, res, abortController);
   streamDone = true;
   console.log(`[session:${serverId}] runAgentStream returned`);
   removeSession(serverId);

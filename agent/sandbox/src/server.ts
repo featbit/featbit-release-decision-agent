@@ -4,7 +4,13 @@ import cors from "cors";
 import queryRouter from "./routes/query.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
-const CORS_ORIGINS = process.env.CORS_ORIGINS ?? "*";
+const CORS_ORIGINS_RAW = process.env.CORS_ORIGINS ?? "*";
+// cors middleware needs an array for multiple origins, a string for single/"*"
+const CORS_ORIGIN = CORS_ORIGINS_RAW === "*"
+  ? "*"
+  : CORS_ORIGINS_RAW.includes(",")
+    ? CORS_ORIGINS_RAW.split(",").map((s) => s.trim())
+    : CORS_ORIGINS_RAW;
 
 // Prevent EPIPE / ECONNRESET from the SDK child-process pipe from crashing
 // the server. These happen when the agent process is aborted mid-write.
@@ -20,7 +26,7 @@ process.on("uncaughtException", (err: NodeJS.ErrnoException) => {
 const app = express();
 
 // ── Middleware ──────────────────────────────────────────────────────────────
-app.use(cors({ origin: CORS_ORIGINS }));
+app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
 // ── Health check ────────────────────────────────────────────────────────────

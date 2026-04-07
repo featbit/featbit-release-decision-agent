@@ -279,6 +279,7 @@ For full interpretation guidance (three patterns: holds / decays / improves), se
 - `observationStart` must match when the flag was actually enabled. Do not backfill earlier — pre-flag data is not part of the experiment.
 - Verify `inputData` sanity before running analysis: `k` ≤ `n` for every row, variant keys match the experiment record, no zero `n` values.
 - Do not interpret results by eyeballing `inputData`. Always run `analyze-bayesian.py` and read `analysisResult`.
+- **NEVER compute analysis statistics inline and write the result directly to `analysisResult`.** The web UI renderer expects a specific JSON schema produced only by `analyze-bayesian.py` or `analyze-bandit.py`. If data is provided manually (e.g. the user tells you "300 users, 13 conversions"), first write it to `inputData` in the correct format (`{"metrics":{"<event>":{"<control>":{"n":300,"k":13},"<treatment>":{"n":290,"k":37}}}}`) using `upsert-experiment`, then run the analysis script. Inline computation produces a flat JSON that the UI cannot render.
 - If the SRM check flags an imbalance (χ² p < 0.01), do not proceed to `evidence-analysis` — the data is unreliable.
 - "The script says 97% confidence" does not mean "ship it." That is `evidence-analysis`'s job.
 

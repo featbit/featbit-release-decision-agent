@@ -374,9 +374,7 @@ function MeasuringContent({
 /* ── Single experiment card for the Measuring tab ── */
 function ExperimentMeasuringCard({ experiment: exp, index, isSequential }: { experiment: Experiment; index: number; isSequential: boolean }) {
   const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
-  const guardrailEvents: string[] = exp.guardrailEvents
-    ? JSON.parse(exp.guardrailEvents)
-    : [];
+  const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
 
   return (
     <div className="rounded-md border space-y-0">
@@ -569,9 +567,7 @@ const DECISION_BG: Record<string, string> = {
 /* ── Single experiment card for the Deciding tab ── */
 function ExperimentDecisionCard({ experiment: exp, index, isSequential }: { experiment: Experiment; index: number; isSequential: boolean }) {
   const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
-  const guardrailEvents: string[] = exp.guardrailEvents
-    ? JSON.parse(exp.guardrailEvents)
-    : [];
+  const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
 
   return (
     <div className="rounded-md border space-y-0">
@@ -833,6 +829,16 @@ function parseGuardrailDescriptions(raw: string | null | undefined): Record<stri
     return JSON.parse(raw);
   } catch {
     return {};
+  }
+}
+
+function parseGuardrailEvents(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [raw];
+  } catch {
+    return [raw];
   }
 }
 

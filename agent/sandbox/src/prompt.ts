@@ -16,14 +16,17 @@ const INITIAL_SLASH_COMMAND = `/featbit-release-decision $1 $2`;
  *   project ID and access token as arguments.
  * - **Resumed session** (projectId already seen): return the user prompt as-is.
  */
-export function buildEffectivePrompt(body: QueryRequestBody): string {
+export function buildEffectivePrompt(body: QueryRequestBody, resuming?: boolean): string {
   const userPrompt = body.prompt?.trim() ?? "";
   const projectId =
     body.projectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
   const sessionUuid = projectIdToSessionId(projectId);
 
+  // Explicit override or derive from persisted session state
+  const isResuming = resuming ?? isKnownSession(sessionUuid);
+
   // Already-known session → pass prompt through
-  if (isKnownSession(sessionUuid)) {
+  if (isResuming) {
     return userPrompt;
   }
 

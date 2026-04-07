@@ -129,3 +129,36 @@ export async function sendMessageAction(projectId: string, content: string) {
 
   revalidatePath(`/projects/${projectId}`);
 }
+
+/**
+ * Persist a user+assistant message pair from an SSE stream to the database.
+ * Called by ChatPanel after each sandbox stream completes.
+ * Best-effort — silently skips if project no longer exists.
+ */
+export async function persistMessagesAction(
+  projectId: string,
+  userContent: string,
+  assistantContent: string
+) {
+  try {
+    // Verify project still exists (foreign key guard)
+    const project = await import("@/lib/data").then((m) =>
+      m.getProject(projectId)
+    );
+    if (!project) return;
+
+    if (userContent) {
+      await addMessage(projectId, { role: "user", content: userContent });
+    }
+    if (assistantContent) {
+      await addMessage(projectId, {
+        role: "assistant",
+        content: assistantContent,
+      });
+    }
+    revalidatePath(`/projects/${projectId}`);
+  } catch {
+    // Persistence is best-effort — SSE chat works regardless
+    console.warn(`[persistMessages] Failed for project ${projectId}`);
+  }
+}

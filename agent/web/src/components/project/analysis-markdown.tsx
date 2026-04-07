@@ -422,6 +422,44 @@ function BanditView({ data }: { data: BanditAnalysis }) {
   );
 }
 
+/* ── Flat JSON fallback (unrecognised schema) ── */
+function FlatJsonFallback({ data }: { data: Record<string, unknown> }) {
+  const entries = Object.entries(data);
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-medium text-yellow-700 dark:text-yellow-400">
+          ⚠ Unrecognised analysis format — re-run the analysis script to get full rendering
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-[10px]">
+          <thead>
+            <tr>
+              <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">Field</th>
+              <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(([key, value]) => (
+              <tr key={key} className="hover:bg-muted/30">
+                <td className="px-1.5 py-0.5 border-b border-border/50 font-semibold">{key}</td>
+                <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums">
+                  {typeof value === "number"
+                    ? Number.isInteger(value) ? value.toLocaleString() : value.toFixed(4)
+                    : typeof value === "boolean"
+                    ? value ? "✓ yes" : "✗ no"
+                    : String(value)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ── Public component ── */
 export function AnalysisView({ content }: { content: string }) {
   let data: AnalysisData;
@@ -435,5 +473,6 @@ export function AnalysisView({ content }: { content: string }) {
   if (data.type === "bayesian") return <BayesianView data={data as BayesianAnalysis} />;
   if (data.type === "bandit") return <BanditView data={data as BanditAnalysis} />;
 
-  return <pre className="text-[10px] whitespace-pre-wrap text-muted-foreground">{content}</pre>;
+  // Fallback: render unknown JSON as a readable key-value table
+  return <FlatJsonFallback data={data} />;
 }
