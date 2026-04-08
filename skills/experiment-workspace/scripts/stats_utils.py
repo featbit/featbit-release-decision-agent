@@ -224,9 +224,15 @@ def extract_guardrails(experiment: dict) -> list[str]:
     raw = experiment.get("guardrailEvents")
     if not raw:
         return []
+    if isinstance(raw, list):
+        return list(raw)
     if isinstance(raw, str):
-        return json.loads(raw)
-    return list(raw)
+        stripped = raw.strip()
+        if stripped.startswith("["):
+            return json.loads(stripped)
+        # Plain string (single event or comma-separated)
+        return [s.strip() for s in stripped.split(",") if s.strip()]
+    return []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

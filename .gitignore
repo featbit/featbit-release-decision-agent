@@ -65,3 +65,16 @@ agent/sandbox/next-env.d.ts
 agent/sandbox/*.tsbuildinfo
 agent/sandbox/.env
 !agent/sandbox/.env.example
+
+# =======
+# skills/experiment-workspace/scripts (Python)
+# =======
+skills/experiment-workspace/scripts/__pycache__/
+skills/experiment-workspace/scripts/*.pyc
+skills/experiment-workspace/scripts/*.pyo
+
+# =======
+# agent/web/prisma
+# =======
+agent/web/prisma/dev.db
+!agent/web/prisma/dev.db.example
