@@ -12,7 +12,7 @@ metadata:
 
 This skill manages the full experiment lifecycle through the database.
 
-It replaces what an online experiment dashboard does — experiment creation, data collection tracking, analysis computation, and result storage — with database records accessible via HTTP API. All data flows through a single SQLite database shared by the web UI, sandbox agent, and analysis scripts.
+It replaces what an online experiment dashboard does — experiment creation, data collection tracking, analysis computation, and result storage — with database records accessible via HTTP API. All data flows through a single PostgreSQL database shared by the web UI, sandbox agent, and analysis scripts.
 
 The database is the experiment. The script is the dashboard.
 
@@ -91,7 +91,7 @@ skills/experiment-workspace/scripts/
 - **A/B (default)**: fixed 50/50 traffic split, one-shot analysis → `analyze-bayesian.py`
 - **Bandit**: dynamic traffic reweighting via Thompson Sampling → `analyze-bandit.py` (requires FeatBit API integration for full automation)
 
-All experiment data lives in the shared SQLite database, accessible via the web app's HTTP API (`SYNC_API_URL`, default `http://localhost:3000`). No local experiment files needed — the web UI, sandbox agent, and scripts all read/write the same database.
+All experiment data lives in the shared PostgreSQL database, accessible via the web app's HTTP API (`SYNC_API_URL`, default `http://localhost:3000`). No local experiment files needed — the web UI, sandbox agent, and scripts all read/write the same database.
 
 ---
 

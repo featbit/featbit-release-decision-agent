@@ -1,6 +1,6 @@
 # experiment-workspace
 
-This skill manages the A/B experiment lifecycle through the database — from starting an experiment to running analysis and reviewing results. All data flows through the HTTP API backed by Prisma + SQLite.
+This skill manages the A/B experiment lifecycle through the database — from starting an experiment to running analysis and reviewing results. All data flows through the HTTP API backed by Prisma + PostgreSQL.
 
 ---
 

@@ -107,7 +107,7 @@ When experiment data changes, also call:
 ## Architecture
 
 ```
-Agent skill → references project-sync → npx tsx sync.ts <command> → HTTP API → Prisma → SQLite → Web UI
+Agent skill → references project-sync → npx tsx sync.ts <command> → HTTP API → Prisma → PostgreSQL → Web UI
 ```
 
 - The web database (via API + Prisma) is the canonical source for all project state
