@@ -101,3 +101,20 @@ export async function addMessage(
     data: { projectId, ...data },
   });
 }
+
+export async function getRunningExperiments() {
+  const experiments = await prisma.experiment.findMany({
+    where: { status: { in: ["draft", "running", "collecting"] } },
+    include: {
+      project: {
+        select: {
+          id: true,
+          flagKey: true,
+          envSecret: true,
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  return experiments;
+}

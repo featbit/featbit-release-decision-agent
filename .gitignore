@@ -67,6 +67,15 @@ agent/sandbox/.env
 !agent/sandbox/.env.example
 
 # =======
+# agent/worker/ (Node.js)
+# =======
+agent/worker/node_modules/
+agent/worker/dist/
+agent/worker/*.tsbuildinfo
+agent/worker/.env
+!agent/worker/.env.example
+
+# =======
 # skills/experiment-workspace/scripts (Python)
 # =======
 skills/experiment-workspace/scripts/__pycache__/

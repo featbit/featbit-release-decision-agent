@@ -52,10 +52,13 @@ model Experiment {
   updatedAt   DateTime @updatedAt
 
   // Definition
+  experimentId       String?  // stain ID — matches flag_evaluations.experiment_id in FeatBit DB
   hypothesis         String?  // copy of project hypothesis at experiment start
   method             String?  // bayesian_ab | bandit
   methodReason       String?  // why this method was chosen
   primaryMetricEvent String?
+  primaryMetricType  String?  @default("binary")  // binary | revenue | count | duration
+  primaryMetricAgg   String?  @default("once")    // once | sum | mean | count | latest
   metricDescription  String?  // human-readable description of primary metric
   guardrailEvents    String?  // JSON array stored as string
   guardrailDescriptions String? // JSON object {"event_name": "description", ...}

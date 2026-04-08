@@ -1,0 +1,18 @@
+{
+  "name": "featbit-experiment-worker",
+  "version": "1.0.0",
+  "description": "Data collection worker for FeatBit experiment analysis — runs as a k8s CronJob",
+  "type": "module",
+  "scripts": {
+    "collect": "tsx collect.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "pg": "^8.20.0"
+  }
+}
