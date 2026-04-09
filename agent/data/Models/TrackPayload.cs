@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace FeatBit.TrackApi.Models;
+namespace FRD.DataServer.Models;
 
 /// <summary>
 /// Top-level payload sent by SDK — one or more insight batches.

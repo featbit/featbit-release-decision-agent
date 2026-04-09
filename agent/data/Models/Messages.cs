@@ -1,4 +1,4 @@
-namespace FeatBit.TrackApi.Models;
+namespace FRD.DataServer.Models;
 
 /// <summary>
 /// Internal message for a flag evaluation row — written to PG flag_evaluations table.

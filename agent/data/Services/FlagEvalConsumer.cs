@@ -1,8 +1,8 @@
 using System.Threading.Channels;
-using FeatBit.TrackApi.Models;
+using FRD.DataServer.Models;
 using Npgsql;
 
-namespace FeatBit.TrackApi.Services;
+namespace FRD.DataServer.Services;
 
 /// <summary>
 /// Background consumer that reads FlagEvalMessages from the channel,

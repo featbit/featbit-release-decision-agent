@@ -1,4 +1,4 @@
-namespace FeatBit.TrackApi.Services;
+namespace FRD.DataServer.Services;
 
 /// <summary>
 /// Extracts and validates environment ID from the Authorization header.

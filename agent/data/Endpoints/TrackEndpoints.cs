@@ -1,8 +1,8 @@
 using System.Text.Json;
-using FeatBit.TrackApi.Models;
-using FeatBit.TrackApi.Services;
+using FRD.DataServer.Models;
+using FRD.DataServer.Services;
 
-namespace FeatBit.TrackApi.Endpoints;
+namespace FRD.DataServer.Endpoints;
 
 public static class TrackEndpoints
 {

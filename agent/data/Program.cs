@@ -1,5 +1,5 @@
-using FeatBit.TrackApi.Endpoints;
-using FeatBit.TrackApi.Services;
+using FRD.DataServer.Endpoints;
+using FRD.DataServer.Services;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +16,14 @@ builder.Services.AddSingleton<EventChannel>();
 // -- Background consumers (read channels → batch flush to PG) --
 builder.Services.AddHostedService<FlagEvalConsumer>();
 builder.Services.AddHostedService<MetricEventConsumer>();
+
+// -- Experiment worker (collect metrics + Bayesian analysis) --
+builder.Services.Configure<ExperimentWorkerOptions>(
+    builder.Configuration.GetSection("ExperimentWorker"));
+builder.Services.AddSingleton<MetricCollector>();
+builder.Services.AddSingleton<PythonAnalyzer>();
+builder.Services.AddHttpClient();
+builder.Services.AddHostedService<ExperimentWorker>();
 
 var app = builder.Build();
 

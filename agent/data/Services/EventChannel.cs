@@ -1,7 +1,7 @@
 using System.Threading.Channels;
-using FeatBit.TrackApi.Models;
+using FRD.DataServer.Models;
 
-namespace FeatBit.TrackApi.Services;
+namespace FRD.DataServer.Services;
 
 /// <summary>
 /// In-memory message bus backed by System.Threading.Channels.
