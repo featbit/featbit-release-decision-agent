@@ -12,18 +12,18 @@ model Project {
   name        String
   description String?
   stage       String   @default("intent") // intent | hypothesis | implementing | measuring | deciding | learning
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt       @map("updated_at")
 
   // Feature Flag configuration
-  flagKey        String?
-  envSecret      String?
-  accessToken    String?
-  flagServerUrl  String?
+  flagKey        String?  @map("flag_key")
+  envSecret      String?  @map("env_secret")
+  accessToken    String?  @map("access_token")
+  flagServerUrl  String?  @map("flag_server_url")
 
   // Sandbox configuration
-  sandboxId      String?
-  sandboxStatus  String?  @default("idle") // idle | running | completed | error
+  sandboxId      String?  @map("sandbox_id")
+  sandboxStatus  String?  @default("idle") @map("sandbox_status") // idle | running | completed | error
 
   // Decision state (mirrors intent.md)
   goal           String?
@@ -31,86 +31,93 @@ model Project {
   hypothesis     String?
   change         String?
   variants       String?
-  primaryMetric  String?
+  primaryMetric  String?  @map("primary_metric")
   guardrails     String?
   constraints    String?
-  openQuestions   String?
-  lastAction     String?
-  lastLearning   String?
+  openQuestions   String?  @map("open_questions")
+  lastAction     String?  @map("last_action")
+  lastLearning   String?  @map("last_learning")
 
   experiments Experiment[]
   activities  Activity[]
   messages    Message[]
+
+  @@map("project")
 }
 
 model Experiment {
   id          String   @id @default(uuid())
-  projectId   String
+  projectId   String   @map("project_id")
   slug        String
   status      String   @default("draft") // draft | running | analyzing | decided | archived
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt       @map("updated_at")
 
   // Definition
-  experimentId       String?  // stain ID — matches flag_evaluations.experiment_id in FeatBit DB
+  experimentId       String?  @map("experiment_id") // stain ID — matches flag_evaluations.experiment_id in FeatBit DB
   hypothesis         String?  // copy of project hypothesis at experiment start
   method             String?  // bayesian_ab | bandit
-  methodReason       String?  // why this method was chosen
-  primaryMetricEvent String?
-  primaryMetricType  String?  @default("binary")  // binary | revenue | count | duration
-  primaryMetricAgg   String?  @default("once")    // once | sum | mean | count | latest
-  metricDescription  String?  // human-readable description of primary metric
-  guardrailEvents    String?  // JSON array stored as string
-  guardrailDescriptions String? // JSON object {"event_name": "description", ...}
-  controlVariant     String?
-  treatmentVariant   String?
-  trafficAllocation  String?  // how traffic is split: dispatch key, split ratios, staining
-  minimumSample      Int?
-  observationStart   DateTime?
-  observationEnd     DateTime?
-  priorProper        Boolean  @default(false)
-  priorMean          Float?
-  priorStddev        Float?
+  methodReason       String?  @map("method_reason") // why this method was chosen
+  primaryMetricEvent String?  @map("primary_metric_event")
+  primaryMetricType  String?  @default("binary")  @map("primary_metric_type") // binary | revenue | count | duration
+  primaryMetricAgg   String?  @default("once")    @map("primary_metric_agg") // once | sum | mean | count | latest
+  metricDescription  String?  @map("metric_description") // human-readable description of primary metric
+  guardrailEvents    String?  @map("guardrail_events") // JSON array stored as string
+  guardrailDescriptions String? @map("guardrail_descriptions") // JSON object {"event_name": "description", ...}
+  controlVariant     String?  @map("control_variant")
+  treatmentVariant   String?  @map("treatment_variant")
+  trafficAllocation  String?  @map("traffic_allocation") // how traffic is split: dispatch key, split ratios, staining
+  minimumSample      Int?     @map("minimum_sample")
+  observationStart   DateTime? @map("observation_start")
+  observationEnd     DateTime? @map("observation_end")
+  priorProper        Boolean  @default(false) @map("prior_proper")
+  priorMean          Float?   @map("prior_mean")
+  priorStddev        Float?   @map("prior_stddev")
 
   // Raw data snapshot
-  inputData          String?  // JSON stored as string (mirrors input.json)
+  inputData          String?  @map("input_data") // JSON stored as string (mirrors input.json)
 
   // Analysis results
-  analysisResult     String?  // Markdown output from analysis script
+  analysisResult     String?  @map("analysis_result") // Markdown output from analysis script
   decision           String?  // CONTINUE | PAUSE | ROLLBACK_CANDIDATE | INCONCLUSIVE
-  decisionSummary    String?  // Plain-language action recommendation for non-technical readers
-  decisionReason     String?  // Technical rationale with data points
+  decisionSummary    String?  @map("decision_summary") // Plain-language action recommendation for non-technical readers
+  decisionReason     String?  @map("decision_reason") // Technical rationale with data points
 
   // Learning
-  whatChanged         String?
-  whatHappened         String?
-  confirmedOrRefuted  String?
-  whyItHappened       String?
-  nextHypothesis      String?
+  whatChanged         String?  @map("what_changed")
+  whatHappened         String?  @map("what_happened")
+  confirmedOrRefuted  String?  @map("confirmed_or_refuted")
+  whyItHappened       String?  @map("why_it_happened")
+  nextHypothesis      String?  @map("next_hypothesis")
 
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, slug])
+  @@map("experiment")
 }
 
 model Activity {
   id        String   @id @default(uuid())
-  projectId String
+  projectId String   @map("project_id")
   type      String   // stage_change | sandbox_event | decision | note
   title     String
   detail    String?
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("activity")
 }
 
 model Message {
   id        String   @id @default(uuid())
-  projectId String
+  projectId String   @map("project_id")
   role      String   // "user" | "assistant" | "system"
   content   String
   metadata  String?  // JSON — stage updates, data changes, tool calls, etc.
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("message")
 }
