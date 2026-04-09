@@ -61,7 +61,8 @@ public static class TrackEndpoints
                     Variant = v.Variant,
                     ExperimentId = v.ExperimentId,
                     LayerId = v.LayerId,
-                    EvaluatedAt = DateTimeOffset.FromUnixTimeSeconds(v.Timestamp)
+                    EvaluatedAt = DateTimeOffset.FromUnixTimeSeconds(v.Timestamp),
+                    UserProps = payload.User.Properties,
                 };
 
                 await channel.FlagEvalWriter.WriteAsync(msg);

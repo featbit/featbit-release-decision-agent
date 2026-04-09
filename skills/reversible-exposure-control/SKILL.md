@@ -87,9 +87,10 @@ Use this path only if the current user actually owns flag operations. Otherwise,
 
 1. Identify the targeting rule: user property, segment, or custom attribute
 2. Confirm this audience is the right proxy for the hypothesis audience
-3. If implementation is owned by another team, describe the targeting logic in the handoff spec instead of assuming direct FeatBit access
-4. Set targeting rules in the FeatBit web UI before enabling the flag — see [references/tool-featbit-webui.md](references/tool-featbit-webui.md) for targeting rule setup
-5. After rules are set, proceed to rollout using the CLI (see "I want to start rolling this out" above)
+3. Set audience filters on the experiment record via the web UI or by using `upsert-experiment` with `--audienceFilters '<JSON>'` (e.g. `'[{"property":"plan","op":"in","values":["premium","enterprise"]}]'`). The data server applies these filters when querying experiment data
+4. If implementation is owned by another team, describe the targeting logic in the handoff spec instead of assuming direct FeatBit access
+5. Set targeting rules in the FeatBit web UI before enabling the flag — see [references/tool-featbit-webui.md](references/tool-featbit-webui.md) for targeting rule setup
+6. After rules are set, proceed to rollout using the CLI (see "I want to start rolling this out" above)
 
 ### "I want to add the feature flag to my code"
 
@@ -104,9 +105,10 @@ Use this path only if the current user can change application code. If not, crea
 
 1. Determine whether experiments are sequential or must run concurrently
 2. Default to **sequential** design: run Experiment 1 to conclusion, then start Experiment 2. This avoids mutual-exclusion complexity and gives each experiment the full traffic pool
-3. If experiments must run concurrently on the same surface, use **mutual exclusion**: partition traffic into non-overlapping segments via hashed dispatch key. Each experiment gets its own slice
-4. If experiments are concurrent but on independent surfaces with no shared metrics, use **orthogonal** design: no traffic splitting needed
-5. Run sample-size calculations on the reduced traffic pool for concurrent designs — underpowered experiments are worse than sequential with a wait
+3. If experiments must run concurrently on the same surface, use **mutual exclusion**: partition traffic into non-overlapping hash buckets. Each experiment gets `[trafficOffset, trafficOffset + trafficPercent)` — e.g. Exp A offset=0/50%, Exp B offset=50/50%. Optionally set `layerId` to further filter evaluations by layer
+4. Choose the analysis method: `bayesian_ab` (default, balanced sampling — equal N per variant) or `bandit` (pass-through — asymmetric allocation intentional). Set this in the experiment record's `method` field via the web UI. The data server applies the appropriate sampling strategy automatically
+5. If experiments are concurrent but on independent surfaces with no shared metrics, use **orthogonal** design: no traffic splitting needed
+6. Run sample-size calculations on the reduced traffic pool for concurrent designs — underpowered experiments are worse than sequential with a wait
 6. Document the chosen strategy in the handoff spec and in the exposure activity log
 7. Read: [references/multi-experiment-traffic.md](references/multi-experiment-traffic.md) for detailed patterns and anti-patterns
 

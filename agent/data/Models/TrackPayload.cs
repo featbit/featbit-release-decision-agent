@@ -19,6 +19,11 @@ public sealed class EndUserDto
 {
     public string KeyId { get; set; } = string.Empty;
     public string? Name { get; set; }
+    /// <summary>
+    /// Arbitrary key-value attributes for audience filtering and CUPED covariate analysis.
+    /// e.g. { "plan": "premium", "region": "US", "device": "mobile" }
+    /// </summary>
+    public Dictionary<string, string>? Properties { get; set; }
 }
 
 /// <summary>

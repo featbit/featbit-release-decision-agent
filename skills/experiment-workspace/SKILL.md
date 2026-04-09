@@ -69,6 +69,11 @@ Each experiment is stored as a row in the `Experiment` table (Prisma schema). Ke
 | `priorProper` / `priorMean` / `priorStddev` | Prior configuration |
 | `inputData` | Collected metric data (JSON string) |
 | `analysisResult` | Computed analysis output (JSON string) |
+| `trafficPercent` | Bucket width — percentage of hash space allocated (1–100, default 100) |
+| `trafficOffset` | Bucket start — hash-space offset for mutual-exclusion splits (0–99, default 0) |
+| `layerId` | Mutual-exclusion layer ID for concurrent experiments (null if sequential) |
+| `audienceFilters` | JSON array of audience filter rules (see experiment-folder-spec.md) |
+| `method` | Analysis method: `bayesian_ab` (default, balanced sampling) or `bandit` (pass-through, asymmetric) |
 | `status` | `draft` / `collecting` / `analyzing` / `decided` |
 | `decision` / `decisionSummary` / `decisionReason` | Final decision (summary = plain-language action, reason = technical rationale) |
 
@@ -87,9 +92,11 @@ skills/experiment-workspace/scripts/
 **TypeScript scripts** (data I/O): `npx tsx <script>.ts <project-id> <experiment-slug>`
 **Python scripts** (algorithms): `python <script>.py <project-id> <experiment-slug>`
 
-**Two experiment types:**
-- **A/B (default)**: fixed 50/50 traffic split, one-shot analysis → `analyze-bayesian.py`
-- **Bandit**: dynamic traffic reweighting via Thompson Sampling → `analyze-bandit.py` (requires FeatBit API integration for full automation)
+**Two experiment methods** (set via `method` field, configurable in web UI):
+- **bayesian_ab (default)**: Balanced sampling — the data server caps each variant at MIN(count) so both arms have equal N, eliminating SRM noise. One-shot analysis → `analyze-bayesian.py`
+- **bandit**: Pass-through — asymmetric allocation is intentional (Thompson Sampling shifts traffic toward the winning arm). No balanced sampling applied. → `analyze-bandit.py` (requires FeatBit API integration for full automation)
+
+**Key principle: Flag traffic ≠ Experiment traffic.** Developers instrument once (`variation()` + `track()`), never per-experiment. The PM configures experiment scope (traffic%, offset, audience, method) post-hoc via the web UI. The data server applies these filters at query time — the flag itself is unaware of the experiment.
 
 All experiment data lives in the shared PostgreSQL database, accessible via the web app's HTTP API (`SYNC_API_URL`, default `http://localhost:3000`). No local experiment files needed — the web UI, sandbox agent, and scripts all read/write the same database.
 
@@ -298,6 +305,11 @@ After completing work, use the `project-sync` skill to persist state to the data
    - `--observationStart "YYYY-MM-DD"`
    - `--priorProper false` (or `true` if informative prior was chosen)
    - `--priorMean <float>` and `--priorStddev <float>` (only when `priorProper true`)
+   - `--trafficPercent <1-100>` (default 100; bucket width — how much hash space this experiment occupies)
+   - `--trafficOffset <0-99>` (default 0; bucket start — offset + percent ≤ 100 for non-overlapping splits)
+   - `--layerId "<layer>"` (only for concurrent mutual-exclusion experiments; null for sequential)
+   - `--audienceFilters '<JSON>'` (audience targeting rules, e.g. `'[{"property":"plan","op":"in","values":["premium"]}]'`; null = all users)
+   - `--method bayesian_ab` (or `bandit`; controls balanced sampling vs pass-through)
 2. `update-state` — save `--lastAction "Created experiment <slug>"`
 3. `set-stage` — set to `measuring`
 4. `add-activity` — e.g. `--type stage_update --title "Experiment <slug> created"`

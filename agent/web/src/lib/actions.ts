@@ -9,6 +9,7 @@ import {
   updateProjectStage,
   addActivity,
   addMessage,
+  updateExperiment,
 } from "@/lib/data";
 
 export async function createProjectAction(formData: FormData) {
@@ -161,4 +162,33 @@ export async function persistMessagesAction(
     // Persistence is best-effort — SSE chat works regardless
     console.warn(`[persistMessages] Failed for project ${projectId}`);
   }
+}
+
+export async function updateExperimentAudienceAction(formData: FormData) {
+  const experimentId = formData.get("experimentId") as string;
+  const projectId = formData.get("projectId") as string;
+  const trafficPercentRaw = formData.get("trafficPercent") as string;
+  const trafficOffsetRaw = formData.get("trafficOffset") as string;
+  const layerId = formData.get("layerId") as string | null;
+  const audienceFilters = formData.get("audienceFilters") as string | null;
+  const methodRaw = formData.get("method") as string | null;
+
+  const trafficPercent = parseFloat(trafficPercentRaw);
+  const trafficOffset = parseInt(trafficOffsetRaw, 10);
+  const method = methodRaw === "bandit" ? "bandit" : "bayesian_ab";
+
+  await updateExperiment(experimentId, {
+    trafficPercent: isNaN(trafficPercent) ? 100 : Math.min(100, Math.max(1, trafficPercent)),
+    trafficOffset: isNaN(trafficOffset) ? 0 : Math.min(99, Math.max(0, trafficOffset)),
+    layerId: layerId?.trim() || null,
+    audienceFilters: audienceFilters?.trim() || null,
+    method,
+  });
+
+  await addActivity(projectId, {
+    type: "note",
+    title: "Experiment audience & traffic updated",
+  });
+
+  revalidatePath(`/projects/${projectId}`);
 }

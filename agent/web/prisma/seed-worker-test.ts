@@ -4,14 +4,12 @@
  * Scenario: FeatBit onboarding checklist A/B test
  *   - Project "Onboarding Checklist" with one RUNNING Bayesian A/B experiment
  *   - Experiment has NO inputData yet — the worker is expected to populate it
- *   - FeatBit connection fields are intentionally left blank so the mock adapter
- *     in datasource.config.ts is used (add an entry matching `slug` below)
+ *   - FeatBit connection fields are intentionally left blank so the mock adapter is used
  *
  * Run:
  *   npx tsx prisma/seed-worker-test.ts
  *
- * After seeding, run the worker:
- *   cd ../worker && npm run collect
+ * After seeding, run the .NET data server (ExperimentWorker picks up running experiments).
  *
  * Then verify inputData was written:
  *   npx tsx prisma/seed-worker-test.ts --verify
@@ -47,9 +45,8 @@ async function main() {
   console.log("previous seed removed");
 
   // ── Project ──────────────────────────────────────────────────────────────────
-  // FeatBit connection fields are blank so the worker falls back to the
-  // mock adapter configured in agent/worker/datasource.config.ts.
-  // Set these to real values if you want to test the featbit adapter instead.
+  // FeatBit connection fields are blank — set these to real values
+  // if you want to test with a real FeatBit environment.
   const project = await prisma.project.create({
     data: {
       name: "Onboarding Checklist Test",
@@ -57,7 +54,7 @@ async function main() {
         "Test project for worker e2e — validates that the collect script writes inputData to a running experiment.",
       stage: "measuring",
 
-      // ── FeatBit connection (blank → mock adapter in datasource.config.ts) ──
+      // ── FeatBit connection (blank for testing) ──
       flagKey:       "onboarding-checklist",
       envSecret:     "",
       accessToken:   "",
@@ -90,9 +87,8 @@ async function main() {
   // status = "running" so getRunningExperiments() picks it up.
   // inputData = null so the worker has something to write.
   //
-  // Slug must match the key in agent/worker/datasource.config.ts for the
-  // mock adapter to kick in. Default config entry:
-  //   { slug: "onboarding-checklist-v1", adapter: "mock", mockData: { ... } }
+  // The .NET ExperimentWorker picks up experiments with status="running".
+  // It reads FeatBit connection fields from the project record.
   const experiment = await prisma.experiment.create({
     data: {
       projectId: project.id,
@@ -129,12 +125,8 @@ async function main() {
   });
 
   console.log(`experiment created: ${experiment.id} (slug="${experiment.slug}", status="${experiment.status}")`);
-  console.log(`\ninputData is NULL — run the worker to populate it:`);
-  console.log(`  cd agent/worker`);
-  console.log(`  # PowerShell:`);
-  console.log(`  $env:SYNC_API_URL="http://localhost:3000"; npm run collect`);
-  console.log(`  # bash/zsh:`);
-  console.log(`  SYNC_API_URL=http://localhost:3000 npm run collect`);
+  console.log(`\ninputData is NULL — start the .NET data server to populate it:`);
+  console.log(`  cd agent/data && dotnet run`);
   console.log(`\nthen verify:`);
   console.log(`  cd agent/web && bun ./prisma/seed-worker-test.ts --verify`);
 }

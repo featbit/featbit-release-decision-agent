@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using FRD.DataServer.Models;
 using Npgsql;
@@ -101,7 +102,7 @@ public sealed class FlagEvalConsumer : BackgroundService
     {
         await using var conn = await _dataSource.OpenConnectionAsync(ct);
         await using var writer = await conn.BeginBinaryImportAsync(
-            "COPY flag_evaluations (env_id, flag_key, user_key, variant, experiment_id, layer_id, evaluated_at) " +
+            "COPY flag_evaluations (env_id, flag_key, user_key, variant, experiment_id, layer_id, evaluated_at, user_props) " +
             "FROM STDIN (FORMAT BINARY)", ct);
 
         foreach (var msg in batch)
@@ -120,6 +121,11 @@ public sealed class FlagEvalConsumer : BackgroundService
             else
                 await writer.WriteNullAsync(ct);
             await writer.WriteAsync(msg.EvaluatedAt, NpgsqlTypes.NpgsqlDbType.TimestampTz, ct);
+            // user_props: serialize as JSON string, default to empty object
+            var propsJson = msg.UserProps is { Count: > 0 }
+                ? JsonSerializer.Serialize(msg.UserProps)
+                : "{}";
+            await writer.WriteAsync(propsJson, NpgsqlTypes.NpgsqlDbType.Jsonb, ct);
         }
 
         await writer.CompleteAsync(ct);

@@ -12,6 +12,8 @@ public sealed class FlagEvalMessage
     public string? ExperimentId { get; init; }
     public string? LayerId { get; init; }
     public DateTimeOffset EvaluatedAt { get; init; }
+    /// <summary>User properties snapshot at evaluation time — stored as JSONB for audience queries.</summary>
+    public Dictionary<string, string>? UserProps { get; init; }
 }
 
 /// <summary>

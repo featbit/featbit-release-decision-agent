@@ -6,6 +6,7 @@ import {
   FlaskConical,
   BarChart3,
   Flag,
+  Filter,
   Gauge,
   BookOpen,
   ChevronDown,
@@ -19,6 +20,7 @@ import {
 import type { Project, Experiment } from "@/generated/prisma/client";
 import { AnalysisView } from "./analysis-markdown";
 import { FlagConfig } from "./flag-config";
+import { ExperimentTrafficConfig } from "./experiment-traffic-config";
 
 type ProjectWithRelations = Project & {
   experiments: Experiment[];
@@ -301,6 +303,12 @@ function FlagAndExperimentSection({
                   </p>
                 </div>
               )}
+
+              {/* Audience & Traffic */}
+              <div>
+                <SectionLabel icon={<Filter className="size-3" />} label="Audience &amp; Traffic" />
+                <ExperimentTrafficConfig experiment={exp} projectId={project.id} />
+              </div>
             </div>
           </div>
         ))}
@@ -362,7 +370,7 @@ function MeasuringContent({
         ) : (
           <div className="space-y-3">
             {sorted.map((exp, idx) => (
-              <ExperimentMeasuringCard key={exp.id} experiment={exp} index={idx} isSequential={isSequential} />
+              <ExperimentMeasuringCard key={exp.id} experiment={exp} index={idx} isSequential={isSequential} projectId={project.id} />
             ))}
           </div>
         )}
@@ -372,7 +380,7 @@ function MeasuringContent({
 }
 
 /* ── Single experiment card for the Measuring tab ── */
-function ExperimentMeasuringCard({ experiment: exp, index, isSequential }: { experiment: Experiment; index: number; isSequential: boolean }) {
+function ExperimentMeasuringCard({ experiment: exp, index, isSequential, projectId }: { experiment: Experiment; index: number; isSequential: boolean; projectId: string }) {
   const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
   const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
 
@@ -498,6 +506,12 @@ function ExperimentMeasuringCard({ experiment: exp, index, isSequential }: { exp
               {fmtDate(exp.observationStart)} → {fmtDate(exp.observationEnd)}
             </span>
           )}
+        </div>
+
+        {/* Audience & Traffic (editable) */}
+        <div>
+          <SectionLabel icon={<Filter className="size-3" />} label="Audience &amp; Traffic" />
+          <ExperimentTrafficConfig experiment={exp} projectId={projectId} />
         </div>
 
         {/* Traffic allocation */}

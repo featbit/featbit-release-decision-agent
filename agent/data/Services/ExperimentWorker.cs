@@ -7,7 +7,7 @@ namespace FRD.DataServer.Services;
 
 /// <summary>
 /// Periodic background worker that collects metrics + runs Bayesian analysis
-/// for all running experiments. Port of agent/worker/collect.ts.
+/// for all running experiments.
 ///
 /// Tick → GET /api/experiments/running → parallel collect → analyze → POST results
 /// </summary>
@@ -97,7 +97,7 @@ public sealed class ExperimentWorker : BackgroundService
         // Validate required fields
         var envId = exp.Project?.EnvSecret ?? "";
         var flagKey = exp.Project?.FlagKey ?? "";
-        var expId = exp.ExperimentId ?? exp.Slug;
+        var expId = exp.ExperimentId;
 
         if (string.IsNullOrEmpty(envId) || string.IsNullOrEmpty(flagKey)
             || string.IsNullOrEmpty(exp.PrimaryMetricEvent))
@@ -114,7 +114,12 @@ public sealed class ExperimentWorker : BackgroundService
             ProjectId = exp.ProjectId,
             EnvId = envId,
             FlagKey = flagKey,
+            Method = exp.Method ?? "bayesian_ab",
             ExperimentId = expId,
+            LayerId = exp.LayerId,
+            TrafficPercent = exp.TrafficPercent,
+            TrafficOffset = exp.TrafficOffset,
+            AudienceFilters = exp.AudienceFilters,
             MetricEvent = exp.PrimaryMetricEvent!,
             MetricType = exp.PrimaryMetricType ?? "binary",
             MetricAgg = exp.PrimaryMetricAgg ?? "once",
@@ -236,8 +241,23 @@ public sealed class RunningExperiment
     [JsonPropertyName("status")]
     public string? Status { get; init; }
 
+    [JsonPropertyName("method")]
+    public string? Method { get; init; }
+
     [JsonPropertyName("experimentId")]
     public string? ExperimentId { get; init; }
+
+    [JsonPropertyName("layerId")]
+    public string? LayerId { get; init; }
+
+    [JsonPropertyName("trafficPercent")]
+    public double? TrafficPercent { get; init; }
+
+    [JsonPropertyName("trafficOffset")]
+    public int? TrafficOffset { get; init; }
+
+    [JsonPropertyName("audienceFilters")]
+    public string? AudienceFilters { get; init; }
 
     [JsonPropertyName("primaryMetricEvent")]
     public string? PrimaryMetricEvent { get; init; }

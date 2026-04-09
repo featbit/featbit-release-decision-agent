@@ -66,7 +66,12 @@ model Experiment {
   guardrailDescriptions String? @map("guardrail_descriptions") // JSON object {"event_name": "description", ...}
   controlVariant     String?  @map("control_variant")
   treatmentVariant   String?  @map("treatment_variant")
-  trafficAllocation  String?  @map("traffic_allocation") // how traffic is split: dispatch key, split ratios, staining
+  trafficAllocation  String?  @map("traffic_allocation") // how traffic is split: dispatch key, split ratios, staining (legacy blob)
+  // Explicit traffic + audience fields (supersede trafficAllocation blob)
+  trafficPercent     Float?   @default(100) @map("traffic_percent")      // 0–100, bucket width
+  trafficOffset      Int?     @default(0)   @map("traffic_offset")       // 0–99, bucket start; offset+percent ≤ 100
+  layerId            String?  @map("layer_id")                            // mutual exclusion layer — NULL means no exclusivity
+  audienceFilters    String?  @map("audience_filters")                    // JSON: [{property, op, value|values}]
   minimumSample      Int?     @map("minimum_sample")
   observationStart   DateTime? @map("observation_start")
   observationEnd     DateTime? @map("observation_end")

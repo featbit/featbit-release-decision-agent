@@ -22,6 +22,11 @@ The database is the experiment. No local experiment files needed.
 | `priorProper` | Boolean (false) | Whether an informative prior is used |
 | `priorMean` | Float? | Expected relative lift (0 = no expected direction) |
 | `priorStddev` | Float? | Uncertainty around prior mean (0.3 = ±30% plausible range) |
+| `trafficPercent` | Float (100) | Bucket width — percentage of hash space this experiment occupies (1–100). Combined with `trafficOffset` for non-overlapping splits |
+| `trafficOffset` | Int (0) | Bucket start — offset into the [0,100) hash space. The experiment occupies [offset, offset+percent). Must satisfy offset+percent ≤ 100 |
+| `layerId` | String? | Mutual-exclusion layer ID. When set, the data server filters on `layer_id` so only matching evaluations are included. Null for sequential experiments |
+| `audienceFilters` | String? | JSON array of audience filter rules. Each entry: `{"property":"<user_prop>","op":"eq|neq|in|nin","value":"..."}` or `{"property":"...","op":"in|nin","values":["a","b"]}`. Null = all users eligible. The data server applies these filters when querying exposure+conversion data |
+| `method` | String? | Analysis method: `bayesian_ab` (default) or `bandit`. Controls how the data server samples exposure data. See Balanced Sampling section below |
 | `inputData` | String? | Collected metric data (JSON string — see format below) |
 | `analysisResult` | String? | Computed analysis output (JSON string — see format below) |
 | `status` | String ("draft") | `draft` / `collecting` / `analyzing` / `decided` |
@@ -38,6 +43,20 @@ Rules for experiment fields:
 - `minimumSample` is a sanity floor, not a stopping rule
 - `priorProper: false` (default) = flat prior; `priorProper: true` = informative Gaussian prior
 - Do not change `primaryMetricEvent`, `controlVariant`, or `treatmentVariant` after data collection starts
+- `trafficPercent` defaults to 100 (all eligible traffic). The data server hashes `user_key || flagKey`, mods 100, and checks that the result falls within `[trafficOffset, trafficOffset + trafficPercent)`. When percent is 100, hash-based sampling is skipped entirely.
+- `trafficOffset` defaults to 0. For non-overlapping traffic splits, assign each experiment a contiguous range: e.g. Experiment A offset=0/percent=50 ([0,50)), Experiment B offset=50/percent=50 ([50,100)). Ensure offset + percent ≤ 100.
+- `layerId` enables filtering by evaluation layer. Two experiments with different `layerId` values can run on the same flag targeting separate cohorts. Leave null for sequential experiments.
+- `audienceFilters` applies server-side filtering on `user_props` when querying exposure and conversion data. Supported operators: `eq` (equals), `neq` (not equals), `in` (one of), `nin` (none of). Filters are AND-combined. Can be edited from the web UI at any time; changes only affect future queries, not historical data.
+
+### Balanced Sampling (method-conditional)
+
+The `method` field controls how the data server processes exposure data before analysis:
+
+- **`bayesian_ab`** (default): **Balanced sampling** — after collecting first-exposure rows, the data server ranks users within each variant by `ABS(hashtext(user_key))` and caps each variant at `MIN(count per variant)`. This ensures equal N across all arms, eliminating SRM (Sample Ratio Mismatch) noise from natural traffic imbalance. The hash-based ordering is deterministic — the same users are always selected.
+
+- **`bandit`**: **Pass-through** — no balanced sampling. Asymmetric allocation across variants is intentional (Thompson Sampling dynamically shifts traffic toward the winning arm). All first-exposure users are included in the analysis as-is.
+
+This is applied at the data server layer (both .NET `MetricCollector` and TypeScript `featbit.ts` adapter). The analysis scripts receive already-balanced data and do not need to account for unequal sample sizes in `bayesian_ab` mode.
 
 ---
 
