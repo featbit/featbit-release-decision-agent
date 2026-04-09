@@ -87,3 +87,10 @@ skills/experiment-workspace/scripts/*.pyo
 # =======
 agent/web/prisma/dev.db
 !agent/web/prisma/dev.db.example
+
+# =======
+# featbit/FeatBit.TrackApi (.NET 10)
+# =======
+featbit/**/bin/
+featbit/**/obj/
+featbit/**/*.user
