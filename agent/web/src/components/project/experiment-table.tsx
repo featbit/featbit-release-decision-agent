@@ -527,12 +527,13 @@ export function ExperimentTable({
       >
         <SheetContent
           side="right"
-          className="w-[56rem] max-w-[96vw] sm:max-w-[56rem] p-0 flex flex-col gap-0"
+          hideOverlay
+          className="w-[56rem] min-w-[68vw] sm:max-w-[56rem] p-0 flex flex-col gap-0"
         >
           {selected && (
             <>
               {/* Header */}
-              <SheetHeader className="px-4 pt-4 pb-3 border-b shrink-0">
+              <SheetHeader className="pl-4 pr-12 pt-4 pb-3 border-b shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   {isSequential && selectedIndex >= 0 && (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0">
