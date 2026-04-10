@@ -25,10 +25,6 @@ const STAGE_FIELDS: Record<string, { fields: string[]; icon: React.ReactNode }> 
     fields: ["goal", "hypothesis", "primaryMetric", "guardrails"],
     icon: <BarChart3 className="size-3.5" />,
   },
-  deciding: {
-    fields: ["goal", "hypothesis", "primaryMetric", "guardrails"],
-    icon: <BarChart3 className="size-3.5" />,
-  },
   learning: {
     fields: ["goal", "hypothesis", "primaryMetric"],
     icon: <Lightbulb className="size-3.5" />,

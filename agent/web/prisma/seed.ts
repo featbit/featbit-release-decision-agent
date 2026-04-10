@@ -361,7 +361,7 @@ async function main() {
     },
     {
       type: "stage_change",
-      title: "Stage changed to deciding",
+      title: "Stage advanced to measuring (deciding phase)",
       detail: "Both arms above minimum sample. P(win)=96.8% for treatment. Guardrail healthy. Evidence sufficient.",
       createdAt: d(27),
     },

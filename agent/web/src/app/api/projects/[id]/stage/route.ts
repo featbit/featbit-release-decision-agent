@@ -6,7 +6,6 @@ const VALID_STAGES = new Set([
   "hypothesis",
   "implementing",
   "measuring",
-  "deciding",
   "learning",
 ]);
 

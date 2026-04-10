@@ -44,17 +44,7 @@ const STAGE_FIELDS: Record<
       "guardrails",
     ],
     icon: <BarChart3 className="size-4" />,
-    hint: "The sandbox agent will use measurement-design (CF-05) + experiment-workspace to define events, collect data, and run Bayesian analysis.",
-  },
-  deciding: {
-    fields: [
-      "goal",
-      "hypothesis",
-      "primaryMetric",
-      "guardrails",
-    ],
-    icon: <BarChart3 className="size-4" />,
-    hint: "The sandbox agent will use evidence-analysis (CF-06/07) to check sufficiency and frame a decision: CONTINUE, PAUSE, ROLLBACK, or INCONCLUSIVE.",
+    hint: "The sandbox agent will use measurement-design (CF-05) + experiment-workspace to collect data, run Bayesian analysis, and frame a decision: CONTINUE, PAUSE, ROLLBACK, or INCONCLUSIVE.",
   },
   learning: {
     fields: ["goal", "hypothesis", "primaryMetric"],

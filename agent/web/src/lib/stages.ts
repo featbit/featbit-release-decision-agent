@@ -28,20 +28,11 @@ export const STAGES = [
   {
     key: "measuring",
     label: "Measuring",
-    cf: "CF-05",
-    skill: "measurement-design / experiment-workspace",
-    description: "Define metrics & collect data",
+    cf: "CF-05/06/07",
+    skill: "measurement-design / experiment-workspace / evidence-analysis",
+    description: "Run experiments, track metrics & make decisions",
     color:
       "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
-  },
-  {
-    key: "deciding",
-    label: "Deciding",
-    cf: "CF-06/07",
-    skill: "evidence-analysis",
-    description: "Evaluate evidence and frame decision",
-    color:
-      "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
   },
   {
     key: "learning",

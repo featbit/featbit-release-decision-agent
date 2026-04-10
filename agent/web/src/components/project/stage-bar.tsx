@@ -19,10 +19,9 @@ function stageHasContent(project: ProjectLike, stageKey: string): boolean {
       return Boolean(
         project.primaryMetric ||
           project.guardrails ||
-          project.experiments.length > 0
+          project.experiments.length > 0 ||
+          project.experiments.some((e) => e.decision)
       );
-    case "deciding":
-      return project.experiments.some((e) => e.decision);
     case "learning":
       return Boolean(
         project.lastLearning ||

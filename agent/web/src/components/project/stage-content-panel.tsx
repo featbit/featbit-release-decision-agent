@@ -7,20 +7,16 @@ import {
   BarChart3,
   Flag,
   Filter,
-  Gauge,
   BookOpen,
-  ChevronDown,
   Beaker,
-  TrendingUp,
-  ShieldCheck,
   Users,
   Calendar,
   Info,
 } from "lucide-react";
 import type { Project, Experiment } from "@/generated/prisma/client";
-import { AnalysisView } from "./analysis-markdown";
 import { FlagConfig } from "./flag-config";
 import { ExperimentTrafficConfig } from "./experiment-traffic-config";
+import { ExperimentTable } from "./experiment-table";
 
 type ProjectWithRelations = Project & {
   experiments: Experiment[];
@@ -74,13 +70,6 @@ const STAGE_CONFIG: Record<
     icon: <BarChart3 className="size-3.5" />,
     fields: [], // measuring has its own custom layout
   },
-  deciding: {
-    icon: <Gauge className="size-3.5" />,
-    fields: [
-      { key: "primaryMetric", label: "Primary Metric" },
-      { key: "guardrails", label: "Guardrails" },
-    ],
-  },
   learning: {
     icon: <BookOpen className="size-3.5" />,
     fields: [
@@ -118,11 +107,6 @@ export function StageContentPanel({
         <>
           <FieldsSection project={project} stageKey={activeTab} />
           <FlagAndExperimentSection project={project} />
-        </>
-      ) : activeTab === "deciding" ? (
-        <>
-          <FieldsSection project={project} stageKey={activeTab} />
-          <ExperimentsDecisionSection experiments={project.experiments} />
         </>
       ) : activeTab === "learning" ? (
         <>
@@ -368,307 +352,14 @@ function MeasuringContent({
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {sorted.map((exp, idx) => (
-              <ExperimentMeasuringCard key={exp.id} experiment={exp} index={idx} isSequential={isSequential} projectId={project.id} />
-            ))}
-          </div>
+          <ExperimentTable experiments={sorted} projectId={project.id} isSequential={isSequential} />
         )}
       </section>
     </>
   );
 }
 
-/* ── Single experiment card for the Measuring tab ── */
-function ExperimentMeasuringCard({ experiment: exp, index, isSequential, projectId }: { experiment: Experiment; index: number; isSequential: boolean; projectId: string }) {
-  const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
-  const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
 
-  return (
-    <div className="rounded-md border space-y-0">
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b">
-        {isSequential ? (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            Phase {index + 1}
-          </Badge>
-        ) : (
-          <span className="text-xs font-medium text-muted-foreground">
-            #{index + 1}
-          </span>
-        )}
-        <span className="text-xs font-mono font-medium">{exp.slug}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {exp.method && <MethodBadge method={exp.method} />}
-          <StatusBadge status={exp.status} />
-        </div>
-      </div>
-
-      <div className="px-3 py-2 space-y-2.5">
-        {/* Hypothesis — why this experiment */}
-        {exp.hypothesis && (
-          <div>
-            <SectionLabel icon={<Lightbulb className="size-3" />} label="Hypothesis" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {exp.hypothesis}
-            </p>
-          </div>
-        )}
-
-        {/* Method reason — why Bayesian or Bandit */}
-        {exp.methodReason && (
-          <div>
-            <SectionLabel icon={<Info className="size-3" />} label="Why This Method" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {exp.methodReason}
-            </p>
-          </div>
-        )}
-
-        {/* Metrics */}
-        <div>
-          <SectionLabel icon={<TrendingUp className="size-3" />} label="Primary Metric" />
-          <p className="text-xs font-mono">
-            {exp.primaryMetricEvent || "—"}
-          </p>
-          {exp.metricDescription && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              {exp.metricDescription}
-            </p>
-          )}
-        </div>
-
-        {guardrailEvents.length > 0 && (
-          <div>
-            <SectionLabel icon={<ShieldCheck className="size-3" />} label="Guardrails" />
-            <ul className="space-y-0.5">
-              {guardrailEvents.map((evt) => (
-                <li key={evt} className="text-xs">
-                  <span className="font-mono">{evt}</span>
-                  {guardrailDescs[evt] && (
-                    <span className="text-[10px] text-muted-foreground ml-1">
-                      — {guardrailDescs[evt]}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Design — variants, sample, window */}
-        {exp.method === "bandit" ? (
-          <div>
-            <SectionLabel icon={<Users className="size-3" />} label="Arms" />
-            <div className="flex flex-wrap gap-1.5 mt-0.5">
-              {[exp.controlVariant, ...(exp.treatmentVariant?.split("|").map((s: string) => s.trim()) ?? [])]
-                .filter(Boolean)
-                .map((arm) => (
-                  <span
-                    key={arm}
-                    className="inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono bg-muted/40"
-                  >
-                    {arm}
-                    {arm === exp.controlVariant && (
-                      <span className="ml-1 text-[10px] text-muted-foreground">(baseline)</span>
-                    )}
-                  </span>
-                ))}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-            {exp.controlVariant && (
-              <span>
-                <Users className="inline size-3 mr-0.5" />
-                <span className="text-muted-foreground">Control:</span>{" "}
-                <span className="font-mono">{exp.controlVariant}</span>
-              </span>
-            )}
-            {exp.treatmentVariant && (
-              <span>
-                <span className="text-muted-foreground">Treatment:</span>{" "}
-                <span className="font-mono">{exp.treatmentVariant}</span>
-              </span>
-            )}
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {exp.minimumSample && (
-            <span>
-              Min sample: <span className="tabular-nums font-medium text-foreground">{exp.minimumSample}</span>/variant
-            </span>
-          )}
-          {exp.observationStart && exp.observationEnd && (
-            <span>
-              <Calendar className="inline size-3 mr-0.5" />
-              {fmtDate(exp.observationStart)} → {fmtDate(exp.observationEnd)}
-            </span>
-          )}
-        </div>
-
-        {/* Audience & Traffic (editable) */}
-        <div>
-          <SectionLabel icon={<Filter className="size-3" />} label="Audience &amp; Traffic" />
-          <ExperimentTrafficConfig experiment={exp} projectId={projectId} />
-        </div>
-
-        {/* Traffic allocation */}
-        {exp.trafficAllocation && (
-          <div>
-            <SectionLabel icon={<Flag className="size-3" />} label="Traffic Allocation" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {exp.trafficAllocation}
-            </p>
-          </div>
-        )}
-
-        {/* Analysis result — collapsible */}
-        {exp.analysisResult && (
-          <details className="group">
-            <summary className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors select-none">
-              <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
-              Full Analysis
-            </summary>
-            <div className="mt-1.5 rounded border bg-muted/20 px-2 py-1.5 overflow-x-auto">
-              <AnalysisView content={exp.analysisResult} />
-            </div>
-          </details>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── Experiment decisions (deciding tab) ── */
-function ExperimentsDecisionSection({
-  experiments,
-}: {
-  experiments: Experiment[];
-}) {
-  const { sorted, isSequential } = sortAndDetectSequential(experiments);
-
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-        <Gauge className="size-3.5" />
-        <span>Experiment Decisions</span>
-      </div>
-      {sorted.length === 0 ? (
-        <p className="text-xs text-muted-foreground/50 italic">
-          No experiments to evaluate.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          {sorted.map((exp, idx) => (
-            <ExperimentDecisionCard key={exp.id} experiment={exp} index={idx} isSequential={isSequential} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ── Decision callout background colours ── */
-const DECISION_BG: Record<string, string> = {
-  CONTINUE: "bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800",
-  PAUSE: "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-800",
-  ROLLBACK_CANDIDATE: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800",
-  INCONCLUSIVE: "bg-gray-50 border-gray-200 dark:bg-gray-900/30 dark:border-gray-700",
-};
-
-/* ── Single experiment card for the Deciding tab ── */
-function ExperimentDecisionCard({ experiment: exp, index, isSequential }: { experiment: Experiment; index: number; isSequential: boolean }) {
-  const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
-  const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
-
-  return (
-    <div className="rounded-md border space-y-0">
-      {/* Header — slug + method + decision badge */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b">
-        {isSequential ? (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-            Phase {index + 1}
-          </Badge>
-        ) : (
-          <span className="text-xs font-medium text-muted-foreground">
-            #{index + 1}
-          </span>
-        )}
-        <span className="text-xs font-mono font-medium">{exp.slug}</span>
-        <div className="ml-auto flex items-center gap-1.5">
-          {exp.method && <MethodBadge method={exp.method} />}
-          <DecisionBadge decision={exp.decision} />
-        </div>
-      </div>
-
-      <div className="px-3 py-2 space-y-2.5">
-        {/* Decision callout — prominent human-readable summary */}
-        {exp.decisionSummary && (
-          <div className={`rounded-md border px-3 py-2.5 ${DECISION_BG[exp.decision ?? ""] ?? "bg-muted/30 border-border"}`}>
-            <p className="text-sm font-medium leading-relaxed">{exp.decisionSummary}</p>
-          </div>
-        )}
-
-        {/* Technical rationale — secondary */}
-        {exp.decisionReason && (
-          <div>
-            <SectionLabel icon={<Target className="size-3" />} label="Technical Rationale" />
-            <p className="text-xs leading-relaxed text-muted-foreground">{exp.decisionReason}</p>
-          </div>
-        )}
-
-        {/* Quick stats line */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          {exp.primaryMetricEvent && (
-            <span>
-              Metric: <span className="font-mono">{exp.primaryMetricEvent}</span>
-            </span>
-          )}
-          {exp.observationStart && exp.observationEnd && (
-            <span>
-              Window: {fmtDate(exp.observationStart)} → {fmtDate(exp.observationEnd)}
-            </span>
-          )}
-          <span>Status: {exp.status}</span>
-        </div>
-
-        {/* Guardrail configuration */}
-        {guardrailEvents.length > 0 && (
-          <div>
-            <SectionLabel icon={<ShieldCheck className="size-3" />} label="Guardrails Tracked" />
-            <ul className="space-y-0.5">
-              {guardrailEvents.map((evt) => (
-                <li key={evt} className="text-xs">
-                  <span className="font-mono">{evt}</span>
-                  {guardrailDescs[evt] && (
-                    <span className="text-[10px] text-muted-foreground ml-1">
-                      — {guardrailDescs[evt]}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Full analysis — collapsible */}
-        {exp.analysisResult && (
-          <details className="group">
-            <summary className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors select-none">
-              <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
-              Full Analysis
-            </summary>
-            <div className="mt-1.5 rounded border bg-muted/20 px-2 py-1.5 overflow-x-auto">
-              <AnalysisView content={exp.analysisResult} />
-            </div>
-          </details>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* ── Experiment learnings (learning tab) ── */
 function LearningSection({
