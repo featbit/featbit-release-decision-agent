@@ -85,3 +85,8 @@ agent/web/prisma/dev.db
 featbit/**/bin/
 featbit/**/obj/
 featbit/**/*.user
+
+# =======
+# .claude
+# =======
+.claude/settings.local.json

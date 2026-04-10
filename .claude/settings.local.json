@@ -7,7 +7,9 @@
       "Bash(grep:*)",
       "Bash(ls:*)",
       "Bash(find C:Codefeatbitfeatbit -name *openapi* -o -name *swagger*)",
-      "Bash(find C:Codefeatbitfeatbit-release-decision-agentskills -name *rest* -o -name *api*)"
+      "Bash(find C:Codefeatbitfeatbit-release-decision-agentskills -name *rest* -o -name *api*)",
+      "Bash(curl -s \"https://developers.cloudflare.com/containers/pricing/\")",
+      "Bash(curl:*)"
     ]
   }
 }
