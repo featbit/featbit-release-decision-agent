@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { StageSidebar } from "@/components/project/stage-bar";
@@ -28,6 +29,13 @@ interface ProjectDetailLayoutProps {
 
 export function ProjectDetailLayout({ project }: ProjectDetailLayoutProps) {
   const [activeTab, setActiveTab] = useState(project.stage);
+  const router = useRouter();
+
+  // Auto-refresh every 15 seconds to pick up new analysis results from the Worker
+  useEffect(() => {
+    const id = setInterval(() => router.refresh(), 15_000);
+    return () => clearInterval(id);
+  }, [router]);
 
   return (
     <>

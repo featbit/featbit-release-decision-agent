@@ -210,11 +210,14 @@ public sealed class ExperimentWorker : BackgroundService
         }
 
         // ── Step 4: Write analysisResult to DB ──
+        // Do NOT change status here — leave it as "running" so the Worker keeps
+        // picking up the experiment on every tick as new data accumulates.
+        // Status moves to "analyzing" only when a human explicitly decides to stop.
         try
         {
             var resp = await _http.PostAsJsonAsync(
                 $"/api/projects/{Uri.EscapeDataString(exp.ProjectId)}/experiment",
-                new { slug = exp.Slug, analysisResult = result.Value.GetRawText(), status = "analyzing" },
+                new { slug = exp.Slug, analysisResult = result.Value.GetRawText() },
                 JsonOpts, ct);
             resp.EnsureSuccessStatusCode();
             _logger.LogInformation("[{Slug}] analysisResult written", exp.Slug);
