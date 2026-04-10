@@ -137,7 +137,19 @@ public sealed class ExperimentWorker : BackgroundService
             return;
         }
 
-        _logger.LogInformation("[{Slug}] collected: {Type} control/treatment", exp.Slug, summary.MetricType);
+        // Guard: skip if no users were collected (avoids writing 0-user results)
+        var controlJson = JsonSerializer.SerializeToElement(summary.Control);
+        var treatmentJson = JsonSerializer.SerializeToElement(summary.Treatment);
+        var controlN = controlJson.TryGetProperty("n", out var cn) ? cn.GetInt64() : 0;
+        var treatmentN = treatmentJson.TryGetProperty("n", out var tn) ? tn.GetInt64() : 0;
+        if (controlN == 0 && treatmentN == 0)
+        {
+            _logger.LogInformation("[{Slug}] 0 users collected, skipping until data arrives", exp.Slug);
+            return;
+        }
+
+        _logger.LogInformation("[{Slug}] collected: {Type} control={CtrlN} treatment={TrtN}",
+            exp.Slug, summary.MetricType, controlN, treatmentN);
 
         // ── Step 2: Write inputData to DB ──
         var inputData = new

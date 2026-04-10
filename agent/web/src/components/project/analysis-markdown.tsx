@@ -327,7 +327,7 @@ function BayesianView({ data }: { data: BayesianAnalysis }) {
       <MetricTable section={data.primary_metric} label="Primary Metric" />
       <PosteriorChart section={data.primary_metric} />
 
-      {data.guardrails.map((g) => (
+      {(data.guardrails ?? []).map((g) => (
         <MetricTable key={g.event} section={g} label="Guardrail" />
       ))}
 

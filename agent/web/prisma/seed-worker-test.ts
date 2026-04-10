@@ -54,9 +54,9 @@ async function main() {
         "Test project for worker e2e — validates that the collect script writes inputData to a running experiment.",
       stage: "measuring",
 
-      // ── FeatBit connection (blank for testing) ──
+      // ── FeatBit connection ──
       flagKey:       "onboarding-checklist",
-      envSecret:     "",
+      envSecret:     "sim-env-001",
       accessToken:   "",
       flagServerUrl: "",
 

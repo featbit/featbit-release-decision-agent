@@ -1,0 +1,97 @@
+# ============================================================================
+# Release Decision Agent — Docker Compose (E2E testing)
+#
+# Services:
+#   postgres   — shared database (Prisma tables + event tables)
+#   web        — Next.js app (frontend + API)
+#   data       — .NET data server (track API + ExperimentWorker + MetricCollector)
+#   simulator  — sends simulated flag evaluations + metric events
+#
+# Usage:
+#   docker compose up --build
+#   open http://localhost:3000
+# ============================================================================
+
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: release_decision
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d release_decision"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # ── Next.js Web App ─────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./agent/web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/release_decision
+    volumes:
+      - ./docker/init-events.sql:/init-events.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/experiments/running || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # ── .NET Data Server ────────────────────────────────────────────────────────
+  data:
+    build:
+      context: ./agent/data
+      dockerfile: Dockerfile
+    ports:
+      - "5058:5058"
+    environment:
+      ConnectionStrings__EventStore: "Host=postgres;Port=5432;Database=release_decision;Username=postgres;Password=postgres"
+      ExperimentWorker__IntervalSeconds: "30"
+      ExperimentWorker__MaxConcurrency: "4"
+      ExperimentWorker__ApiBaseUrl: "http://web:3000"
+      ExperimentWorker__PythonPath: "python3"
+      SYNC_API_URL: "http://web:3000"
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5058/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ── Simulator (continuous mode — keeps running until stopped) ───────────────
+  simulator:
+    build:
+      context: ./agent/simulator
+      dockerfile: Dockerfile
+    environment:
+      TRACK_API_URL: "http://data:5058/api/track"
+      ENV_SECRET: "sim-env-001"
+      FLAG_KEY: "onboarding-checklist"
+      BATCH_SIZE: "5"
+      BATCH_DELAY_MS: "3000"
+      CONTROL_CONV_RATE: "0.32"
+      TREATMENT_CONV_RATE: "0.45"
+      STARTUP_DELAY_SEC: "5"
+    depends_on:
+      data:
+        condition: service_healthy
+
+volumes:
+  pgdata:
