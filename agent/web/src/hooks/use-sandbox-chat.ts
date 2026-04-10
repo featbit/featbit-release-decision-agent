@@ -48,7 +48,7 @@ function nextId() {
 
 export function useSandboxChat({
   projectId,
-  sandboxUrl = "http://localhost:3001",
+  sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "http://localhost:3001",
   maxTurns = 50,
   cwd,
   initialMessages = [],

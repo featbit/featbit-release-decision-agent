@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.bigmodel.cn)",
+      "Bash(npm show:*)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

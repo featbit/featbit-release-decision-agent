@@ -6,10 +6,15 @@
 #   web        — Next.js app (frontend + API)
 #   data       — .NET data server (track API + ExperimentWorker + MetricCollector)
 #   simulator  — sends simulated flag evaluations + metric events
+#   sandbox    — Claude Code agent bridge (SSE, GLM backend)
 #
 # Usage:
 #   docker compose up --build
-#   open http://localhost:3000
+#   open http://localhost:3000          ← web UI
+#   open http://localhost:3100          ← sandbox SSE endpoint
+#
+# Required env vars (put in a .env file — never commit):
+#   GLM_API_KEY=<your-zhipuai-key>
 # ============================================================================
 
 services:
@@ -35,6 +40,8 @@ services:
     build:
       context: ./agent/web
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SANDBOX_URL: "http://localhost:3100"
     ports:
       - "3000:3000"
     environment:
@@ -91,6 +98,24 @@ services:
       STARTUP_DELAY_SEC: "5"
     depends_on:
       data:
+        condition: service_healthy
+
+  # ── Sandbox — Claude Code agent bridge (GLM backend) ────────────────────────
+  sandbox:
+    build:
+      context: ./agent/sandbox
+      dockerfile: Dockerfile
+    ports:
+      - "3100:3000"
+    environment:
+      GLM_API_KEY: ${GLM_API_KEY}
+      PORT: 3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      SYNC_API_URL: "http://web:3000"
+    volumes:
+      - ./agent/sandbox/data:/app/data
+    depends_on:
+      web:
         condition: service_healthy
 
 volumes:
