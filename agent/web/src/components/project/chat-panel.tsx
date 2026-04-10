@@ -25,9 +25,14 @@ function toChat(msg: Message): ChatMessage {
 export function ChatPanel({
   projectId,
   messages: initialMessages,
+  triggerMessage,
+  onTriggerConsumed,
 }: {
   projectId: string;
   messages: Message[];
+  /** When set, auto-sends this message and then calls onTriggerConsumed */
+  triggerMessage?: string | null;
+  onTriggerConsumed?: () => void;
 }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -64,6 +69,14 @@ export function ChatPanel({
       sendMessage("");
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-send external trigger messages (e.g. from the "Analyze" button)
+  useEffect(() => {
+    if (!triggerMessage) return;
+    sendMessage(triggerMessage);
+    onTriggerConsumed?.();
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, [triggerMessage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleSubmit() {
     const content = input.trim();

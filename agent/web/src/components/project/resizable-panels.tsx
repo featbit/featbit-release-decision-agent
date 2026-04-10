@@ -17,6 +17,9 @@ interface ResizablePanelsProps {
   defaultLeftWidth?: number;
   /** Minimum width for each panel in pixels */
   minWidth?: number;
+  /** Controlled right-panel collapse state (optional) */
+  rightCollapsed?: boolean;
+  onRightCollapsedChange?: (collapsed: boolean) => void;
 }
 
 export function ResizablePanels({
@@ -24,12 +27,24 @@ export function ResizablePanels({
   right,
   defaultLeftWidth = 600,
   minWidth = 280,
+  rightCollapsed: rightCollapsedProp,
+  onRightCollapsedChange,
 }: ResizablePanelsProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [leftWidth, setLeftWidth] = useState(defaultLeftWidth);
   const [isDragging, setIsDragging] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [_rightCollapsed, _setRightCollapsed] = useState(false);
+
+  // Support controlled or uncontrolled right-panel collapse
+  const rightCollapsed = rightCollapsedProp ?? _rightCollapsed;
+  function setRightCollapsed(value: boolean) {
+    if (onRightCollapsedChange) {
+      onRightCollapsedChange(value);
+    } else {
+      _setRightCollapsed(value);
+    }
+  }
 
   // Store width before collapse so we can restore it
   const savedLeftWidth = useRef(defaultLeftWidth);
@@ -78,7 +93,7 @@ export function ResizablePanels({
   }
 
   function toggleRight() {
-    setRightCollapsed((v) => !v);
+    setRightCollapsed(!rightCollapsed);
   }
 
   return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Pencil, Filter, Percent, Layers, Plus, Trash2, Beaker } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +79,7 @@ export function ExperimentTrafficConfig({
   const [filters, setFilters] = useState<FilterEntry[]>([]);
   const [method, setMethod] = useState(experiment.method ?? "bayesian_ab");
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   const pct = experiment.trafficPercent ?? 100;
   const offset = experiment.trafficOffset ?? 0;
@@ -96,6 +98,7 @@ export function ExperimentTrafficConfig({
     formData.set("audienceFilters", serialized);
     startTransition(async () => {
       await updateExperimentAudienceAction(formData);
+      router.refresh();
       setOpen(false);
     });
   }

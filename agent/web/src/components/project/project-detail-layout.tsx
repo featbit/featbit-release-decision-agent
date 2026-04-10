@@ -10,6 +10,7 @@ import { ChatPanel } from "@/components/project/chat-panel";
 import { ResizablePanels } from "@/components/project/resizable-panels";
 import { ActivityPopover } from "@/components/project/activity-popover";
 import { ProjectActions } from "@/components/project/project-actions";
+import { ChatTriggerContext } from "@/components/project/chat-trigger-context";
 import type {
   Project,
   Experiment,
@@ -29,6 +30,8 @@ interface ProjectDetailLayoutProps {
 
 export function ProjectDetailLayout({ project }: ProjectDetailLayoutProps) {
   const [activeTab, setActiveTab] = useState(project.stage);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
   const router = useRouter();
 
   // Auto-refresh every 15 seconds to pick up new analysis results from the Worker
@@ -37,8 +40,13 @@ export function ProjectDetailLayout({ project }: ProjectDetailLayoutProps) {
     return () => clearInterval(id);
   }, [router]);
 
+  function triggerChat(message: string) {
+    setPendingChatMessage(message);
+    setRightCollapsed(false);
+  }
+
   return (
-    <>
+    <ChatTriggerContext.Provider value={triggerChat}>
       {/* ── Header ── */}
       <header className="border-b shrink-0">
         <div className="flex items-center gap-3 px-4 py-2">
@@ -63,6 +71,8 @@ export function ProjectDetailLayout({ project }: ProjectDetailLayoutProps) {
 
       {/* ── Main: resizable left (stages) / right (chat) ── */}
       <ResizablePanels
+        rightCollapsed={rightCollapsed}
+        onRightCollapsedChange={setRightCollapsed}
         left={
           <div className="flex h-full">
             {/* Vertical stage sidebar */}
@@ -78,9 +88,14 @@ export function ProjectDetailLayout({ project }: ProjectDetailLayoutProps) {
           </div>
         }
         right={
-          <ChatPanel projectId={project.id} messages={project.messages} />
+          <ChatPanel
+            projectId={project.id}
+            messages={project.messages}
+            triggerMessage={pendingChatMessage}
+            onTriggerConsumed={() => setPendingChatMessage(null)}
+          />
         }
       />
-    </>
+    </ChatTriggerContext.Provider>
   );
 }

@@ -3,12 +3,13 @@
 import { useState } from "react";
 import {
   Beaker,
+  Bot,
   Calendar,
-  ChevronDown,
   Filter,
   Flag,
   Info,
   Lightbulb,
+  MessageCircle,
   ShieldCheck,
   Target,
   TrendingUp,
@@ -22,8 +23,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 import { AnalysisView } from "./analysis-markdown";
 import { ExperimentTrafficConfig } from "./experiment-traffic-config";
+import { useChatTrigger } from "./chat-trigger-context";
 import type { Experiment } from "@/generated/prisma/client";
 
 /* ── Colour maps ── */
@@ -109,6 +112,43 @@ function DecisionBadge({ decision }: { decision: string | null }) {
   );
 }
 
+/* ── Simple inline tab bar ── */
+
+type DrawerTab = "summary" | "analysis" | "traffic";
+
+const TAB_LABELS: { id: DrawerTab; label: string }[] = [
+  { id: "summary", label: "Summary" },
+  { id: "analysis", label: "Full Analysis" },
+  { id: "traffic", label: "Audience & Traffic" },
+];
+
+function TabBar({
+  active,
+  onChange,
+}: {
+  active: DrawerTab;
+  onChange: (t: DrawerTab) => void;
+}) {
+  return (
+    <div className="flex border-b px-4 gap-1">
+      {TAB_LABELS.map(({ id, label }) => (
+        <button
+          key={id}
+          onClick={() => onChange(id)}
+          className={cn(
+            "py-2 px-1 text-xs font-medium border-b-2 -mb-px transition-colors",
+            active === id
+              ? "border-foreground text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ── Helpers ── */
 
 function parseGuardrailDescriptions(
@@ -137,26 +177,43 @@ function fmtDate(d: Date | string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-/* ── Detail panel (content inside the Sheet) ── */
+/* ── Tab content panels ── */
 
-function ExperimentDetail({
+function SummaryTab({
   exp,
-  index,
-  isSequential,
-  projectId,
+  onAnalyze,
 }: {
   exp: Experiment;
-  index: number;
-  isSequential: boolean;
-  projectId: string;
+  onAnalyze?: () => void;
 }) {
   const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
   const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
   const hasDecision = Boolean(exp.decision);
 
   return (
-    <div className="px-4 pb-6 space-y-4 overflow-y-auto">
-      {/* Decision callout — prominent */}
+    <div className="px-4 pb-6 space-y-4">
+      {/* No-decision hint */}
+      {!hasDecision && onAnalyze && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2.5 bg-muted/20">
+          <div className="flex items-start gap-2 min-w-0">
+            <MessageCircle className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              暂无决策结论。理解当前数据，并查看结果，可在右侧 chat agent 沟通。
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px] px-2.5 shrink-0 gap-1"
+            onClick={onAnalyze}
+          >
+            <Bot className="size-3" />
+            Analyze
+          </Button>
+        </div>
+      )}
+
+      {/* Decision callout */}
       {exp.decisionSummary && (
         <div
           className={`rounded-md border px-3 py-2.5 ${DECISION_BG[exp.decision ?? ""] ?? "bg-muted/30 border-border"}`}
@@ -210,7 +267,7 @@ function ExperimentDetail({
       <div>
         <SectionLabel
           icon={<TrendingUp className="size-3" />}
-          label="Primary Metric"
+          label="Metric"
         />
         <p className="text-xs font-mono">{exp.primaryMetricEvent || "—"}</p>
         {exp.metricDescription && (
@@ -305,8 +362,38 @@ function ExperimentDetail({
           </span>
         )}
       </div>
+    </div>
+  );
+}
 
-      {/* Audience & Traffic */}
+function AnalysisTab({ exp }: { exp: Experiment }) {
+  if (!exp.analysisResult) {
+    return (
+      <div className="px-4 pb-6 pt-2">
+        <p className="text-xs text-muted-foreground/60">
+          No analysis available yet.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="px-4 pb-6 overflow-x-auto">
+      <div className="rounded border bg-muted/20 px-3 py-2.5">
+        <AnalysisView content={exp.analysisResult} />
+      </div>
+    </div>
+  );
+}
+
+function TrafficTab({
+  exp,
+  projectId,
+}: {
+  exp: Experiment;
+  projectId: string;
+}) {
+  return (
+    <div className="px-4 pb-6 space-y-4">
       <div>
         <SectionLabel
           icon={<Filter className="size-3" />}
@@ -315,7 +402,6 @@ function ExperimentDetail({
         <ExperimentTrafficConfig experiment={exp} projectId={projectId} />
       </div>
 
-      {/* Traffic allocation blob */}
       {exp.trafficAllocation && (
         <div>
           <SectionLabel
@@ -326,19 +412,6 @@ function ExperimentDetail({
             {exp.trafficAllocation}
           </p>
         </div>
-      )}
-
-      {/* Full analysis — auto-open when decision exists */}
-      {exp.analysisResult && (
-        <details className="group" open={hasDecision}>
-          <summary className="flex items-center gap-1 cursor-pointer text-[10px] font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors select-none">
-            <ChevronDown className="size-3 transition-transform group-open:rotate-180" />
-            Full Analysis
-          </summary>
-          <div className="mt-1.5 rounded border bg-muted/20 px-2 py-1.5 overflow-x-auto">
-            <AnalysisView content={exp.analysisResult} />
-          </div>
-        </details>
       )}
     </div>
   );
@@ -355,10 +428,24 @@ export function ExperimentTable({
   projectId: string;
   isSequential: boolean;
 }) {
-  const [selected, setSelected] = useState<Experiment | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DrawerTab>("summary");
+  const triggerChat = useChatTrigger();
+  const selected = selectedId ? (experiments.find((e) => e.id === selectedId) ?? null) : null;
   const selectedIndex = selected
     ? experiments.findIndex((e) => e.id === selected.id)
     : -1;
+
+  function openDetail(exp: Experiment) {
+    setSelectedId(exp.id);
+    setActiveTab("summary");
+  }
+
+  function handleAnalyze(exp: Experiment) {
+    const message = `请分析实验 "${exp.slug}" 的当前数据，并给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK_CANDIDATE / INCONCLUSIVE）。请说明理由。`;
+    triggerChat?.(message);
+    setSelectedId(null);
+  }
 
   return (
     <>
@@ -370,21 +457,15 @@ export function ExperimentTable({
           </p>
         </div>
       ) : (
-        <div className="rounded-md border overflow-hidden">
-          <table className="w-full text-xs">
+        /* Horizontal scroll wrapper */
+        <div className="rounded-md border overflow-x-auto">
+          <table className="min-w-full text-xs whitespace-nowrap">
             <thead>
               <tr className="border-b bg-muted/40 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left">Experiment</th>
-                <th className="px-3 py-2 text-left hidden sm:table-cell">
-                  Method
-                </th>
-                <th className="px-3 py-2 text-left hidden md:table-cell">
-                  Primary Metric
-                </th>
                 <th className="px-3 py-2 text-left">Status</th>
                 <th className="px-3 py-2 text-left">Decision</th>
-                <th className="px-3 py-2 text-right w-20"></th>
               </tr>
             </thead>
             <tbody>
@@ -393,7 +474,8 @@ export function ExperimentTable({
                   key={exp.id}
                   className="border-b last:border-0 hover:bg-muted/20 transition-colors"
                 >
-                  <td className="px-3 py-2.5 text-muted-foreground tabular-nums">
+                  {/* # */}
+                  <td className="px-3 py-2.5 text-muted-foreground tabular-nums align-top">
                     {isSequential ? (
                       <Badge
                         variant="outline"
@@ -405,40 +487,30 @@ export function ExperimentTable({
                       `${idx + 1}`
                     )}
                   </td>
-                  <td className="px-3 py-2.5">
-                    <span className="font-mono font-medium">{exp.slug}</span>
-                  </td>
-                  <td className="px-3 py-2.5 hidden sm:table-cell">
-                    {exp.method ? (
-                      <MethodBadge method={exp.method} />
-                    ) : (
-                      <span className="text-muted-foreground/40">—</span>
+
+                  {/* Experiment name + method */}
+                  <td className="px-3 py-2.5 align-top">
+                    <button
+                      className="font-mono font-medium text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:hover:text-blue-200 transition-colors text-left whitespace-normal"
+                      onClick={() => openDetail(exp)}
+                    >
+                      {exp.slug}
+                    </button>
+                    {exp.method && (
+                      <div className="mt-1">
+                        <MethodBadge method={exp.method} />
+                      </div>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 hidden md:table-cell">
-                    {exp.primaryMetricEvent ? (
-                      <span className="font-mono text-[11px]">
-                        {exp.primaryMetricEvent}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/40">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5">
+
+                  {/* Status */}
+                  <td className="px-3 py-2.5 align-top">
                     <StatusBadge status={exp.status} />
                   </td>
-                  <td className="px-3 py-2.5">
+
+                  {/* Decision */}
+                  <td className="px-3 py-2.5 align-top">
                     <DecisionBadge decision={exp.decision} />
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-[11px] px-2"
-                      onClick={() => setSelected(exp)}
-                    >
-                      Details →
-                    </Button>
                   </td>
                 </tr>
               ))}
@@ -450,16 +522,17 @@ export function ExperimentTable({
       <Sheet
         open={!!selected}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open) setSelectedId(null);
         }}
       >
         <SheetContent
           side="right"
-          className="sm:max-w-xl w-[560px] p-0 overflow-y-auto flex flex-col gap-0"
+          className="w-[56rem] max-w-[96vw] sm:max-w-[56rem] p-0 flex flex-col gap-0"
         >
           {selected && (
             <>
-              <SheetHeader className="px-4 pt-4 pb-3 border-b">
+              {/* Header */}
+              <SheetHeader className="px-4 pt-4 pb-3 border-b shrink-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   {isSequential && selectedIndex >= 0 && (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0">
@@ -469,7 +542,7 @@ export function ExperimentTable({
                   <SheetTitle className="font-mono text-sm">
                     {selected.slug}
                   </SheetTitle>
-                  <div className="flex items-center gap-1.5 ml-auto">
+                  <div className="flex items-center gap-1.5 ml-auto flex-wrap">
                     {selected.method && (
                       <MethodBadge method={selected.method} />
                     )}
@@ -480,13 +553,24 @@ export function ExperimentTable({
                   </div>
                 </div>
               </SheetHeader>
+
+              {/* Tab bar */}
+              <TabBar active={activeTab} onChange={setActiveTab} />
+
+              {/* Tab content */}
               <div className="flex-1 overflow-y-auto pt-3">
-                <ExperimentDetail
-                  exp={selected}
-                  index={selectedIndex}
-                  isSequential={isSequential}
-                  projectId={projectId}
-                />
+                {activeTab === "summary" && (
+                  <SummaryTab
+                    exp={selected}
+                    onAnalyze={
+                      triggerChat ? () => handleAnalyze(selected) : undefined
+                    }
+                  />
+                )}
+                {activeTab === "analysis" && <AnalysisTab exp={selected} />}
+                {activeTab === "traffic" && (
+                  <TrafficTab exp={selected} projectId={projectId} />
+                )}
               </div>
             </>
           )}
