@@ -24,7 +24,7 @@ The database is the experiment. No local experiment files needed.
 | `priorStddev` | Float? | Uncertainty around prior mean (0.3 = ±30% plausible range) |
 | `trafficPercent` | Float (100) | Bucket width — percentage of hash space this experiment occupies (1–100). Combined with `trafficOffset` for non-overlapping splits |
 | `trafficOffset` | Int (0) | Bucket start — offset into the [0,100) hash space. The experiment occupies [offset, offset+percent). Must satisfy offset+percent ≤ 100 |
-| `layerId` | String? | Mutual-exclusion layer ID. When set, the data server filters on `layer_id` so only matching evaluations are included. Null for sequential experiments |
+| `layerId` | String? | Optional filter tag. When set, the data server adds `AND layer_id = $4` to the exposure query — filtering to evaluations tagged with this ID at SDK track time. Does **not** create an independent hash space; two experiments with the same `flagKey` but different `layerId` still share the same hash-based bucket assignment |
 | `audienceFilters` | String? | JSON array of audience filter rules. Each entry: `{"property":"<user_prop>","op":"eq|neq|in|nin","value":"..."}` or `{"property":"...","op":"in|nin","values":["a","b"]}`. Null = all users eligible. The data server applies these filters when querying exposure+conversion data |
 | `method` | String? | Analysis method: `bayesian_ab` (default) or `bandit`. Controls how the data server samples exposure data. See Balanced Sampling section below |
 | `inputData` | String? | Collected metric data (JSON string — see format below) |
@@ -45,7 +45,7 @@ Rules for experiment fields:
 - Do not change `primaryMetricEvent`, `controlVariant`, or `treatmentVariant` after data collection starts
 - `trafficPercent` defaults to 100 (all eligible traffic). The data server hashes `user_key || flagKey`, mods 100, and checks that the result falls within `[trafficOffset, trafficOffset + trafficPercent)`. When percent is 100, hash-based sampling is skipped entirely.
 - `trafficOffset` defaults to 0. For non-overlapping traffic splits, assign each experiment a contiguous range: e.g. Experiment A offset=0/percent=50 ([0,50)), Experiment B offset=50/percent=50 ([50,100)). Ensure offset + percent ≤ 100.
-- `layerId` enables filtering by evaluation layer. Two experiments with different `layerId` values can run on the same flag targeting separate cohorts. Leave null for sequential experiments.
+- `layerId` is a WHERE-clause filter on `flag_evaluations.layer_id`, not a hash salt. It lets you restrict which logged evaluations are included (e.g., only evaluations made inside a specific product layer or surface). It does **not** produce independent random assignment — two experiments with the same `flagKey` but different `layerId` still derive their bucket positions from `hashtext(user_key || flagKey)`. True independent assignment (layering / orthogonal) requires a different `flagKey`, which means a different project. Leave null for sequential experiments.
 - `audienceFilters` applies server-side filtering on `user_props` when querying exposure and conversion data. Supported operators: `eq` (equals), `neq` (not equals), `in` (one of), `nin` (none of). Filters are AND-combined. Can be edited from the web UI at any time; changes only affect future queries, not historical data.
 
 ### Balanced Sampling (method-conditional)
@@ -57,6 +57,62 @@ The `method` field controls how the data server processes exposure data before a
 - **`bandit`**: **Pass-through** — no balanced sampling. Asymmetric allocation across variants is intentional (Thompson Sampling dynamically shifts traffic toward the winning arm). All first-exposure users are included in the analysis as-is.
 
 This is applied at the data server layer (both .NET `MetricCollector` and TypeScript `featbit.ts` adapter). The analysis scripts receive already-balanced data and do not need to account for unequal sample sizes in `bayesian_ab` mode.
+
+---
+
+## How Traffic Allocation Actually Works
+
+Understanding what `trafficPercent` / `trafficOffset` actually filter helps avoid architecture mistakes.
+
+### Data source: `flag_evaluations` mirrors the flag
+
+Every row in `flag_evaluations` is a copy of a real flag evaluation — the variant field holds exactly what FeatBit served to that user. The experimentation data server never re-assigns variants; it queries this table to count exposures and conversions. If the flag is 50/50, the table accumulates ~50% each. If the flag is 20/80, the table accumulates ~20% / ~80%.
+
+### Hash filter is a second independent filter
+
+When `trafficPercent < 100`, the data server applies:
+```sql
+abs(hashtext(user_key || flagKey)) % 100 >= trafficOffset
+AND abs(hashtext(user_key || flagKey)) % 100 < trafficOffset + trafficPercent
+```
+This hash is **independent** of FeatBit's own flag-evaluation hash. Selecting users in bucket `[0, 30%)` does not change the variant ratio — you get approximately the same variant proportions as the full set.
+
+### Flag split inheritance
+
+| Scenario | Effective experiment sample |
+|---|---|
+| Flag 50/50, `trafficPercent=100` (default) | Hash filter skipped entirely — all evaluations included; bayesian trims to equal N |
+| Flag 50/50, `trafficPercent=50, offset=0` | Half the users; still ~50/50 within the window |
+| Flag 20/80, `trafficPercent=100` | All evaluations included; bayesian trims both groups to ~20% of total |
+| Flag 20/80, `trafficPercent=30, offset=0` | ~6% total as variant A, ~24% as variant B; bayesian trims both to ~6% |
+
+### Gradual rollout and unequal flag splits are intentional
+
+An unequal variant split (e.g., 10% treatment / 90% control) is not a misconfiguration — it is a deliberate risk-control decision: the product team limits exposure to the new experience until the experiment validates it. The correct response is **not** to change the flag split to 50/50; doing so defeats the purpose of gradual rollout.
+
+The three layers of traffic control are independent and each serves a different purpose:
+
+| Layer | Who decides | Purpose |
+|---|---|---|
+| **Flag split** (e.g., 20/80) | Product / ops | Risk control — how many users see the new experience |
+| **`trafficPercent` / `trafficOffset`** | Experiment design | Isolation — carve a sub-pool from the already-exposed users for mutual exclusion between concurrent experiments |
+| **Bayesian balanced sampling** | Data server (automatic) | Statistical fairness — trim both groups to equal N, eliminating SRM noise |
+
+**Practical consequence of a small treatment group:** The treatment-side N is the population ceiling. A 10% rollout means you need to wait longer for sufficient N than a 50% rollout. `minimumSample` should be set conservatively, and the observation window planned accordingly. Running mutual-exclusion experiments on top of a small rollout further reduces each experiment's sub-pool — accept a longer timeline or run sequentially.
+
+**When an unequal split IS a problem:** If someone accidentally sets the flag to 2/98 while intending 50/50, bayesian balanced sampling will trim both groups to 2% of total — discarding 98% of control-side data. In that case, fix the flag configuration, not the experiment parameters.
+
+### One `flagKey` = one hash space = one project constraint
+
+```
+One flagKey / one project
+  ├── Concurrent max?      → N mutually exclusive experiments (non-overlapping bucket ranges)
+  ├── Cannot do?           → Independent layering / orthogonal (requires different flagKey)
+  ├── Recommended form?    → One experiment + primary metric + guardrails
+  └── Multiple experiments? → Sequential iteration (Exp1 decides → Exp2 inherits learning)
+```
+
+For **orthogonal** experiments (same user in two independent experiments simultaneously) or **true layering** (independent random assignment per layer), each experiment layer needs its own hash seed — which in this system means a different `flagKey`, therefore a different project.
 
 ---
 

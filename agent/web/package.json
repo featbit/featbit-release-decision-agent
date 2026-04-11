@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed": "npx tsx prisma/seed.ts",
+    "seed:pricing": "npx tsx prisma/seed-pricing.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

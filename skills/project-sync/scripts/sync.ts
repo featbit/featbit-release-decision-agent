@@ -198,6 +198,11 @@ async function main() {
         process.exit(1);
       }
       const flags = parseArgs(rest.slice(2));
+      const VALID_EXPERIMENT_STATUSES = ["draft", "running", "collecting", "analyzing", "decided", "archived"];
+      if (flags.status && !VALID_EXPERIMENT_STATUSES.includes(flags.status)) {
+        console.error(`Invalid experiment status: "${flags.status}". Valid values: ${VALID_EXPERIMENT_STATUSES.join(", ")}`);
+        process.exit(1);
+      }
       await upsertExperiment(projectId, slug, flags);
       break;
     }

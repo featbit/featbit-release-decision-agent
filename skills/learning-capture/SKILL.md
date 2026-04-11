@@ -70,6 +70,7 @@ The learning must always end with a directional suggestion for what to test next
 - Do not let the learning become a post-mortem — it is forward-facing input
 - For longer cycles, write a fuller document to `artifacts/learning-[date].md`
 - Hand off to `intent-shaping` for the next cycle
+- **Do NOT change `Experiment.status` here.** It remains `decided` (set by `experiment-workspace` when closing) or `archived` if explicitly archiving. Never set it to `"completed"`, `"finished"`, or any other value.
 
 ### Persist State
 

@@ -65,25 +65,47 @@ FeatBit supports this via targeting rules with hashed user segments. Create non-
 
 ## Pattern 3: Orthogonal Experiments (Concurrent, Independent Surfaces)
 
-**When to use:** Two or more experiments run at the same time but on different features, pages, or user journeys with no expected interaction.
+**When to use:** Two or more experiments run at the same time but on completely independent features, pages, or user journeys with no shared metrics and no expected interaction.
 
 **How it works:**
-- Each experiment uses its own flag and targeting rules independently
-- A user may be in multiple experiments simultaneously
-- No traffic splitting needed — experiments share the full pool
+- Each experiment uses its **own flag** (different `flagKey`) and targeting rules independently
+- A user may be in multiple experiments simultaneously — their assignment in one experiment is independent of their assignment in the other
+- No traffic splitting needed — each experiment uses the full eligible pool
+
+**Why different `flagKey` is required:**
+The data server hashes `user_key || flagKey` to assign bucket positions. A different `flagKey` produces a different hash, making assignment in experiment A statistically independent of assignment in experiment B — this is what "orthogonal" means. Two experiments that share the same `flagKey` share the same bucket space, and assignment is correlated, not independent.
+
+In this system, a different `flagKey` means a different project. Orthogonal experiments always span multiple projects.
 
 **Traffic allocation:**
-- Each experiment allocates traffic independently (e.g., both use 50/50 splits)
-- Users may receive treatment in both, control in both, or mixed
+- Each experiment allocates traffic independently (e.g., both use the full pool within their respective flag's rollout)
+- Users may receive treatment in both, control in both, or mixed — by design
 
 **Tradeoffs:**
 - Assumes no interaction between experiments — if this assumption is wrong, results may be confounded
 - Faster than mutual exclusion (full traffic available to each experiment)
-- No special infrastructure needed
+- Requires validating that no downstream metrics are shared
 
 **When NOT to use:**
 - When experiments act on the same UI element, flow, or metric surface
 - When one experiment's treatment might influence the other's metric
+- When both experiments share the same `flagKey` (use mutual exclusion instead)
+
+---
+
+## System Constraints: One `flagKey` / One Project
+
+This system derives bucket assignment from `hashtext(user_key || flagKey)`. The `flagKey` is the hash seed. `layerId` is a WHERE-clause filter on evaluation records — it does not create an independent hash space.
+
+```
+One flagKey / one project
+  ├── Concurrent max?       → N mutually exclusive experiments (non-overlapping bucket ranges)
+  ├── Cannot do?            → Independent layering / orthogonal (requires different flagKey)
+  ├── Recommended form?     → One experiment + primary metric + guardrails
+  └── Multiple experiments? → Sequential iteration (Exp1 decides → Exp2 inherits learning)
+```
+
+Orthogonal and layered designs always require separate projects.
 
 ---
 

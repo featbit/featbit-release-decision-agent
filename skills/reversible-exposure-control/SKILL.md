@@ -105,9 +105,9 @@ Use this path only if the current user can change application code. If not, crea
 
 1. Determine whether experiments are sequential or must run concurrently
 2. Default to **sequential** design: run Experiment 1 to conclusion, then start Experiment 2. This avoids mutual-exclusion complexity and gives each experiment the full traffic pool
-3. If experiments must run concurrently on the same surface, use **mutual exclusion**: partition traffic into non-overlapping hash buckets. Each experiment gets `[trafficOffset, trafficOffset + trafficPercent)` — e.g. Exp A offset=0/50%, Exp B offset=50/50%. Optionally set `layerId` to further filter evaluations by layer
+3. If experiments must run concurrently on the same surface, use **mutual exclusion**: partition traffic into non-overlapping hash buckets. Each experiment gets `[trafficOffset, trafficOffset + trafficPercent)` — e.g. Exp A offset=0/50%, Exp B offset=50/50%. Leave `layerId` null — it is a WHERE-clause filter on evaluation records, not a mechanism for independent assignment
 4. Choose the analysis method: `bayesian_ab` (default, balanced sampling — equal N per variant) or `bandit` (pass-through — asymmetric allocation intentional). Set this in the experiment record's `method` field via the web UI. The data server applies the appropriate sampling strategy automatically
-5. If experiments are concurrent but on independent surfaces with no shared metrics, use **orthogonal** design: no traffic splitting needed
+5. If experiments are concurrent but on independent features or surfaces with no shared metrics, that is an **orthogonal** design — each experiment gets its own flag and project. This is knowledge-only guidance; it is not an operation performed within a single project
 6. Run sample-size calculations on the reduced traffic pool for concurrent designs — underpowered experiments are worse than sequential with a wait
 6. Document the chosen strategy in the handoff spec and in the exposure activity log
 7. Read: [references/multi-experiment-traffic.md](references/multi-experiment-traffic.md) for detailed patterns and anti-patterns

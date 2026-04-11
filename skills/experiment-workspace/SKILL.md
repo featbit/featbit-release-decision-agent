@@ -71,10 +71,10 @@ Each experiment is stored as a row in the `Experiment` table (Prisma schema). Ke
 | `analysisResult` | Computed analysis output (JSON string) |
 | `trafficPercent` | Bucket width — percentage of hash space allocated (1–100, default 100) |
 | `trafficOffset` | Bucket start — hash-space offset for mutual-exclusion splits (0–99, default 0) |
-| `layerId` | Mutual-exclusion layer ID for concurrent experiments (null if sequential) |
+| `layerId` | Optional filter tag — restricts exposure query to evaluations with matching `layer_id`. Does **not** create independent random assignment; leave null in normal operation |
 | `audienceFilters` | JSON array of audience filter rules (see experiment-folder-spec.md) |
 | `method` | Analysis method: `bayesian_ab` (default, balanced sampling) or `bandit` (pass-through, asymmetric) |
-| `status` | `draft` / `collecting` / `analyzing` / `decided` |
+| `status` | `draft` / `collecting` / `analyzing` / `decided` / `archived` — **NEVER use `"completed"`, `"finished"`, `"closed"`, or any other value not in this list.** `"completed"` is a `Project.sandboxStatus` value and does NOT apply to experiments. |
 | `decision` / `decisionSummary` / `decisionReason` | Final decision (summary = plain-language action, reason = technical rationale) |
 
 ### Scripts (Hybrid: TypeScript for I/O, Python for algorithms)
@@ -289,6 +289,7 @@ For full interpretation guidance (three patterns: holds / decays / improves), se
 - **NEVER compute analysis statistics inline and write the result directly to `analysisResult`.** The web UI renderer expects a specific JSON schema produced only by `analyze-bayesian.py` or `analyze-bandit.py`. If data is provided manually (e.g. the user tells you "300 users, 13 conversions"), first write it to `inputData` in the correct format (`{"metrics":{"<event>":{"<control>":{"n":300,"k":13},"<treatment>":{"n":290,"k":37}}}}`) using `upsert-experiment`, then run the analysis script. Inline computation produces a flat JSON that the UI cannot render.
 - If the SRM check flags an imbalance (χ² p < 0.01), do not proceed to `evidence-analysis` — the data is unreliable.
 - "The script says 97% confidence" does not mean "ship it." That is `evidence-analysis`'s job.
+- **Valid `status` values are: `draft`, `collecting`, `analyzing`, `decided`, `archived` — nothing else.** Do not use `"completed"`, `"finished"`, `"closed"`, or any invented terminal state. `"completed"` belongs to `Project.sandboxStatus`, not `Experiment.status`. Writing an invalid status will break the `ExperimentWorker` polling query.
 
 ### Persist State
 
