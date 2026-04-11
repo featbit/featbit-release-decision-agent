@@ -9,7 +9,6 @@ import {
   Filter,
   BookOpen,
   Beaker,
-  Users,
   Calendar,
   Info,
 } from "lucide-react";
@@ -17,6 +16,7 @@ import type { Project, Experiment } from "@/generated/prisma/client";
 import { FlagConfig } from "./flag-config";
 import { ExperimentTrafficConfig } from "./experiment-traffic-config";
 import { ExperimentTable } from "./experiment-table";
+import { TrafficPoolView } from "./traffic-pool-view";
 
 type ProjectWithRelations = Project & {
   experiments: Experiment[];
@@ -204,14 +204,9 @@ function FlagAndExperimentSection({
       {/* Flag config — editable form */}
       <FlagConfig project={project} />
 
-      {/* Sequential design note */}
-      {experiments.length > 1 && (
-        <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-          <Users className="inline size-3.5 mr-1" />
-          {isSequential
-            ? "Sequential design — experiments run one after another on the same flag. No mutual-exclusion layer needed."
-            : "Multiple experiments share this flag — verify traffic isolation strategy."}
-        </div>
+      {/* Traffic pool overview */}
+      {experiments.length > 0 && (
+        <TrafficPoolView experiments={sorted} />
       )}
 
       {/* Experiment cards */}
