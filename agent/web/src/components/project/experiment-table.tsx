@@ -464,6 +464,7 @@ export function ExperimentTable({
               <tr className="border-b bg-muted/40 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left">Experiment</th>
+                <th className="px-3 py-2 text-left">Primary Metric</th>
                 <th className="px-3 py-2 text-left">Status</th>
                 <th className="px-3 py-2 text-left">Decision</th>
               </tr>
@@ -500,6 +501,15 @@ export function ExperimentTable({
                       <div className="mt-1">
                         <MethodBadge method={exp.method} />
                       </div>
+                    )}
+                  </td>
+
+                  {/* Primary Metric */}
+                  <td className="px-3 py-2.5 align-top">
+                    {exp.primaryMetricEvent ? (
+                      <span className="font-mono text-[11px]">{exp.primaryMetricEvent}</span>
+                    ) : (
+                      <span className="text-muted-foreground/40">—</span>
                     )}
                   </td>
 
