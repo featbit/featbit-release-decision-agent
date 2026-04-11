@@ -1,7 +1,12 @@
-FROM node:20-slim
+FROM node:24-slim
 
-# Install Claude Code CLI (latest stable)
-RUN npm install -g @anthropic-ai/claude-code
+# git + ca-certificates are required by the `skills add` clone step below
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code CLI via pnpm (significantly faster than npm for large packages)
+ENV PNPM_HOME="/root/.local/share/pnpm"
+ENV PATH="${PNPM_HOME}:${PATH}"
+RUN corepack enable pnpm && mkdir -p ${PNPM_HOME} && pnpm add -g @anthropic-ai/claude-code
 
 # Pre-configure Claude Code so that the non-interactive `skills add` step below
 # doesn't stall on the first-run onboarding wizard.

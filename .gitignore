@@ -48,6 +48,7 @@ yarn-error.log*
 # =======
 # agent/sandbox/ (ts)
 # =======
+agent/sandbox/dist/
 agent/sandbox/node_modules/
 agent/sandbox/.pnp
 agent/sandbox/.pnp.*

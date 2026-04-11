@@ -45,8 +45,8 @@ export async function runAgentStream(
     maxTurns,
     allowedTools,
     includePartialMessages: true,
-    settingSources: ["user", "project"],
-    systemPrompt: { type: "preset", preset: "claude_code" },
+    settingSources: ["user" as const, "project" as const],
+    systemPrompt: { type: "preset" as const, preset: "claude_code" as const },
   };
 
   let hasStreamedData = false;
