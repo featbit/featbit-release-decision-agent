@@ -32,6 +32,13 @@ internal sealed class PartitionWriter<T>(
 
     private long _segmentCounter = ScanMaxSegment(partitionDir);
 
+    /// <summary>
+    /// UTC ticks of the last WriteAsync call (Interlocked-updated).
+    /// Used by StorageEngine to evict idle writers.
+    /// </summary>
+    private long _lastWriteAt = DateTime.UtcNow.Ticks;
+    public long LastWriteAt => Interlocked.Read(ref _lastWriteAt);
+
     private readonly CancellationTokenSource _cts   = new();
     private readonly Task                    _bgTask = Task.CompletedTask; // replaced below
 
@@ -51,7 +58,10 @@ internal sealed class PartitionWriter<T>(
     /// Under normal load this returns synchronously.
     /// </summary>
     public ValueTask WriteAsync(T item, CancellationToken ct = default)
-        => _channel.Writer.WriteAsync(item, ct);
+    {
+        Interlocked.Exchange(ref _lastWriteAt, DateTime.UtcNow.Ticks);
+        return _channel.Writer.WriteAsync(item, ct);
+    }
 
     // ── Background flush loop ─────────────────────────────────────────────────
 

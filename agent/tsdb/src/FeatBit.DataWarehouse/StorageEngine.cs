@@ -20,7 +20,7 @@ namespace FeatBit.DataWarehouse;
 ///
 /// One <see cref="PartitionWriter{T}"/> is created per (table, env_id, key, date) combination
 /// and cached in a <see cref="ConcurrentDictionary{TKey,TValue}"/>.
-/// Writers for stale partitions (past dates) are evicted periodically.
+/// Writers for stale partitions (past dates) are evicted periodically by a background task.
 ///
 /// Thread-safety: all public methods are safe to call concurrently.
 /// </summary>
@@ -36,6 +36,19 @@ public sealed partial class StorageEngine : IAsyncDisposable
     private readonly ConcurrentDictionary<string, PartitionWriter<MetricEventRecord>>
         _metricEventWriters = new();
 
+    // ── Eviction ──────────────────────────────────────────────────────────────
+
+    // How often to scan for stale writers.
+    // Default: every 15 minutes.
+    private readonly TimeSpan _evictionInterval;
+
+    // How long a writer can be idle before it is evicted, even if its partition date is today.
+    // Default: 2 hours. Set to TimeSpan.MaxValue to disable idle eviction.
+    private readonly TimeSpan _idleTimeout;
+
+    private readonly CancellationTokenSource _evictionCts = new();
+    private readonly Task _evictionTask;
+
     // ── Construction ──────────────────────────────────────────────────────────
 
     /// <param name="dataRoot">Root directory for all segment files.</param>
@@ -47,16 +60,31 @@ public sealed partial class StorageEngine : IAsyncDisposable
     ///   Maximum time between flushes even when the batch is not full.
     ///   Default 500 ms — keeps data visible to queries within half a second.
     /// </param>
+    /// <param name="evictionInterval">
+    ///   How often to evict writers for past-date partitions.
+    ///   Default 15 minutes. Each stale writer holds ~82 KB; eviction keeps memory bounded.
+    /// </param>
+    /// <param name="idleTimeout">
+    ///   How long a writer can be idle before eviction, even if its partition date is today.
+    ///   Default 30 minutes — reclaims memory promptly when flag traffic drops off.
+    ///   Set to <see cref="TimeSpan.MaxValue"/> to disable idle eviction.
+    /// </param>
     public StorageEngine(
         string dataRoot,
-        int maxBatchSize      = 10_000,
-        TimeSpan? flushInterval = null)
+        int maxBatchSize           = 10_000,
+        TimeSpan? flushInterval    = null,
+        TimeSpan? evictionInterval = null,
+        TimeSpan? idleTimeout      = null)
     {
-        _dataRoot      = dataRoot;
-        _maxBatchSize  = maxBatchSize;
-        _flushInterval = flushInterval ?? TimeSpan.FromMilliseconds(500);
+        _dataRoot         = dataRoot;
+        _maxBatchSize     = maxBatchSize;
+        _flushInterval    = flushInterval    ?? TimeSpan.FromMilliseconds(500);
+        _evictionInterval = evictionInterval ?? TimeSpan.FromMinutes(15);
+        _idleTimeout      = idleTimeout      ?? TimeSpan.FromMinutes(30);
 
         Directory.CreateDirectory(dataRoot);
+
+        _evictionTask = Task.Run(() => EvictStaleWritersAsync(_evictionCts.Token));
     }
 
     // ── Write API ─────────────────────────────────────────────────────────────
@@ -84,13 +112,67 @@ public sealed partial class StorageEngine : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        // Flush all partition writers in parallel.
+        // Stop eviction loop first.
+        await _evictionCts.CancelAsync();
+        try { await _evictionTask; } catch (OperationCanceledException) { }
+        _evictionCts.Dispose();
+
+        // Flush all remaining partition writers in parallel.
         var disposes = new List<ValueTask>();
 
         foreach (var w in _flagEvalWriters.Values)   disposes.Add(w.DisposeAsync());
         foreach (var w in _metricEventWriters.Values) disposes.Add(w.DisposeAsync());
 
         foreach (var d in disposes) await d;
+    }
+
+    // ── Stale-writer eviction ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Background loop: every <see cref="_evictionInterval"/>, dispose and remove
+    /// writers whose partition date is strictly before today (UTC).
+    ///
+    /// Each stale writer holds ~82 KB (pre-allocated batch list + channel + task overhead).
+    /// Without eviction, a system with 100 envs × 2 000 flags accumulates ~16 GB per day.
+    /// </summary>
+    private async Task EvictStaleWritersAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(_evictionInterval);
+
+        while (await timer.WaitForNextTickAsync(ct))
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            await EvictDictionaryAsync(_flagEvalWriters, today, _idleTimeout);
+            await EvictDictionaryAsync(_metricEventWriters, today, _idleTimeout);
+        }
+    }
+
+    private static async Task EvictDictionaryAsync<T>(
+        ConcurrentDictionary<string, PartitionWriter<T>> dict,
+        DateOnly today,
+        TimeSpan idleTimeout)
+    {
+        var idleCutoff = DateTime.UtcNow - idleTimeout;
+
+        foreach (var key in dict.Keys)
+        {
+            // Partition key is the full directory path; the last segment is yyyy-MM-dd.
+            var datePart = Path.GetFileName(key.AsSpan());
+            if (!DateOnly.TryParseExact(datePart, "yyyy-MM-dd", null, System.Globalization.DateTimeStyles.None, out var date))
+                continue;
+
+            bool staleDate = date < today;
+            // dict[key] is safe here: we iterate Keys and the writer only disappears via TryRemove below.
+            bool idle = dict.TryGetValue(key, out var w)
+                        && new DateTime(w.LastWriteAt, DateTimeKind.Utc) < idleCutoff;
+
+            if (staleDate || idle)
+            {
+                // TryRemove is atomic: only one thread disposes each writer.
+                if (dict.TryRemove(key, out var writer))
+                    await writer.DisposeAsync();
+            }
+        }
     }
 
     // ── Internals ─────────────────────────────────────────────────────────────
