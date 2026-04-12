@@ -36,8 +36,8 @@ const BAYESIAN_INPUT = JSON.stringify({
       "bottom-right": { n: 588, k: 171 },
     },
     session_duration_p50: {
-      disabled: { n: 612, mean: 247.3, std: 89.4 },
-      "bottom-right": { n: 588, mean: 251.8, std: 91.2 },
+      disabled: { n: 612, mean: 247.3, variance: 7992.36 },
+      "bottom-right": { n: 588, mean: 251.8, variance: 8317.44 },
     },
     support_ticket_created: {
       disabled: { n: 612, k: 24 },
@@ -232,12 +232,12 @@ async function main() {
       decisionSummary:
         "Recommend enabling the help widget for all new users — set help-widget-placement to bottom-right.",
       decisionReason:
-        "P(win)=96.8% for the treatment arm, well above the 95% threshold. Relative lift of +40% on experiment_created with no guardrail regression (page_bounce P(win)=29.4% — healthy). Both arms exceeded minimum sample.",
+        "P(win)=96.8% for the treatment arm, well above the 95% threshold. Relative lift of +40% on experiment_created with no guardrail regression. All three guardrails passed: page_bounce P(harm)=29.4% (bounce rate −2.7%, CI crosses zero — healthy), session_duration_p50 P(↓>5%)=3.1% (duration unchanged — healthy), support_ticket_created P(increase)=19.8% (ticket rate −17.6%, CI crosses zero — healthy). Both arms exceeded minimum sample.",
 
       whatChanged:
         "Added floating HelpWidget component with pulsing animation and auto-expand on first visit, served behind the `help-widget-placement` feature flag (disabled vs bottom-right).",
       whatHappened:
-        "experiment_created rate increased from 17.97% to 25.17% (+40% relative lift) across 1200 new users over 18 days. Page bounce rate unchanged (−2.7%, not significant).",
+        "experiment_created rate increased from 17.97% to 25.17% (+40% relative lift) across 1200 new users over 18 days. All guardrails held: page bounce rate unchanged (−2.7%, P(harm)=29.4%), session duration unaffected (+1.8%, P(↓>5%)=3.1%), support ticket rate slightly lower (−17.6%, P(increase)=19.8%).",
       confirmedOrRefuted:
         "CONFIRMED — the hypothesis held. Auto-expanding contextual help does accelerate first-experiment creation for new users.",
       whyItHappened:

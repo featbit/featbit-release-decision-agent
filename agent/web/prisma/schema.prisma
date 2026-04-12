@@ -12,13 +12,15 @@ model Experiment {
   id            String          @id @default(uuid())
   name          String
   description   String?
-  stage         String          @default("intent")
+  stage         String          @default("hypothesis")
   createdAt     DateTime        @default(now()) @map("created_at")
   updatedAt     DateTime        @updatedAt @map("updated_at")
   flagKey       String?         @map("flag_key")
   envSecret     String?         @map("env_secret")
   accessToken   String?         @map("access_token")
   flagServerUrl String?         @map("flag_server_url")
+  featbitProjectKey String?     @map("featbit_project_key")
+  featbitEnvId      String?     @map("featbit_env_id")
   sandboxId     String?         @map("sandbox_id")
   sandboxStatus String?         @default("idle") @map("sandbox_status")
   goal          String?

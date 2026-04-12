@@ -39,12 +39,16 @@ export async function updateFlagConfigAction(formData: FormData) {
   const envSecret = formData.get("envSecret") as string | null;
   const accessToken = formData.get("accessToken") as string | null;
   const flagServerUrl = formData.get("flagServerUrl") as string | null;
+  const featbitProjectKey = formData.get("featbitProjectKey") as string | null;
+  const featbitEnvId = formData.get("featbitEnvId") as string | null;
 
   await updateExperiment(experimentId, {
     flagKey: flagKey?.trim() || null,
     envSecret: envSecret?.trim() || null,
     accessToken: accessToken?.trim() || null,
     flagServerUrl: flagServerUrl?.trim() || null,
+    featbitProjectKey: featbitProjectKey?.trim() || null,
+    featbitEnvId: featbitEnvId?.trim() || null,
   });
 
   await addActivity(experimentId, {
@@ -116,7 +120,7 @@ export async function sendMessageAction(experimentId: string, content: string) {
 
   await addMessage(experimentId, {
     role: "assistant",
-    content: `I received your message. The experiment is currently in the **${experiment?.stage ?? "intent"}** stage. Agent integration is coming soon — I will be able to help you shape intent, design hypotheses, set up experiment runs, and analyze results.`,
+    content: `I received your message. The experiment is currently in the **${experiment?.stage ?? "hypothesis"}** stage. Agent integration is coming soon — I will be able to help you shape intent, design hypotheses, set up experiment runs, and analyze results.`,
   });
 
   await addActivity(experimentId, {

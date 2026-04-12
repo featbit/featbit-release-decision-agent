@@ -25,7 +25,7 @@ function fmtDate(d: Date | string | null | undefined): string {
 type ExpWithColor = ExperimentRun & { colorIdx: number };
 
 /* ── Top-level component ── */
-export function TrafficPoolView({ experimentRuns }: { experimentRuns: ExperimentRun[] }) {
+export function TrafficPoolView({ experimentRuns, isSequential }: { experimentRuns: ExperimentRun[]; isSequential?: boolean }) {
   const { layers, colorMap } = useMemo(() => {
     const colorMap = new Map<string, number>();
     experimentRuns.forEach((e, i) => colorMap.set(e.id, i));
@@ -84,7 +84,7 @@ export function TrafficPoolView({ experimentRuns }: { experimentRuns: Experiment
           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Observation Windows
           </div>
-          <Timeline experimentRuns={experimentRuns.map(e => ({ ...e, colorIdx: colorMap.get(e.id)! }))} />
+          <Timeline experimentRuns={experimentRuns.map(e => ({ ...e, colorIdx: colorMap.get(e.id)! }))} isSequential={isSequential} />
         </div>
       )}
 
@@ -184,7 +184,7 @@ function BucketBar({ experimentRuns }: { experimentRuns: ExpWithColor[] }) {
 }
 
 /* ── Timeline / Gantt ── */
-function Timeline({ experimentRuns }: { experimentRuns: ExpWithColor[] }) {
+function Timeline({ experimentRuns, isSequential }: { experimentRuns: ExpWithColor[]; isSequential?: boolean }) {
   const withDates = experimentRuns.filter(e => e.observationStart);
   if (withDates.length === 0) return null;
 
@@ -206,7 +206,7 @@ function Timeline({ experimentRuns }: { experimentRuns: ExpWithColor[] }) {
         </div>
       </div>
       {/* Bars */}
-      {withDates.map(exp => {
+      {withDates.map((exp, i) => {
         const start = new Date(exp.observationStart!).getTime();
         const end = exp.observationEnd
           ? new Date(exp.observationEnd).getTime()
@@ -215,18 +215,28 @@ function Timeline({ experimentRuns }: { experimentRuns: ExpWithColor[] }) {
         const widthPct = ((end - start) / totalMs) * 100;
         const isOngoing = !exp.observationEnd;
         const c = palette(exp.colorIdx);
+        const phaseLabel = isSequential ? `Phase ${i + 1}` : `#${i + 1}`;
 
         return (
           <div key={exp.id} className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-muted-foreground w-24 shrink-0 truncate">
-              {exp.slug}
-            </span>
-            <div className="relative flex-1 h-4">
+            <div className="w-28 shrink-0 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-medium text-muted-foreground/60 shrink-0">{phaseLabel}</span>
+                <span className="text-[10px] font-mono text-muted-foreground truncate">
+                  {exp.slug}
+                </span>
+              </div>
+            </div>
+            <div className="relative flex-1 h-5">
               <div className="absolute inset-0 bg-muted/20 rounded" />
               <div
                 className={`absolute inset-y-0 ${c.bar} rounded opacity-75 ${isOngoing ? "rounded-r-none" : ""}`}
                 style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-              />
+              >
+                <span className="absolute inset-0 flex items-center justify-center text-[8px] font-medium text-white/90 truncate px-1">
+                  {widthPct > 15 ? `${fmtDate(exp.observationStart)} → ${isOngoing ? "ongoing" : fmtDate(exp.observationEnd)}` : ""}
+                </span>
+              </div>
               {isOngoing && (
                 <div
                   className={`absolute inset-y-0 w-1.5 ${c.bar} opacity-40`}

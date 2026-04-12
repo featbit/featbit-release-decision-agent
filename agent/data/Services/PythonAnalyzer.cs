@@ -144,4 +144,7 @@ public sealed class PythonAnalysisInput
 
     [JsonPropertyName("minimum_sample")]
     public int MinimumSample { get; init; }
+
+    [JsonPropertyName("guardrail_events")]
+    public string[]? GuardrailEvents { get; init; }
 }

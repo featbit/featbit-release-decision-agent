@@ -464,7 +464,7 @@ export function ExperimentRunTable({
               <tr className="border-b bg-muted/40 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
                 <th className="px-3 py-2 text-left w-8">#</th>
                 <th className="px-3 py-2 text-left">Experiment Run</th>
-                <th className="px-3 py-2 text-left">Primary Metric</th>
+                <th className="px-3 py-2 text-left">Metrics</th>
                 <th className="px-3 py-2 text-left">Status</th>
                 <th className="px-3 py-2 text-left">Decision</th>
               </tr>
@@ -511,6 +511,15 @@ export function ExperimentRunTable({
                     ) : (
                       <span className="text-muted-foreground/40">—</span>
                     )}
+                    {(() => {
+                      const gEvents = parseGuardrailEvents(exp.guardrailEvents);
+                      return gEvents.length > 0 ? (
+                        <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <ShieldCheck className="size-3 shrink-0" />
+                          <span className="font-mono">{gEvents.join(", ")}</span>
+                        </div>
+                      ) : null;
+                    })()}
                   </td>
 
                   {/* Status */}

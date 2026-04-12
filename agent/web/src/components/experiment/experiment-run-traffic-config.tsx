@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Filter, Percent, Layers, Plus, Trash2, Beaker } from "lucide-react";
+import { Pencil, Filter, Percent, Plus, Trash2, Beaker } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -85,7 +85,8 @@ export function ExperimentRunTrafficConfig({
   const offset = experimentRun.trafficOffset ?? 0;
   const currentMethod = experimentRun.method ?? "bayesian_ab";
   const parsedFilters = parseFilters(experimentRun.audienceFilters as string | null);
-  const hasNonDefault = pct < 100 || offset > 0 || experimentRun.layerId || parsedFilters.length > 0 || currentMethod !== "bayesian_ab";
+  const isBandit = currentMethod !== "bayesian_ab";
+  const hasCustomTraffic = pct < 100 || offset > 0 || experimentRun.layerId || parsedFilters.length > 0;
 
   function handleOpen() {
     setFilters(parseFilters(experimentRun.audienceFilters as string | null));
@@ -119,60 +120,85 @@ export function ExperimentRunTrafficConfig({
     <>
       {/* ── Read-only display ── */}
       <div className="flex items-start gap-2 min-h-5">
-        <div className="flex-1 space-y-1 text-xs">
-          {hasNonDefault ? (
-            <>
-              <div className="flex items-center gap-3 flex-wrap">
-                {currentMethod !== "bayesian_ab" && (
-                  <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                    <Beaker className="inline size-2.5 mr-0.5" />
-                    Bandit
-                  </Badge>
-                )}
-                {(pct < 100 || offset > 0) && (
-                  <span className="flex items-center gap-0.5 text-muted-foreground">
-                    <Percent className="size-3" />
-                    <span className="font-medium text-foreground">[{offset}, {offset + pct})</span>
-                    <span className="ml-0.5">bucket</span>
-                  </span>
-                )}
-                {experimentRun.layerId && (
-                  <span className="flex items-center gap-0.5 text-muted-foreground">
-                    <Layers className="size-3" />
-                    Layer:&nbsp;
-                    <span className="font-mono font-medium text-foreground">
-                      {experimentRun.layerId as string}
+        <div className="flex-1 space-y-1.5 text-xs">
+          {/* Method */}
+          {isBandit && (
+            <Badge className="text-[10px] px-1.5 py-0 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+              <Beaker className="inline size-2.5 mr-0.5" />
+              Bandit
+            </Badge>
+          )}
+
+          {/* Variant allocation */}
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <Percent className="size-3 text-muted-foreground shrink-0" />
+            {isBandit ? (
+              <span>
+                <span className="font-medium">Dynamic allocation</span>
+                <span className="text-muted-foreground"> — traffic reweighted automatically toward the winning variant</span>
+              </span>
+            ) : (
+              <span>
+                <span className="font-medium">Even split (50 / 50)</span>
+                <span className="text-muted-foreground"> — equal traffic per variant</span>
+              </span>
+            )}
+          </div>
+
+          {/* Traffic scope */}
+          <div className="flex items-center gap-1.5 text-[11px]">
+            <Filter className="size-3 text-muted-foreground shrink-0" />
+            {hasCustomTraffic ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(pct < 100 || offset > 0) && (
+                    <span>
+                      Bucket <span className="font-mono font-medium">[{offset}, {offset + pct})</span>
+                      <span className="text-muted-foreground"> of flag traffic</span>
                     </span>
-                  </span>
+                  )}
+                  {experimentRun.layerId && (
+                    <span className="text-muted-foreground">
+                      Layer:&nbsp;
+                      <span className="font-mono font-medium text-foreground">
+                        {experimentRun.layerId as string}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                {parsedFilters.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {parsedFilters.map((f, i) => (
+                      <Badge key={i} variant="outline" className="text-[10px] font-normal gap-0.5">
+                        <Filter className="size-2.5" />
+                        {f.property}&nbsp;{f.op}&nbsp;
+                        {f.op === "in" || f.op === "nin" ? `[${f.values}]` : f.value}
+                      </Badge>
+                    ))}
+                  </div>
                 )}
               </div>
-              {parsedFilters.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {parsedFilters.map((f, i) => (
-                    <Badge key={i} variant="outline" className="text-[10px] font-normal gap-0.5">
-                      <Filter className="size-2.5" />
-                      {f.property}&nbsp;{f.op}&nbsp;
-                      {f.op === "in" || f.op === "nin" ? `[${f.values}]` : f.value}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <p className="text-[10px] text-muted-foreground/50 italic">
-              All users — 100% traffic, no filters
-            </p>
-          )}
+            ) : (
+              <span>
+                <span className="font-medium">100% of flag traffic</span>
+                <span className="text-muted-foreground"> — no additional filters</span>
+              </span>
+            )}
+          </div>
+
+          <p className="text-[9px] text-muted-foreground/60 leading-snug">
+            Experiment scope is determined by the feature flag&apos;s targeting rules. If the flag is nested under a parent flag or limited to a segment, only that audience enters the experiment.
+          </p>
         </div>
 
-        <button
+        {!["decided", "archived"].includes(experimentRun.status) && <button
           type="button"
           onClick={handleOpen}
           className="text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
           aria-label="Edit audience & traffic"
         >
           <Pencil className="size-3" />
-        </button>
+        </button>}
       </div>
 
       {/* ── Edit dialog ── */}

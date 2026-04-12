@@ -9,12 +9,10 @@ type ExperimentLike = Experiment & { experimentRuns: ExperimentRun[] };
 /** Determine whether a stage has any content filled in. */
 function stageHasContent(experiment: ExperimentLike, stageKey: string): boolean {
   switch (stageKey) {
-    case "intent":
-      return Boolean(experiment.goal || experiment.intent);
     case "hypothesis":
-      return Boolean(experiment.hypothesis || experiment.change);
+      return Boolean(experiment.goal || experiment.intent || experiment.hypothesis || experiment.change || experiment.constraints);
     case "implementing":
-      return Boolean(experiment.flagKey || experiment.change || experiment.variants);
+      return Boolean(experiment.flagKey || experiment.variants);
     case "measuring":
       return Boolean(
         experiment.primaryMetric ||

@@ -129,7 +129,7 @@ public sealed class ExperimentWorker : BackgroundService
             End = exp.ObservationEnd != null ? DateTimeOffset.Parse(exp.ObservationEnd) : now,
         };
 
-        // ── Step 1: Collect metrics ──
+        // ── Step 1: Collect primary metric ──
         var summary = await collector.CollectAsync(p, ct);
         if (summary == null)
         {
@@ -151,16 +151,70 @@ public sealed class ExperimentWorker : BackgroundService
         _logger.LogInformation("[{Slug}] collected: {Type} control={CtrlN} treatment={TrtN}",
             exp.Slug, summary.MetricType, controlN, treatmentN);
 
-        // ── Step 2: Write inputData to DB ──
-        var inputData = new
+        // ── Step 1b: Collect guardrail metrics ──
+        var guardrailEventNames = new List<string>();
+        if (!string.IsNullOrEmpty(exp.GuardrailEvents))
         {
-            collectedAt = DateTime.UtcNow.ToString("O"),
-            source = "featbit",
-            metricType = summary.MetricType,
-            control = summary.Control,
-            treatment = summary.Treatment,
-        };
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<string[]>(exp.GuardrailEvents);
+                if (parsed != null) guardrailEventNames.AddRange(parsed);
+            }
+            catch { /* ignore malformed JSON */ }
+        }
 
+        var guardrailSummaries = new Dictionary<string, MetricSummary>();
+        foreach (var gEvent in guardrailEventNames)
+        {
+            var gp = new ExperimentParams
+            {
+                Slug = p.Slug,
+                ProjectId = p.ProjectId,
+                EnvId = p.EnvId,
+                FlagKey = p.FlagKey,
+                Method = p.Method,
+                ExperimentId = p.ExperimentId,
+                LayerId = p.LayerId,
+                TrafficPercent = p.TrafficPercent,
+                TrafficOffset = p.TrafficOffset,
+                AudienceFilters = p.AudienceFilters,
+                MetricEvent = gEvent,
+                MetricType = "binary",
+                MetricAgg = "once",
+                ControlVariant = p.ControlVariant,
+                TreatmentVariant = p.TreatmentVariant,
+                Start = p.Start,
+                End = p.End,
+            };
+            var gs = await collector.CollectAsync(gp, ct);
+            if (gs != null)
+            {
+                guardrailSummaries[gEvent] = gs;
+                _logger.LogInformation("[{Slug}] guardrail {Event}: type={Type}",
+                    exp.Slug, gEvent, gs.MetricType);
+            }
+        }
+
+        // ── Step 2: Write inputData to DB ──
+        var metricKey = exp.PrimaryMetricEvent!;
+        var allMetrics = new Dictionary<string, object>
+        {
+            [metricKey] = new Dictionary<string, object>
+            {
+                [p.ControlVariant] = summary.Control,
+                [p.TreatmentVariant] = summary.Treatment,
+            }
+        };
+        foreach (var (gEvent, gs) in guardrailSummaries)
+        {
+            allMetrics[gEvent] = new Dictionary<string, object>
+            {
+                [p.ControlVariant] = gs.Control,
+                [p.TreatmentVariant] = gs.Treatment,
+            };
+        }
+
+        var inputData = new { metrics = allMetrics };
         var inputDataJson = JsonSerializer.Serialize(inputData, JsonOpts);
         try
         {
@@ -178,20 +232,10 @@ public sealed class ExperimentWorker : BackgroundService
         }
 
         // ── Step 3: Run Bayesian analysis ──
-        var metricKey = exp.PrimaryMetricEvent!;
-        var metrics = new Dictionary<string, object>
-        {
-            [metricKey] = new Dictionary<string, object>
-            {
-                [p.ControlVariant] = summary.Control,
-                [p.TreatmentVariant] = summary.Treatment,
-            }
-        };
-
         var analysisInput = new PythonAnalysisInput
         {
             Slug = exp.Slug,
-            Metrics = metrics,
+            Metrics = allMetrics,
             Control = p.ControlVariant,
             Treatments = [p.TreatmentVariant],
             ObservationStart = exp.ObservationStart,
@@ -200,6 +244,8 @@ public sealed class ExperimentWorker : BackgroundService
             PriorMean = exp.PriorMean ?? 0.0,
             PriorStddev = exp.PriorStddev ?? 0.3,
             MinimumSample = exp.MinimumSample ?? 0,
+            GuardrailEvents = guardrailEventNames.Count > 0
+                ? guardrailEventNames.ToArray() : null,
         };
 
         var result = await analyzer.AnalyzeAsync(analysisInput, ct);
@@ -306,6 +352,9 @@ public sealed class RunningExperiment
 
     [JsonPropertyName("minimumSample")]
     public int? MinimumSample { get; init; }
+
+    [JsonPropertyName("guardrailEvents")]
+    public string? GuardrailEvents { get; init; }
 
     [JsonPropertyName("project")]
     public ProjectSnapshot? Project { get; init; }

@@ -377,6 +377,18 @@ def main_pipe() -> None:
             control, treatments, is_guardrail=False, prior=prior,
         )
 
+    # ── Guardrails ──
+    guardrail_events = raw.get("guardrail_events") or []
+    guardrails = []
+    for g in guardrail_events:
+        if g in metrics_data:
+            section = compute_metric_section(
+                g, metrics_data[g],
+                control, treatments, is_guardrail=True, prior=prior,
+            )
+            if section:
+                guardrails.append(section)
+
     # ── Sample size check ──
     primary_md = metrics_data.get(first_event, {}) if first_event else {}
     variant_ns = {}
@@ -398,6 +410,8 @@ def main_pipe() -> None:
     }
     if primary_section:
         output["primary_metric"] = primary_section
+    if guardrails:
+        output["guardrails"] = guardrails
     output["sample_check"] = {
         "minimum_per_variant": min_sample,
         "ok": sample_ok,

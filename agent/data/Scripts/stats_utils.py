@@ -49,6 +49,7 @@ def metric_moments(vdata: dict) -> tuple[float, float, int]:
 
     Proportion  {"n": N, "k": K}                      → Bernoulli variance p(1−p)
     Continuous  {"n": N, "sum": S, "sum_squares": SS}  → sample variance
+    Continuous  {"n": N, "mean": M, "variance": V}     → pre-computed (from MetricCollector)
     """
     n = int(vdata.get("n", 0))
     if n == 0:
@@ -56,11 +57,16 @@ def metric_moments(vdata: dict) -> tuple[float, float, int]:
     if "k" in vdata:
         mean = float(vdata["k"]) / n
         var  = mean * (1.0 - mean)
-    else:
-        s    = float(vdata.get("sum", 0.0))
+    elif "sum" in vdata:
+        s    = float(vdata["sum"])
         ss   = float(vdata.get("sum_squares", 0.0))
         mean = s / n
         var  = (ss - s * s / n) / (n - 1) if n > 1 else 0.0
+    elif "mean" in vdata:
+        mean = float(vdata["mean"])
+        var  = float(vdata.get("variance", 0.0))
+    else:
+        return 0.0, 0.0, 0
     return mean, var, n
 
 

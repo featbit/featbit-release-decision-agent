@@ -29,7 +29,10 @@ interface ExperimentDetailLayoutProps {
 }
 
 export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutProps) {
-  const [activeTab, setActiveTab] = useState(experiment.stage);
+  const [activeTab, setActiveTab] = useState(
+    // Map legacy "intent" stage to merged "hypothesis" tab
+    experiment.stage === "intent" ? "hypothesis" : experiment.stage
+  );
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
   const router = useRouter();

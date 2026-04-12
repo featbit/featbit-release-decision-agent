@@ -7,6 +7,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { ExperimentRun } from "@/generated/prisma/client";
 
+function parseGuardrailEvents(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v : [raw];
+  } catch {
+    return [raw];
+  }
+}
+
 const STATUS_COLOR: Record<string, string> = {
   draft: "bg-muted text-muted-foreground",
   running: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -86,6 +96,20 @@ export function ExperimentRunList({
                     </span>
                   </div>
                 )}
+                {(() => {
+                  const gEvents = parseGuardrailEvents(exp.guardrailEvents);
+                  return gEvents.length > 0 ? (
+                    <div className="text-xs text-muted-foreground">
+                      Guardrails:{" "}
+                      {gEvents.map((evt, i) => (
+                        <span key={evt}>
+                          {i > 0 && ", "}
+                          <span className="font-mono">{evt}</span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
                 {(exp.decisionSummary || exp.decisionReason) && (
                   <p className="text-xs text-muted-foreground">
                     {exp.decisionSummary ?? exp.decisionReason}

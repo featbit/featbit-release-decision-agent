@@ -1,18 +1,10 @@
 export const STAGES = [
   {
-    key: "intent",
-    label: "Intent",
-    cf: "CF-01",
-    skill: "intent-shaping",
-    description: "Define the business goal and measurable outcome",
-    color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  },
-  {
     key: "hypothesis",
-    label: "Hypothesis",
-    cf: "CF-02",
-    skill: "hypothesis-design",
-    description: "Form a falsifiable causal claim",
+    label: "Intent & Hypothesis",
+    cf: "CF-01/02",
+    skill: "intent-shaping / hypothesis-design",
+    description: "Define the goal, form a falsifiable hypothesis",
     color:
       "bg-violet-100 text-violet-800 dark:bg-violet-900 dark:text-violet-200",
   },

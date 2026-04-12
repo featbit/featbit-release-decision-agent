@@ -117,3 +117,41 @@ export async function getRunningExperimentRuns() {
     orderBy: { updatedAt: "desc" },
   });
 }
+
+/**
+ * Guardrail definition for a single metric.
+ * Used by the data server to collect + analyze each guardrail.
+ */
+export interface GuardrailDef {
+  event: string;
+  metricType: string;    // "binary" | "continuous"
+  metricAgg: string;     // "once" | "sum" | "mean" | "count" | "latest"
+  inverse: boolean;
+}
+
+/**
+ * Parse guardrailEvents JSON into structured guardrail definitions.
+ * Supports both legacy formats:
+ *   - string[]: ["page_bounce", "session_duration_p50"]  → defaults to binary/once/non-inverse
+ *   - GuardrailDef[]:  [{ event, metricType, metricAgg, inverse }]
+ */
+export function parseGuardrailDefs(raw: string | null | undefined): GuardrailDef[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item: string | Partial<GuardrailDef>) => {
+      if (typeof item === "string") {
+        return { event: item, metricType: "binary", metricAgg: "once", inverse: false };
+      }
+      return {
+        event: item.event ?? "",
+        metricType: item.metricType ?? "binary",
+        metricAgg: item.metricAgg ?? "once",
+        inverse: item.inverse ?? false,
+      };
+    }).filter((g: GuardrailDef) => g.event);
+  } catch {
+    return [];
+  }
+}

@@ -11,7 +11,9 @@ export function StageProgress({
   currentStage: string;
   experimentId: string;
 }) {
-  const currentIndex = STAGES.findIndex((s) => s.key === currentStage);
+  // Map legacy "intent" stage to merged "hypothesis"
+  const effectiveStage = currentStage === "intent" ? "hypothesis" : currentStage;
+  const currentIndex = STAGES.findIndex((s) => s.key === effectiveStage);
 
   return (
     <div className="space-y-3">
