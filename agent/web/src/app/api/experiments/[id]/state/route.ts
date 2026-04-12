@@ -10,6 +10,7 @@ const ALLOWED_FIELDS = new Set([
   "primaryMetric",
   "guardrails",
   "constraints",
+  "conflictAnalysis",
   "openQuestions",
   "lastAction",
   "lastLearning",

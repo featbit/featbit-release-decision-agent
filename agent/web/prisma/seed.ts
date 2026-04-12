@@ -5,6 +5,9 @@
  *   - Bayesian A/B test  → help-widget-cta-v1      (CONTINUE)
  *   - Bandit experiment  → help-widget-placement-bandit (CONTINUE, bottom-right wins)
  *
+ * Plus: Onboarding Flow experiment — represents a concurrent experiment
+ *   that the conflict-check feature detects overlap with.
+ *
  * Run:  npx tsx prisma/seed.ts
  */
 
@@ -185,6 +188,13 @@ async function main() {
         "page_bounce — must not increase (widget must not distract users from their primary task)\nsession_duration_p50 — must not decrease by more than 5% (widget must not shorten user sessions)\nsupport_ticket_created — must not increase (widget should reduce, not increase, support load)",
       constraints:
         "Widget must not affect users who already created an experiment. Flag evaluation limited to accounts created in the last 30 days.",
+      conflictAnalysis:
+        "✅ No Direct Conflicts Found\n\n" +
+        "Active experiments scanned: 1 (Onboarding Flow Optimization — measuring stage).\n\n" +
+        "• Flag overlap: None — this experiment uses `help-widget-placement`, the other uses `onboarding-checklist-flow`.\n" +
+        "• Metric interference: None — this experiment measures `experiment_created`, the other measures `onboarding_step_completed`.\n" +
+        "• Audience overlap: Both target new users (accounts < 30 days), but the flag keys and metrics are independent — no attribution risk.\n\n" +
+        "Summary: Safe to proceed. No mutual-exclusion layer required.",
       openQuestions: "",
       lastAction:
         "Set help-widget-placement=bottom-right for all new users after two experiments confirmed: (1) widget boosts activation, (2) bottom-right is the optimal placement.",
@@ -425,6 +435,99 @@ async function main() {
   console.log(`✓ 2 experiment runs seeded (Bayesian A/B + Bandit)`);
   console.log(`✓ ${activities.length} activities seeded`);
   console.log(`\nOpen: http://localhost:3000/experiments/${experiment.id}`);
+
+  // ── Second Experiment: Onboarding Flow (concurrent — used for conflict demo) ──
+
+  await prisma.experiment.deleteMany({ where: { name: "Onboarding Flow Optimization" } });
+
+  const onboarding = await prisma.experiment.create({
+    data: {
+      name: "Onboarding Flow Optimization",
+      description:
+        "Optimize the onboarding checklist to increase completion rate for new users.",
+      stage: "measuring",
+      flagKey: "onboarding-checklist-flow",
+      envSecret: "env-secret-demo-abc123",
+      flagServerUrl: "https://featbit.example.com",
+
+      goal: "Increase the % of new users who complete the onboarding checklist within 7 days from 35% to 50%.",
+      intent:
+        "Redesign the onboarding checklist to be more progressive and less overwhelming for new users.",
+      hypothesis:
+        "If we break the onboarding checklist into 3 progressive tiers instead of showing all 8 steps at once, then new users will complete more steps (onboarding_step_completed) because the initial task list feels achievable rather than overwhelming.",
+      change:
+        "Replace the flat 8-step checklist with a 3-tier progressive checklist behind the `onboarding-checklist-flow` flag. Variants: flat (control — all 8 steps visible) | progressive (3 tiers revealed sequentially).",
+      variants: "flat (control — all 8 steps) | progressive (3 tiers)",
+      primaryMetric: "onboarding_step_completed — % of new users who complete all checklist steps within 7 days",
+      guardrails:
+        "time_to_first_action — must not increase by more than 10% (progressive reveal must not slow users down)\nsupport_ticket_created — must not increase (new flow must not confuse users)",
+      constraints:
+        "Only affects new users (accounts created in the last 30 days). Users who completed onboarding are excluded.",
+      conflictAnalysis:
+        "⚠️ 1 Potential Conflict Detected\n\n" +
+        "Conflict with: Help Widget Optimisation (measuring stage)\n\n" +
+        "• Flag overlap: None — different flags (`onboarding-checklist-flow` vs `help-widget-placement`).\n" +
+        "• Metric interference: None — different primary metrics (`onboarding_step_completed` vs `experiment_created`).\n" +
+        "• Audience overlap: Both target new users (accounts < 30 days). Users may be enrolled in both experiments simultaneously.\n\n" +
+        "Risk level: LOW — although the audiences overlap, the flags and metrics are independent. " +
+        "A user seeing the help widget will not affect whether they complete onboarding steps, and vice versa. " +
+        "No mutual-exclusion layer is required.\n\n" +
+        "Recommendation: Proceed. Monitor for unexpected interaction effects in guardrails.",
+      openQuestions: "",
+      lastAction: "Started Bayesian A/B run on 2026-03-15.",
+    },
+  });
+
+  await prisma.experimentRun.create({
+    data: {
+      experimentId: onboarding.id,
+      slug: "onboarding-progressive-v1",
+      status: "running",
+      hypothesis:
+        "3-tier progressive checklist will increase onboarding completion rate from 35% to 50%.",
+      method: "bayesian_ab",
+      methodReason:
+        "Binary ship/no-ship decision with two variants. Need full posterior for confident decision.",
+      primaryMetricEvent: "onboarding_step_completed",
+      metricDescription:
+        "Percentage of new users who complete all onboarding checklist steps within 7 days.",
+      guardrailEvents: JSON.stringify(["time_to_first_action", "support_ticket_created"]),
+      guardrailDescriptions: JSON.stringify({
+        time_to_first_action: "Must not increase by more than 10%.",
+        support_ticket_created: "Must not increase.",
+      }),
+      controlVariant: "flat",
+      treatmentVariant: "progressive",
+      trafficAllocation:
+        "50/50 split between flat and progressive. Dispatch key: user_id. Only new users (accounts < 30 days).",
+      minimumSample: 350,
+      observationStart: d(14),  // 2026-03-15
+      observationEnd: d(35),    // 2026-04-05
+      priorProper: false,
+    },
+  } as Parameters<typeof prisma.experimentRun.create>[0]);
+
+  await prisma.activity.create({
+    data: {
+      experimentId: onboarding.id,
+      type: "stage_change",
+      title: "Experiment created",
+      detail: 'Release decision experiment "Onboarding Flow Optimization" created. Stage: intent',
+      createdAt: d(5),
+    },
+  });
+  await prisma.activity.create({
+    data: {
+      experimentId: onboarding.id,
+      type: "stage_change",
+      title: "Stage changed to measuring",
+      detail: "Observation window open: 2026-03-15. Running onboarding-progressive-v1.",
+      createdAt: d(14),
+    },
+  });
+
+  console.log(`✓ Onboarding experiment created: ${onboarding.id}`);
+  console.log(`  Open: http://localhost:3000/experiments/${onboarding.id}`);
 }
 
 main()

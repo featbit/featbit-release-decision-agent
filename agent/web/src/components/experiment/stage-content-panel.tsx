@@ -13,6 +13,8 @@ import {
   Code,
   Activity,
   ExternalLink,
+  ShieldAlert,
+  ShieldCheck,
 } from "lucide-react";
 import type { Experiment, ExperimentRun } from "@/generated/prisma/client";
 import { FlagIntegrationHeader } from "./flag-config";
@@ -102,6 +104,11 @@ export function StageContentPanel({
         <>
           <FieldsSection experiment={experiment} stageKey={activeTab} />
           <LearningSection experimentRuns={experiment.experimentRuns} />
+        </>
+      ) : activeTab === "hypothesis" ? (
+        <>
+          <FieldsSection experiment={experiment} stageKey={activeTab} />
+          <ConflictAnalysisSection conflictAnalysis={experiment.conflictAnalysis} />
         </>
       ) : (
         <FieldsSection experiment={experiment} stageKey={activeTab} />
@@ -549,6 +556,42 @@ function LearningSection({
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+/* ── Conflict analysis section (hypothesis stage) ── */
+function ConflictAnalysisSection({
+  conflictAnalysis,
+}: {
+  conflictAnalysis: string | null | undefined;
+}) {
+  if (!conflictAnalysis) return null;
+
+  const hasConflict =
+    conflictAnalysis.includes("⚠️") ||
+    conflictAnalysis.toLowerCase().includes("conflict detected") ||
+    conflictAnalysis.toLowerCase().includes("potential conflict");
+
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        {hasConflict ? (
+          <ShieldAlert className="size-3.5 text-amber-500" />
+        ) : (
+          <ShieldCheck className="size-3.5 text-emerald-500" />
+        )}
+        <span>Experiment Conflict Check</span>
+      </div>
+      <div
+        className={`rounded-md border px-3 py-3 text-xs leading-relaxed whitespace-pre-line ${
+          hasConflict
+            ? "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20"
+            : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20"
+        }`}
+      >
+        {conflictAnalysis}
+      </div>
     </section>
   );
 }

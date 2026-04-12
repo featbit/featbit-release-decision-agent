@@ -3,8 +3,8 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 # NEXT_PUBLIC_ vars are baked into the JS bundle at build time.
-# Default to localhost:3001 (dev); override via --build-arg in docker-compose.
-ARG NEXT_PUBLIC_SANDBOX_URL=http://localhost:3001
+# Default to localhost:3100 (dev); override via --build-arg in docker-compose.
+ARG NEXT_PUBLIC_SANDBOX_URL=http://localhost:3100
 ENV NEXT_PUBLIC_SANDBOX_URL=$NEXT_PUBLIC_SANDBOX_URL
 
 COPY package.json package-lock.json ./

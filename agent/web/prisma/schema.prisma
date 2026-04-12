@@ -31,6 +31,7 @@ model Experiment {
   primaryMetric String?         @map("primary_metric")
   guardrails    String?
   constraints   String?
+  conflictAnalysis String?     @map("conflict_analysis")
   openQuestions String?         @map("open_questions")
   lastAction    String?         @map("last_action")
   lastLearning  String?         @map("last_learning")

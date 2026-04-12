@@ -14,7 +14,7 @@ export interface ChatMessage {
 interface UseSandboxChatOptions {
   /** The experiment ID used to scope the agent session */
   experimentId: string;
-  /** Base URL of the sandbox server (default: http://localhost:3001) */
+  /** Base URL of the sandbox server (default: http://localhost:3100) */
   sandboxUrl?: string;
   /** Max agent turns per request */
   maxTurns?: number;
@@ -48,7 +48,7 @@ function nextId() {
 
 export function useSandboxChat({
   experimentId,
-  sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "http://localhost:3001",
+  sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "http://localhost:3100",
   maxTurns = 50,
   cwd,
   initialMessages = [],

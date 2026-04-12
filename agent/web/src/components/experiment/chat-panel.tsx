@@ -260,7 +260,7 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
       ) : (
         <>
           <WifiOff className="size-3" />
-          <span>Agent server unavailable — start sandbox on port 3001 to enable chat</span>
+          <span>Agent server unavailable — start sandbox on port 3100 to enable chat</span>
         </>
       )}
     </div>
