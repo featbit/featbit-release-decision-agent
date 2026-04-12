@@ -8,103 +8,103 @@ datasource db {
   provider = "postgresql"
 }
 
-model Project {
-  id            String       @id @default(uuid())
+model Experiment {
+  id            String          @id @default(uuid())
   name          String
   description   String?
-  stage         String       @default("intent")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  flagKey       String?      @map("flag_key")
-  envSecret     String?      @map("env_secret")
-  accessToken   String?      @map("access_token")
-  flagServerUrl String?      @map("flag_server_url")
-  sandboxId     String?      @map("sandbox_id")
-  sandboxStatus String?      @default("idle") @map("sandbox_status")
+  stage         String          @default("intent")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  flagKey       String?         @map("flag_key")
+  envSecret     String?         @map("env_secret")
+  accessToken   String?         @map("access_token")
+  flagServerUrl String?         @map("flag_server_url")
+  sandboxId     String?         @map("sandbox_id")
+  sandboxStatus String?         @default("idle") @map("sandbox_status")
   goal          String?
   intent        String?
   hypothesis    String?
   change        String?
   variants      String?
-  primaryMetric String?      @map("primary_metric")
+  primaryMetric String?         @map("primary_metric")
   guardrails    String?
   constraints   String?
-  openQuestions String?      @map("open_questions")
-  lastAction    String?      @map("last_action")
-  lastLearning  String?      @map("last_learning")
+  openQuestions String?         @map("open_questions")
+  lastAction    String?         @map("last_action")
+  lastLearning  String?         @map("last_learning")
   activities    Activity[]
-  experiments   Experiment[]
+  experimentRuns ExperimentRun[]
   messages      Message[]
 
-  @@map("project")
-}
-
-model Experiment {
-  id                    String    @id @default(uuid())
-  projectId             String    @map("project_id")
-  slug                  String
-  status                String    @default("draft")
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
-  hypothesis            String?
-  method                String?
-  methodReason          String?   @map("method_reason")
-  primaryMetricEvent    String?   @map("primary_metric_event")
-  metricDescription     String?   @map("metric_description")
-  guardrailEvents       String?   @map("guardrail_events")
-  guardrailDescriptions String?   @map("guardrail_descriptions")
-  controlVariant        String?   @map("control_variant")
-  treatmentVariant      String?   @map("treatment_variant")
-  trafficAllocation     String?   @map("traffic_allocation")
-  minimumSample         Int?      @map("minimum_sample")
-  observationStart      DateTime? @map("observation_start")
-  observationEnd        DateTime? @map("observation_end")
-  priorProper           Boolean   @default(false) @map("prior_proper")
-  priorMean             Float?    @map("prior_mean")
-  priorStddev           Float?    @map("prior_stddev")
-  inputData             String?   @map("input_data")
-  analysisResult        String?   @map("analysis_result")
-  decision              String?
-  decisionSummary       String?   @map("decision_summary")
-  decisionReason        String?   @map("decision_reason")
-  whatChanged           String?   @map("what_changed")
-  whatHappened          String?   @map("what_happened")
-  confirmedOrRefuted    String?   @map("confirmed_or_refuted")
-  whyItHappened         String?   @map("why_it_happened")
-  nextHypothesis        String?   @map("next_hypothesis")
-  experimentId          String?   @map("experiment_id")
-  primaryMetricAgg      String?   @default("once") @map("primary_metric_agg")
-  primaryMetricType     String?   @default("binary") @map("primary_metric_type")
-  trafficPercent        Float?    @default(100) @map("traffic_percent")
-  layerId               String?   @map("layer_id")
-  audienceFilters       String?   @map("audience_filters")
-  trafficOffset         Int?      @default(0) @map("traffic_offset")
-  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@unique([projectId, slug])
   @@map("experiment")
 }
 
+model ExperimentRun {
+  id                    String     @id @default(uuid())
+  experimentId          String     @map("experiment_id")
+  slug                  String
+  status                String     @default("draft")
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
+  hypothesis            String?
+  method                String?
+  methodReason          String?    @map("method_reason")
+  primaryMetricEvent    String?    @map("primary_metric_event")
+  metricDescription     String?    @map("metric_description")
+  guardrailEvents       String?    @map("guardrail_events")
+  guardrailDescriptions String?    @map("guardrail_descriptions")
+  controlVariant        String?    @map("control_variant")
+  treatmentVariant      String?    @map("treatment_variant")
+  trafficAllocation     String?    @map("traffic_allocation")
+  minimumSample         Int?       @map("minimum_sample")
+  observationStart      DateTime?  @map("observation_start")
+  observationEnd        DateTime?  @map("observation_end")
+  priorProper           Boolean    @default(false) @map("prior_proper")
+  priorMean             Float?     @map("prior_mean")
+  priorStddev           Float?     @map("prior_stddev")
+  inputData             String?    @map("input_data")
+  analysisResult        String?    @map("analysis_result")
+  decision              String?
+  decisionSummary       String?    @map("decision_summary")
+  decisionReason        String?    @map("decision_reason")
+  whatChanged           String?    @map("what_changed")
+  whatHappened          String?    @map("what_happened")
+  confirmedOrRefuted    String?    @map("confirmed_or_refuted")
+  whyItHappened         String?    @map("why_it_happened")
+  nextHypothesis        String?    @map("next_hypothesis")
+  runId                 String?    @map("run_id")
+  primaryMetricAgg      String?    @default("once") @map("primary_metric_agg")
+  primaryMetricType     String?    @default("binary") @map("primary_metric_type")
+  trafficPercent        Float?     @default(100) @map("traffic_percent")
+  layerId               String?    @map("layer_id")
+  audienceFilters       String?    @map("audience_filters")
+  trafficOffset         Int?       @default(0) @map("traffic_offset")
+  experiment            Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, slug])
+  @@map("experiment_run")
+}
+
 model Activity {
-  id        String   @id @default(uuid())
-  projectId String   @map("project_id")
-  type      String
-  title     String
-  detail    String?
-  createdAt DateTime @default(now()) @map("created_at")
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String     @id @default(uuid())
+  experimentId String     @map("experiment_id")
+  type         String
+  title        String
+  detail       String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 
   @@map("activity")
 }
 
 model Message {
-  id        String   @id @default(uuid())
-  projectId String   @map("project_id")
-  role      String
-  content   String
-  metadata  String?
-  createdAt DateTime @default(now()) @map("created_at")
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id           String     @id @default(uuid())
+  experimentId String     @map("experiment_id")
+  role         String
+  content      String
+  metadata     String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 
   @@map("message")
 }

@@ -12,8 +12,8 @@ export interface ChatMessage {
 }
 
 interface UseSandboxChatOptions {
-  /** The project ID used to scope the agent session */
-  projectId: string;
+  /** The experiment ID used to scope the agent session */
+  experimentId: string;
   /** Base URL of the sandbox server (default: http://localhost:3001) */
   sandboxUrl?: string;
   /** Max agent turns per request */
@@ -47,7 +47,7 @@ function nextId() {
 }
 
 export function useSandboxChat({
-  projectId,
+  experimentId,
   sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "http://localhost:3001",
   maxTurns = 50,
   cwd,
@@ -129,7 +129,7 @@ export function useSandboxChat({
 
       // Build request body
       const body: Record<string, unknown> = {
-        projectId,
+        experimentId,
         maxTurns,
       };
       if (content.trim()) {
@@ -233,7 +233,7 @@ export function useSandboxChat({
         // system, message, result, tool_progress, done — ignored for chat display
       }
     },
-    [projectId, sandboxUrl, maxTurns, cwd, appendAssistantDelta]
+    [experimentId, sandboxUrl, maxTurns, cwd, appendAssistantDelta]
   );
 
   const abort = useCallback(() => {

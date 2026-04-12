@@ -1,5 +1,5 @@
 /**
- * Seed: Full featbit-release-decision demo project
+ * Seed: Full featbit-release-decision demo experiment
  *
  * Scenario: FeatBit dashboard help-widget optimisation
  *   - Bayesian A/B test  → help-widget-cta-v1      (CONTINUE)
@@ -158,10 +158,10 @@ const BANDIT_ANALYSIS = JSON.stringify({
 
 async function main() {
   // Clean up any previous seed run
-  await prisma.project.deleteMany({ where: { name: "Help Widget Optimisation" } });
+  await prisma.experiment.deleteMany({ where: { name: "Help Widget Optimisation" } });
 
-  // ── Project ────────────────────────────────────────────────────────────────
-  const project = await prisma.project.create({
+  // ── Experiment ─────────────────────────────────────────────────────────────
+  const experiment = await prisma.experiment.create({
     data: {
       name: "Help Widget Optimisation",
       description:
@@ -193,10 +193,10 @@ async function main() {
     },
   });
 
-  // ── Experiment 1 — Bayesian A/B ────────────────────────────────────────────
-  await prisma.experiment.create({
+  // ── Experiment Run 1 — Bayesian A/B ───────────────────────────────────────
+  await prisma.experimentRun.create({
     data: {
-      projectId: project.id,
+      experimentId: experiment.id,
       slug: "help-widget-cta-v1",
       status: "decided",
 
@@ -245,12 +245,12 @@ async function main() {
       nextHypothesis:
         "Widget placement may further affect engagement. Run a bandit across the remaining help-widget-placement variants (bottom-right vs top-right vs inline-docs) to find the optimal position.",
     },
-  } as Parameters<typeof prisma.experiment.create>[0]);
+  } as Parameters<typeof prisma.experimentRun.create>[0]);
 
-  // ── Experiment 2 — Bandit ──────────────────────────────────────────────────
-  await prisma.experiment.create({
+  // ── Experiment Run 2 — Bandit ─────────────────────────────────────────────
+  await prisma.experimentRun.create({
     data: {
-      projectId: project.id,
+      experimentId: experiment.id,
       slug: "help-widget-placement-bandit",
       status: "decided",
 
@@ -295,14 +295,14 @@ async function main() {
       nextHypothesis:
         "Now that placement is fixed at bottom-right, test expanding vs collapsed default state for returning users who have already created one experiment — they may prefer a less intrusive widget.",
     },
-  } as Parameters<typeof prisma.experiment.create>[0]);
+  } as Parameters<typeof prisma.experimentRun.create>[0]);
 
-  // ── Activities — full project timeline ────────────────────────────────────
+  // ── Activities — full experiment timeline ─────────────────────────────────
   const activities = [
     {
       type: "stage_change",
-      title: "Project created",
-      detail: 'Release decision project "Help Widget Optimisation" created. Stage: intent',
+      title: "Experiment created",
+      detail: 'Release decision experiment "Help Widget Optimisation" created. Stage: intent',
       createdAt: d(0),
     },
     {
@@ -417,14 +417,14 @@ async function main() {
 
   for (const a of activities) {
     await prisma.activity.create({
-      data: { projectId: project.id, ...a },
+      data: { experimentId: experiment.id, ...a },
     });
   }
 
-  console.log(`✓ Project created: ${project.id}`);
-  console.log(`✓ 2 experiments seeded (Bayesian A/B + Bandit)`);
+  console.log(`✓ Experiment created: ${experiment.id}`);
+  console.log(`✓ 2 experiment runs seeded (Bayesian A/B + Bandit)`);
   console.log(`✓ ${activities.length} activities seeded`);
-  console.log(`\nOpen: http://localhost:3000/projects/${project.id}`);
+  console.log(`\nOpen: http://localhost:3000/experiments/${experiment.id}`);
 }
 
 main()

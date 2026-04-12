@@ -1,73 +1,37 @@
 import { prisma } from "@/lib/prisma";
 
-export async function getProjects() {
-  return prisma.project.findMany({
+export async function getExperiments() {
+  return prisma.experiment.findMany({
     orderBy: { updatedAt: "desc" },
-    include: { _count: { select: { experiments: true } } },
+    include: { _count: { select: { experimentRuns: true } } },
   });
 }
 
-export async function getProject(id: string) {
-  return prisma.project.findUnique({
+export async function getExperiment(id: string) {
+  return prisma.experiment.findUnique({
     where: { id },
     include: {
-      experiments: { orderBy: { createdAt: "desc" } },
+      experimentRuns: { orderBy: { createdAt: "desc" } },
       activities: { orderBy: { createdAt: "desc" }, take: 20 },
       messages: { orderBy: { createdAt: "asc" } },
     },
   });
 }
 
-export async function createProject(data: {
+export async function createExperiment(data: {
   name: string;
   description?: string;
 }) {
-  const project = await prisma.project.create({ data });
+  const experiment = await prisma.experiment.create({ data });
   await prisma.activity.create({
     data: {
-      projectId: project.id,
+      experimentId: experiment.id,
       type: "stage_change",
-      title: "Project created",
-      detail: `Release decision project "${project.name}" created. Stage: intent`,
+      title: "Experiment created",
+      detail: `Release decision experiment "${experiment.name}" created. Stage: intent`,
     },
   });
-  return project;
-}
-
-export async function updateProject(
-  id: string,
-  data: Record<string, unknown>
-) {
-  return prisma.project.update({ where: { id }, data });
-}
-
-export async function deleteProject(id: string) {
-  return prisma.project.delete({ where: { id } });
-}
-
-export async function updateProjectStage(id: string, stage: string) {
-  const project = await prisma.project.update({
-    where: { id },
-    data: { stage },
-  });
-  await prisma.activity.create({
-    data: {
-      projectId: id,
-      type: "stage_change",
-      title: `Stage changed to ${stage}`,
-    },
-  });
-  return project;
-}
-
-export async function createExperiment(
-  projectId: string,
-  data: { slug: string; [key: string]: unknown }
-) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return prisma.experiment.create({
-    data: { projectId, ...data } as any,
-  });
+  return experiment;
 }
 
 export async function updateExperiment(
@@ -77,36 +41,72 @@ export async function updateExperiment(
   return prisma.experiment.update({ where: { id }, data });
 }
 
-export async function addActivity(
-  projectId: string,
-  data: { type: string; title: string; detail?: string }
+export async function deleteExperiment(id: string) {
+  return prisma.experiment.delete({ where: { id } });
+}
+
+export async function updateExperimentStage(id: string, stage: string) {
+  const experiment = await prisma.experiment.update({
+    where: { id },
+    data: { stage },
+  });
+  await prisma.activity.create({
+    data: {
+      experimentId: id,
+      type: "stage_change",
+      title: `Stage changed to ${stage}`,
+    },
+  });
+  return experiment;
+}
+
+export async function createExperimentRun(
+  experimentId: string,
+  data: { slug: string; [key: string]: unknown }
 ) {
-  return prisma.activity.create({
-    data: { projectId, ...data },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return prisma.experimentRun.create({
+    data: { experimentId, ...data } as any,
   });
 }
 
-export async function getMessages(projectId: string) {
+export async function updateExperimentRun(
+  id: string,
+  data: Record<string, unknown>
+) {
+  return prisma.experimentRun.update({ where: { id }, data });
+}
+
+export async function addActivity(
+  experimentId: string,
+  data: { type: string; title: string; detail?: string }
+) {
+  return prisma.activity.create({
+    data: { experimentId, ...data },
+  });
+}
+
+export async function getMessages(experimentId: string) {
   return prisma.message.findMany({
-    where: { projectId },
+    where: { experimentId },
     orderBy: { createdAt: "asc" },
   });
 }
 
 export async function addMessage(
-  projectId: string,
+  experimentId: string,
   data: { role: string; content: string; metadata?: string }
 ) {
   return prisma.message.create({
-    data: { projectId, ...data },
+    data: { experimentId, ...data },
   });
 }
 
-export async function getRunningExperiments() {
-  const experiments = await prisma.experiment.findMany({
+export async function getRunningExperimentRuns() {
+  return prisma.experimentRun.findMany({
     where: { status: { in: ["draft", "running", "collecting"] } },
     include: {
-      project: {
+      experiment: {
         select: {
           id: true,
           flagKey: true,
@@ -116,5 +116,4 @@ export async function getRunningExperiments() {
     },
     orderBy: { updatedAt: "desc" },
   });
-  return experiments;
 }

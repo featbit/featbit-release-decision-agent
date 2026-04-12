@@ -11,11 +11,11 @@ import {
   SidebarGroupContent,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { getProjects } from "@/lib/data";
+import { getExperiments } from "@/lib/data";
 import { FolderKanban, FlaskConical, Plus } from "lucide-react";
 
 export async function AppSidebar() {
-  const projects = await getProjects();
+  const experiments = await getExperiments();
 
   return (
     <Sidebar>
@@ -27,19 +27,19 @@ export async function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Projects</SidebarGroupLabel>
+          <SidebarGroupLabel>Experiments</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/projects" />}>
+                <SidebarMenuButton render={<Link href="/experiments" />}>
                   <FolderKanban className="size-4" />
-                  <span>All Projects</span>
+                  <span>All Experiments</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton render={<Link href="/projects/new" />}>
+                <SidebarMenuButton render={<Link href="/experiments/new" />}>
                   <Plus className="size-4" />
-                  <span>New Project</span>
+                  <span>New Experiment</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -49,10 +49,10 @@ export async function AppSidebar() {
           <SidebarGroupLabel>Recent</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {projects.slice(0, 10).map((project) => (
-                <SidebarMenuItem key={project.id}>
-                  <SidebarMenuButton render={<Link href={`/projects/${project.id}`} />}>
-                    <span className="truncate">{project.name}</span>
+              {experiments.slice(0, 10).map((experiment) => (
+                <SidebarMenuItem key={experiment.id}>
+                  <SidebarMenuButton render={<Link href={`/experiments/${experiment.id}`} />}>
+                    <span className="truncate">{experiment.name}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

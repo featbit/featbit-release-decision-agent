@@ -9,6 +9,7 @@
  */
 
 import "dotenv/config";
+// @ts-expect-error — better-sqlite3 has no bundled types; install @types/better-sqlite3 if you need them
 import Database from "better-sqlite3";
 import path from "node:path";
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -40,24 +41,24 @@ function toBool(v: unknown): boolean {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  // Read everything from SQLite
-  const projects = readAll<Record<string, unknown>>("Project");
-  const experiments = readAll<Record<string, unknown>>("Experiment");
+  // Read everything from SQLite (old table names)
+  const experiments = readAll<Record<string, unknown>>("Project");
+  const experimentRuns = readAll<Record<string, unknown>>("Experiment");
   const activities = readAll<Record<string, unknown>>("Activity");
   const messages = readAll<Record<string, unknown>>("Message");
 
-  console.log(`SQLite → ${projects.length} projects, ${experiments.length} experiments, ${activities.length} activities, ${messages.length} messages`);
+  console.log(`SQLite → ${experiments.length} experiments, ${experimentRuns.length} experiment runs, ${activities.length} activities, ${messages.length} messages`);
 
   // Clear PG (order matters for FK constraints)
   await prisma.message.deleteMany();
   await prisma.activity.deleteMany();
+  await prisma.experimentRun.deleteMany();
   await prisma.experiment.deleteMany();
-  await prisma.project.deleteMany();
   console.log("PG cleared.");
 
-  // Insert projects
-  for (const p of projects) {
-    await prisma.project.create({
+  // Insert experiments (was "projects" in SQLite)
+  for (const p of experiments) {
+    await prisma.experiment.create({
       data: {
         id: p.id as string,
         name: p.name as string,
@@ -85,14 +86,14 @@ async function main() {
       },
     });
   }
-  console.log(`✓ ${projects.length} projects`);
+  console.log(`✓ ${experiments.length} experiments`);
 
-  // Insert experiments
-  for (const e of experiments) {
-    await prisma.experiment.create({
+  // Insert experiment runs (was "experiments" in SQLite)
+  for (const e of experimentRuns) {
+    await prisma.experimentRun.create({
       data: {
         id: e.id as string,
-        projectId: e.projectId as string,
+        experimentId: e.projectId as string,
         slug: e.slug as string,
         status: e.status as string,
         createdAt: toDate(e.createdAt)!,
@@ -126,14 +127,14 @@ async function main() {
       },
     });
   }
-  console.log(`✓ ${experiments.length} experiments`);
+  console.log(`✓ ${experimentRuns.length} experiment runs`);
 
   // Insert activities
   for (const a of activities) {
     await prisma.activity.create({
       data: {
         id: a.id as string,
-        projectId: a.projectId as string,
+        experimentId: a.projectId as string,
         type: a.type as string,
         title: a.title as string,
         detail: a.detail as string | null,
@@ -148,7 +149,7 @@ async function main() {
     await prisma.message.create({
       data: {
         id: m.id as string,
-        projectId: m.projectId as string,
+        experimentId: m.projectId as string,
         role: m.role as string,
         content: m.content as string,
         metadata: m.metadata as string | null,

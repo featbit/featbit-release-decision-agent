@@ -84,16 +84,11 @@ services:
 
   # ── Simulator (continuous mode — keeps running until stopped) ───────────────
   #
-  #  Multi-scenario config: three experiments across two layers
+  #  Single project: Pricing Page Optimisation
+  #  flagKey: pricing-page   envSecret: pricing-env-secret-001
   #
-  #  Layer A (layer-pricing-page, 100 buckets)
-  #    Scenario 1  pricing-hero-copy        offset=0  pct=50  (buckets 0–49)
-  #    Scenario 2  pricing-plan-highlight   offset=50 pct=50  (buckets 50–99)
-  #  → users are mutually exclusive across these two experiments
-  #
-  #  Layer B (layer-signup-flow, 100 buckets)
-  #    Scenario 3  signup-form-length       offset=0  pct=100 (all buckets)
-  #  → runs independently; all users who clear Layer A also clear Layer B
+  #  Exp 1+2 are DECIDED — seed data is pre-baked, ExperimentWorker ignores them.
+  #  Exp 3 (pricing-social-proof-ab) is RUNNING — simulator feeds live events.
   #
   simulator:
     build:
@@ -102,37 +97,16 @@ services:
     environment:
       TRACK_API_URL: "http://data:5058/api/track"
       ENV_SECRET: "pricing-env-secret-001"
-      SCENARIO_COUNT: "3"
-      # ── Scenario 1: Pricing hero copy A/B (Bayesian, already decided) ───────
-      SCENARIO_1_FLAG_KEY: "pricing-hero-copy"
-      SCENARIO_1_LAYER_ID: "layer-pricing-page"
+      SCENARIO_COUNT: "1"
+      # ── Scenario 1: Social proof A/B (Bayesian, collecting — Exp 3) ──────────
+      SCENARIO_1_FLAG_KEY: "pricing-page"
       SCENARIO_1_LAYER_OFFSET: "0"
-      SCENARIO_1_LAYER_PERCENT: "50"
-      SCENARIO_1_VARIANTS: "start-trial,get-started-free"
+      SCENARIO_1_LAYER_PERCENT: "100"
+      SCENARIO_1_VARIANTS: "free-cta-pro,free-cta-pro-social"
       SCENARIO_1_VARIANT_WEIGHTS: "50,50"
-      SCENARIO_1_CONV_RATES: "0.12,0.16"
+      SCENARIO_1_CONV_RATES: "0.210,0.271"
       SCENARIO_1_METRIC_EVENT: "trial_signup_started"
-      SCENARIO_1_GUARDRAIL_EVENTS: "support_chat_open:0.098:0.085,page_error:0.021:0.017"
-      # ── Scenario 2: Plan highlight Bandit (3-arm, already decided) ──────────
-      SCENARIO_2_FLAG_KEY: "pricing-plan-highlight"
-      SCENARIO_2_LAYER_ID: "layer-pricing-page"
-      SCENARIO_2_LAYER_OFFSET: "50"
-      SCENARIO_2_LAYER_PERCENT: "50"
-      SCENARIO_2_VARIANTS: "no-highlight,highlight-pro,highlight-starter"
-      SCENARIO_2_VARIANT_WEIGHTS: "12,72,16"
-      SCENARIO_2_CONV_RATES: "0.14,0.25,0.19"
-      SCENARIO_2_METRIC_EVENT: "plan_click"
-      SCENARIO_2_GUARDRAIL_EVENTS: ""
-      # ── Scenario 3: Signup form length A/B (Bayesian, actively running) ─────
-      SCENARIO_3_FLAG_KEY: "signup-form-length"
-      SCENARIO_3_LAYER_ID: "layer-signup-flow"
-      SCENARIO_3_LAYER_OFFSET: "0"
-      SCENARIO_3_LAYER_PERCENT: "100"
-      SCENARIO_3_VARIANTS: "full-form,short-form"
-      SCENARIO_3_VARIANT_WEIGHTS: "50,50"
-      SCENARIO_3_CONV_RATES: "0.208,0.270"
-      SCENARIO_3_METRIC_EVENT: "signup_completed"
-      SCENARIO_3_GUARDRAIL_EVENTS: "email_bounce:0.091:0.081,form_error_submitted:0.140:0.113"
+      SCENARIO_1_GUARDRAIL_EVENTS: "support_chat_open:0.091:0.081,page_error:0.045:0.036"
       # ── Shared ────────────────────────────────────────────────────────────────
       BATCH_SIZE: "4"
       BATCH_DELAY_MS: "1500"

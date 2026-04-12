@@ -2,8 +2,8 @@
  * seed-worker-test.ts — Seed data for worker end-to-end testing
  *
  * Scenario: FeatBit onboarding checklist A/B test
- *   - Project "Onboarding Checklist" with one RUNNING Bayesian A/B experiment
- *   - Experiment has NO inputData yet — the worker is expected to populate it
+ *   - Experiment "Onboarding Checklist" with one RUNNING Bayesian A/B experiment run
+ *   - Experiment run has NO inputData yet — the worker is expected to populate it
  *   - FeatBit connection fields are intentionally left blank so the mock adapter is used
  *
  * Run:
@@ -41,17 +41,17 @@ async function main() {
   }
 
   // Clean up any previous run
-  await prisma.project.deleteMany({ where: { name: "Onboarding Checklist Test" } });
+  await prisma.experiment.deleteMany({ where: { name: "Onboarding Checklist Test" } });
   console.log("previous seed removed");
 
-  // ── Project ──────────────────────────────────────────────────────────────────
+  // ── Experiment ──────────────────────────────────────────────────────────────────────
   // FeatBit connection fields are blank — set these to real values
   // if you want to test with a real FeatBit environment.
-  const project = await prisma.project.create({
+  const experiment = await prisma.experiment.create({
     data: {
       name: "Onboarding Checklist Test",
       description:
-        "Test project for worker e2e — validates that the collect script writes inputData to a running experiment.",
+        "Test experiment for worker e2e — validates that the collect script writes inputData to a running experiment run.",
       stage: "measuring",
 
       // ── FeatBit connection ──
@@ -81,17 +81,17 @@ async function main() {
     },
   });
 
-  console.log(`project created: ${project.id} ("${project.name}")`);
+  console.log(`experiment created: ${experiment.id} ("${experiment.name}")`);
 
-  // ── Experiment — RUNNING, no inputData yet ────────────────────────────────
-  // status = "running" so getRunningExperiments() picks it up.
+  // ── Experiment Run — RUNNING, no inputData yet ───────────────────────
+  // status = "running" so getRunningExperimentRuns() picks it up.
   // inputData = null so the worker has something to write.
   //
-  // The .NET ExperimentWorker picks up experiments with status="running".
-  // It reads FeatBit connection fields from the project record.
-  const experiment = await prisma.experiment.create({
+  // The .NET ExperimentWorker picks up experiment runs with status="running".
+  // It reads FeatBit connection fields from the experiment record.
+  const experimentRun = await prisma.experimentRun.create({
     data: {
-      projectId: project.id,
+      experimentId: experiment.id,
       slug: "onboarding-checklist-v1",
       status: "running",
 
@@ -124,7 +124,7 @@ async function main() {
     },
   });
 
-  console.log(`experiment created: ${experiment.id} (slug="${experiment.slug}", status="${experiment.status}")`);
+  console.log(`experiment run created: ${experimentRun.id} (slug="${experimentRun.slug}", status="${experimentRun.status}")`);
   console.log(`\ninputData is NULL — start the .NET data server to populate it:`);
   console.log(`  cd agent/data && dotnet run`);
   console.log(`\nthen verify:`);
@@ -134,33 +134,33 @@ async function main() {
 // ─── verify ───────────────────────────────────────────────────────────────────
 
 async function verify() {
-  const experiment = await prisma.experiment.findFirst({
+  const experimentRun = await prisma.experimentRun.findFirst({
     where: {
       slug: "onboarding-checklist-v1",
-      project: { name: "Onboarding Checklist Test" },
+      experiment: { name: "Onboarding Checklist Test" },
     },
     select: { id: true, slug: true, status: true, inputData: true, updatedAt: true },
   });
 
-  if (!experiment) {
-    console.error("✗ experiment not found — run seed first");
+  if (!experimentRun) {
+    console.error("✗ experiment run not found — run seed first");
     process.exit(1);
   }
 
-  console.log(`experiment: ${experiment.id} (${experiment.slug})`);
-  console.log(`status:     ${experiment.status}`);
-  console.log(`updatedAt:  ${experiment.updatedAt.toISOString()}`);
+  console.log(`experiment run: ${experimentRun.id} (${experimentRun.slug})`);
+  console.log(`status:     ${experimentRun.status}`);
+  console.log(`updatedAt:  ${experimentRun.updatedAt.toISOString()}`);
 
-  if (!experiment.inputData) {
+  if (!experimentRun.inputData) {
     console.error(`\n✗ inputData is still NULL — worker has not run yet (or failed)`);
     process.exit(1);
   }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(experiment.inputData);
+    parsed = JSON.parse(experimentRun.inputData);
   } catch {
-    console.error(`\n✗ inputData is set but not valid JSON: ${experiment.inputData}`);
+    console.error(`\n✗ inputData is set but not valid JSON: ${experimentRun.inputData}`);
     process.exit(1);
   }
 

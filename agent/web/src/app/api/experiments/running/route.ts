@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getRunningExperiments } from "@/lib/data";
+import { getRunningExperimentRuns } from "@/lib/data";
 
 export async function GET() {
-  const experiments = await getRunningExperiments();
-  return NextResponse.json(experiments);
+  const runs = await getRunningExperimentRuns();
+  return NextResponse.json(runs);
 }

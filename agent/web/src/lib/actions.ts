@@ -3,60 +3,60 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import {
-  createProject,
-  deleteProject,
-  updateProject,
-  updateProjectStage,
+  createExperiment,
+  deleteExperiment,
+  updateExperiment,
+  updateExperimentStage,
   addActivity,
   addMessage,
-  updateExperiment,
+  updateExperimentRun,
 } from "@/lib/data";
 
-export async function createProjectAction(formData: FormData) {
+export async function createExperimentAction(formData: FormData) {
   const name = formData.get("name") as string;
   const description = formData.get("description") as string | null;
 
   if (!name || name.trim().length === 0) {
-    throw new Error("Project name is required");
+    throw new Error("Experiment name is required");
   }
 
-  const project = await createProject({
+  const experiment = await createExperiment({
     name: name.trim(),
     description: description?.trim() || undefined,
   });
 
-  redirect(`/projects/${project.id}`);
+  redirect(`/experiments/${experiment.id}`);
 }
 
-export async function deleteProjectAction(id: string) {
-  await deleteProject(id);
-  redirect("/projects");
+export async function deleteExperimentAction(id: string) {
+  await deleteExperiment(id);
+  redirect("/experiments");
 }
 
 export async function updateFlagConfigAction(formData: FormData) {
-  const projectId = formData.get("projectId") as string;
+  const experimentId = formData.get("experimentId") as string;
   const flagKey = formData.get("flagKey") as string | null;
   const envSecret = formData.get("envSecret") as string | null;
   const accessToken = formData.get("accessToken") as string | null;
   const flagServerUrl = formData.get("flagServerUrl") as string | null;
 
-  await updateProject(projectId, {
+  await updateExperiment(experimentId, {
     flagKey: flagKey?.trim() || null,
     envSecret: envSecret?.trim() || null,
     accessToken: accessToken?.trim() || null,
     flagServerUrl: flagServerUrl?.trim() || null,
   });
 
-  await addActivity(projectId, {
+  await addActivity(experimentId, {
     type: "note",
     title: "Feature flag configuration updated",
   });
 
-  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/experiments/${experimentId}`);
 }
 
 export async function updateDecisionStateAction(formData: FormData) {
-  const projectId = formData.get("projectId") as string;
+  const experimentId = formData.get("experimentId") as string;
   const goal = formData.get("goal") as string | null;
   const intent = formData.get("intent") as string | null;
   const hypothesis = formData.get("hypothesis") as string | null;
@@ -64,7 +64,7 @@ export async function updateDecisionStateAction(formData: FormData) {
   const primaryMetric = formData.get("primaryMetric") as string | null;
   const guardrails = formData.get("guardrails") as string | null;
 
-  await updateProject(projectId, {
+  await updateExperiment(experimentId, {
     goal: goal?.trim() || null,
     intent: intent?.trim() || null,
     hypothesis: hypothesis?.trim() || null,
@@ -73,100 +73,96 @@ export async function updateDecisionStateAction(formData: FormData) {
     guardrails: guardrails?.trim() || null,
   });
 
-  await addActivity(projectId, {
+  await addActivity(experimentId, {
     type: "note",
     title: "Decision state updated",
   });
 
-  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/experiments/${experimentId}`);
 }
 
-export async function advanceStageAction(projectId: string, stage: string) {
-  await updateProjectStage(projectId, stage);
-  revalidatePath(`/projects/${projectId}`);
+export async function advanceStageAction(experimentId: string, stage: string) {
+  await updateExperimentStage(experimentId, stage);
+  revalidatePath(`/experiments/${experimentId}`);
 }
 
-export async function activateSandboxAction(projectId: string) {
+export async function activateSandboxAction(experimentId: string) {
   // TODO: integrate with real sandbox API
-  await updateProject(projectId, {
+  await updateExperiment(experimentId, {
     sandboxStatus: "running",
     sandboxId: `sandbox-${Date.now()}`,
   });
 
-  await addActivity(projectId, {
+  await addActivity(experimentId, {
     type: "sandbox_event",
     title: "Sandbox activated",
-    detail: "Remote Claude Code sandbox started for this project",
+    detail: "Remote Claude Code sandbox started for this experiment",
   });
 
-  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/experiments/${experimentId}`);
 }
 
-export async function sendMessageAction(projectId: string, content: string) {
+export async function sendMessageAction(experimentId: string, content: string) {
   if (!content || content.trim().length === 0) return;
 
-  // Store user message
-  await addMessage(projectId, {
+  await addMessage(experimentId, {
     role: "user",
     content: content.trim(),
   });
 
-  // TODO: Forward to sandbox agent and stream response.
-  // For now, create a placeholder assistant reply.
-  const project = await import("@/lib/data").then((m) =>
-    m.getProject(projectId)
+  const experiment = await import("@/lib/data").then((m) =>
+    m.getExperiment(experimentId)
   );
 
-  await addMessage(projectId, {
+  await addMessage(experimentId, {
     role: "assistant",
-    content: `I received your message. The project is currently in the **${project?.stage ?? "intent"}** stage. Agent integration is coming soon — I will be able to help you shape intent, design hypotheses, set up experiments, and analyze results.`,
+    content: `I received your message. The experiment is currently in the **${experiment?.stage ?? "intent"}** stage. Agent integration is coming soon — I will be able to help you shape intent, design hypotheses, set up experiment runs, and analyze results.`,
   });
 
-  await addActivity(projectId, {
+  await addActivity(experimentId, {
     type: "note",
     title: "Conversation message",
     detail: content.trim().slice(0, 120),
   });
 
-  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/experiments/${experimentId}`);
 }
 
 /**
  * Persist a user+assistant message pair from an SSE stream to the database.
  * Called by ChatPanel after each sandbox stream completes.
- * Best-effort — silently skips if project no longer exists.
+ * Best-effort — silently skips if experiment no longer exists.
  */
 export async function persistMessagesAction(
-  projectId: string,
+  experimentId: string,
   userContent: string,
   assistantContent: string
 ) {
   try {
-    // Verify project still exists (foreign key guard)
-    const project = await import("@/lib/data").then((m) =>
-      m.getProject(projectId)
+    const experiment = await import("@/lib/data").then((m) =>
+      m.getExperiment(experimentId)
     );
-    if (!project) return;
+    if (!experiment) return;
 
     if (userContent) {
-      await addMessage(projectId, { role: "user", content: userContent });
+      await addMessage(experimentId, { role: "user", content: userContent });
     }
     if (assistantContent) {
-      await addMessage(projectId, {
+      await addMessage(experimentId, {
         role: "assistant",
         content: assistantContent,
       });
     }
-    revalidatePath(`/projects/${projectId}`);
+    revalidatePath(`/experiments/${experimentId}`);
   } catch {
     // Persistence is best-effort — SSE chat works regardless
-    console.warn(`[persistMessages] Failed for project ${projectId}`);
+    console.warn(`[persistMessages] Failed for experiment ${experimentId}`);
   }
 }
 
-export async function updateExperimentAudienceAction(formData: FormData) {
+export async function updateExperimentRunAudienceAction(formData: FormData) {
+  const experimentRunId = formData.get("experimentRunId") as string;
   const experimentId = formData.get("experimentId") as string;
-  const projectId = formData.get("projectId") as string;
   const trafficPercentRaw = formData.get("trafficPercent") as string;
   const trafficOffsetRaw = formData.get("trafficOffset") as string;
   const layerId = formData.get("layerId") as string | null;
@@ -177,7 +173,7 @@ export async function updateExperimentAudienceAction(formData: FormData) {
   const trafficOffset = parseInt(trafficOffsetRaw, 10);
   const method = methodRaw === "bandit" ? "bandit" : "bayesian_ab";
 
-  await updateExperiment(experimentId, {
+  await updateExperimentRun(experimentRunId, {
     trafficPercent: isNaN(trafficPercent) ? 100 : Math.min(100, Math.max(1, trafficPercent)),
     trafficOffset: isNaN(trafficOffset) ? 0 : Math.min(99, Math.max(0, trafficOffset)),
     layerId: layerId?.trim() || null,
@@ -185,10 +181,10 @@ export async function updateExperimentAudienceAction(formData: FormData) {
     method,
   });
 
-  await addActivity(projectId, {
+  await addActivity(experimentId, {
     type: "note",
-    title: "Experiment audience & traffic updated",
+    title: "Experiment run audience & traffic updated",
   });
 
-  revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/experiments/${experimentId}`);
 }
