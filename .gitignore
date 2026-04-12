@@ -15,6 +15,14 @@ artifacts/
 *.local
 secrets.json
 
+# Rider / VS Code
+.vscode/
+.idea/
+
+# NuGet
+*.nupkg
+packages/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -91,3 +99,8 @@ featbit/**/*.user
 # .claude
 # =======
 .claude/settings.local.json
+
+# =======
+# tsdb
+# =======
+tsdb/temp/
