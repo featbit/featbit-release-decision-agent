@@ -104,3 +104,21 @@ featbit/**/*.user
 # tsdb
 # =======
 tsdb/temp/
+
+# =======
+# agent/tsdb-cloudflare (Cloudflare Workers)
+# =======
+agent/tsdb-cloudflare/node_modules/
+agent/tsdb-cloudflare/dist/
+agent/tsdb-cloudflare/.wrangler/
+agent/tsdb-cloudflare/.dev.vars
+agent/tsdb-cloudflare/*.tsbuildinfo
+
+# =======
+# agent/data (Cloudflare Container Worker)
+# =======
+agent/data/node_modules/
+agent/data/.wrangler/
+agent/data/.dev.vars
+agent/data/package-lock.json
+agent/data/*.tsbuildinfo

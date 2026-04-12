@@ -2,3 +2,8 @@ bin
 obj
 *.user
 .vs
+worker
+node_modules
+wrangler.jsonc
+package.json
+package-lock.json

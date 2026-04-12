@@ -41,6 +41,8 @@ export async function updateFlagConfigAction(formData: FormData) {
   const flagServerUrl = formData.get("flagServerUrl") as string | null;
   const featbitProjectKey = formData.get("featbitProjectKey") as string | null;
   const featbitEnvId = formData.get("featbitEnvId") as string | null;
+  // variants arrives as a JSON string serialised by the client
+  const variants = formData.get("variants") as string | null;
 
   await updateExperiment(experimentId, {
     flagKey: flagKey?.trim() || null,
@@ -49,11 +51,46 @@ export async function updateFlagConfigAction(formData: FormData) {
     flagServerUrl: flagServerUrl?.trim() || null,
     featbitProjectKey: featbitProjectKey?.trim() || null,
     featbitEnvId: featbitEnvId?.trim() || null,
+    variants: variants?.trim() || null,
   });
 
   await addActivity(experimentId, {
     type: "note",
     title: "Feature flag configuration updated",
+  });
+
+  revalidatePath(`/experiments/${experimentId}`);
+}
+
+export async function updateMetricsAction(formData: FormData) {
+  const experimentId = formData.get("experimentId") as string;
+  const metricName = (formData.get("metricName") as string | null)?.trim() || null;
+  const metricEvent = (formData.get("metricEvent") as string | null)?.trim() || null;
+  const metricType = (formData.get("metricType") as string | null)?.trim() || "binary";
+  const metricAgg = (formData.get("metricAgg") as string | null)?.trim() || "once";
+  const metricDescription = (formData.get("metricDescription") as string | null)?.trim() || null;
+  // guardrails arrives as a JSON string serialised by the client
+  const guardrails = formData.get("guardrails") as string | null;
+
+  const primaryMetric =
+    metricName || metricEvent
+      ? JSON.stringify({
+          ...(metricName && { name: metricName }),
+          ...(metricEvent && { event: metricEvent }),
+          metricType,
+          metricAgg,
+          ...(metricDescription && { description: metricDescription }),
+        })
+      : null;
+
+  await updateExperiment(experimentId, {
+    primaryMetric,
+    guardrails: guardrails?.trim() || null,
+  });
+
+  await addActivity(experimentId, {
+    type: "note",
+    title: "Experiment metrics updated",
   });
 
   revalidatePath(`/experiments/${experimentId}`);
@@ -65,6 +102,7 @@ export async function updateDecisionStateAction(formData: FormData) {
   const intent = formData.get("intent") as string | null;
   const hypothesis = formData.get("hypothesis") as string | null;
   const change = formData.get("change") as string | null;
+  const constraints = formData.get("constraints") as string | null;
   const primaryMetric = formData.get("primaryMetric") as string | null;
   const guardrails = formData.get("guardrails") as string | null;
 
@@ -73,6 +111,7 @@ export async function updateDecisionStateAction(formData: FormData) {
     intent: intent?.trim() || null,
     hypothesis: hypothesis?.trim() || null,
     change: change?.trim() || null,
+    constraints: constraints?.trim() || null,
     primaryMetric: primaryMetric?.trim() || null,
     guardrails: guardrails?.trim() || null,
   });

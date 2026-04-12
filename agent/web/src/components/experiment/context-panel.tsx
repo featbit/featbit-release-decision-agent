@@ -9,6 +9,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import type { Experiment, ExperimentRun, Activity } from "@/generated/prisma/client";
+import { EditDecisionStateDialog } from "./decision-state-edit";
 
 /* ── Field metadata per stage ── */
 const STAGE_FIELDS: Record<string, { fields: string[]; icon: React.ReactNode }> = {
@@ -36,6 +37,7 @@ const FIELD_LABELS: Record<string, string> = {
   intent: "Intent",
   hypothesis: "Hypothesis",
   change: "Change",
+  constraints: "Constraints",
   primaryMetric: "Primary Metric",
   guardrails: "Guardrails",
 };
@@ -45,10 +47,17 @@ function renderFieldText(field: string, value: string): string {
   if (field === "primaryMetric") {
     try {
       const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && parsed.event) {
-        return [parsed.event, parsed.metricType, parsed.metricAgg ? `counted ${parsed.metricAgg}` : null]
-          .filter(Boolean)
-          .join(" · ");
+      if (parsed && typeof parsed === "object" && (parsed.event || parsed.name)) {
+        const parts: string[] = [];
+        if (parsed.name) parts.push(parsed.name);
+        if (parsed.event) {
+          parts.push(
+            [parsed.event, parsed.metricType, parsed.metricAgg ? `counted ${parsed.metricAgg}` : null]
+              .filter(Boolean)
+              .join(" · ")
+          );
+        }
+        return parts.join(" — ");
       }
     } catch {
       // not JSON
@@ -76,6 +85,7 @@ export function ContextPanel({
           <Badge variant="secondary" className={`ml-auto text-[10px] ${stage.color}`}>
             {stage.cf}
           </Badge>
+          <EditDecisionStateDialog experiment={experiment} />
         </div>
         <div className="space-y-1.5">
           {config.fields.map((field) => {

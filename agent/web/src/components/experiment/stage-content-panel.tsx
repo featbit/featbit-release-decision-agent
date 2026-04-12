@@ -1,4 +1,6 @@
 import { getStage } from "@/lib/stages";
+import { EditDecisionStateDialog } from "./decision-state-edit";
+import { MetricEditDialog } from "./metric-edit";
 import { Badge } from "@/components/ui/badge";
 import {
   Lightbulb,
@@ -121,20 +123,45 @@ export function StageContentPanel({
 function MetricLines({ value }: { value: string | null | undefined }) {
   if (!value) return <p className="text-xs italic text-muted-foreground/50">Not set</p>;
 
-  // Gracefully handle JSON-encoded metric config (e.g. stored by agent scripts)
   try {
     const parsed = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && parsed.event) {
-      const parts = [
+
+    // JSON array → guardrails list [{name, description}]
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return (
+        <ul className="space-y-1">
+          {parsed.map((g: { name?: string; event?: string; description?: string }, i: number) => (
+            <li key={i} className="text-xs">
+              <span className="font-mono font-medium">{g.name ?? g.event ?? ""}</span>
+              {g.description && (
+                <span className="text-muted-foreground"> — {g.description}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    // JSON object → primary metric {name, event, metricType, metricAgg, description}
+    if (parsed && typeof parsed === "object" && (parsed.event || parsed.name)) {
+      const technicalLine = [
         parsed.event,
         parsed.metricType,
         parsed.metricAgg ? `counted ${parsed.metricAgg}` : null,
       ].filter(Boolean).join(" · ");
-      return <p className="text-xs leading-relaxed font-mono">{parts}</p>;
+      return (
+        <div className="space-y-0.5">
+          {parsed.name && <p className="text-xs leading-relaxed font-medium">{parsed.name}</p>}
+          {parsed.event && (
+            <p className="text-xs font-mono text-muted-foreground">{technicalLine}</p>
+          )}
+          {parsed.description && (
+            <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{parsed.description}</p>
+          )}
+        </div>
+      );
     }
-  } catch {
-    // not JSON — fall through to plain-text rendering
-  }
+  } catch { /* plain text — fall through */ }
 
   const lines = value.split("\n").filter(Boolean);
   if (lines.length === 1) return <p className="text-xs leading-relaxed">{lines[0]}</p>;
@@ -158,11 +185,14 @@ function FieldsSection({
   const config = STAGE_CONFIG[stageKey];
   if (!config || config.fields.length === 0) return null;
 
+  const editableKeys = config.fields.map((f) => f.key) as Array<keyof Experiment>;
+
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
         {config.icon}
         <span>Details</span>
+        <EditDecisionStateDialog experiment={experiment} fields={editableKeys} />
       </div>
       <div className="space-y-2">
         {config.fields.map(({ key, label }) => {
@@ -261,6 +291,7 @@ function MetricsIntegrationSection({
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
         <Activity className="size-3.5" />
         <span>Metrics Integration</span>
+        <MetricEditDialog experiment={experiment} />
       </div>
 
       <div className="rounded-md border bg-muted/10 px-3 py-3 space-y-3">
@@ -430,6 +461,7 @@ function MeasuringContent({
         <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           <BarChart3 className="size-3.5" />
           <span>Experiment Metrics</span>
+          <MetricEditDialog experiment={experiment} />
         </div>
         <div className="space-y-2">
           <div>

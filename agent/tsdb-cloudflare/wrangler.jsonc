@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "featbit-tsdb",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-01",
+  "r2_buckets": [
+    {
+      "binding": "TSDB_BUCKET",
+      "bucket_name": "featbit-tsdb"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PARTITION_WRITER",
+        "class_name": "PartitionWriterDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PartitionWriterDO"]
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "tsdb.featbit.ai",
+      "custom_domain": true
+    }
+  ]
+}

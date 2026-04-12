@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Beaker,
   Bot,
@@ -9,6 +9,7 @@ import {
   Flag,
   Info,
   Lightbulb,
+  Loader2,
   MessageCircle,
   ShieldCheck,
   Target,
@@ -366,8 +367,70 @@ function SummaryTab({
   );
 }
 
-function AnalysisTab({ exp }: { exp: ExperimentRun }) {
-  if (!exp.analysisResult) {
+function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: string }) {
+  const [analysisResult, setAnalysisResult] = useState<string | null>(
+    exp.analysisResult ?? null
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const runAnalysis = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`/api/experiments/${experimentId}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runId: exp.id }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        setError(data.error ?? "Analysis failed");
+        return;
+      }
+      if (data.analysisResult) {
+        setAnalysisResult(data.analysisResult);
+      } else if (data.error) {
+        setError(data.error);
+      }
+    } catch (err) {
+      setError(`Request failed: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [experimentId, exp.id]);
+
+  // Auto-trigger analysis on mount
+  useEffect(() => {
+    runAnalysis();
+  }, [runAnalysis]);
+
+  if (loading) {
+    return (
+      <div className="px-4 pb-6 pt-8 flex flex-col items-center gap-3">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <p className="text-xs text-muted-foreground">
+          Running Bayesian analysis…
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="px-4 pb-6 pt-2 space-y-2">
+        <p className="text-xs text-destructive">{error}</p>
+        <button
+          className="text-xs text-blue-600 dark:text-blue-400 underline"
+          onClick={runAnalysis}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!analysisResult) {
     return (
       <div className="px-4 pb-6 pt-2">
         <p className="text-xs text-muted-foreground/60">
@@ -376,10 +439,11 @@ function AnalysisTab({ exp }: { exp: ExperimentRun }) {
       </div>
     );
   }
+
   return (
     <div className="px-4 pb-6 overflow-x-auto">
       <div className="rounded border bg-muted/20 px-3 py-2.5">
-        <AnalysisView content={exp.analysisResult} />
+        <AnalysisView content={analysisResult} />
       </div>
     </div>
   );
@@ -587,7 +651,7 @@ export function ExperimentRunTable({
                     }
                   />
                 )}
-                {activeTab === "analysis" && <AnalysisTab exp={selected} />}
+                {activeTab === "analysis" && <AnalysisTab exp={selected} experimentId={experimentId} />}
                 {activeTab === "traffic" && (
                   <TrafficTab exp={selected} experimentId={experimentId} />
                 )}
