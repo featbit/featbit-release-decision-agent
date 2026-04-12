@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addActivity, getExperiment } from "@/lib/data";
 
+const VALID_ACTIVITY_TYPES = new Set([
+  "stage_update",
+  "field_update",
+  "run_created",
+  "run_started",
+  "run_paused",
+  "run_completed",
+  "decision_recorded",
+  "learning_captured",
+]);
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -12,6 +23,13 @@ export async function POST(
   if (!type || !title) {
     return NextResponse.json(
       { error: "type and title are required" },
+      { status: 400 }
+    );
+  }
+
+  if (!VALID_ACTIVITY_TYPES.has(type)) {
+    return NextResponse.json(
+      { error: `Invalid activity type "${type}". Valid: ${[...VALID_ACTIVITY_TYPES].join(" | ")}` },
       { status: 400 }
     );
   }
