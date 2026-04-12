@@ -36,6 +36,11 @@ public sealed partial class StorageEngine : IAsyncDisposable
     private readonly ConcurrentDictionary<string, PartitionWriter<MetricEventRecord>>
         _metricEventWriters = new();
 
+    // Observed peak batch sizes per partition key — used to right-size the initial List<T>
+    // capacity when a writer is recreated after eviction. Shared across both table types
+    // (keys are full directory paths, so they cannot collide).
+    private readonly ConcurrentDictionary<string, int> _observedCapacities = new();
+
     // ── Eviction ──────────────────────────────────────────────────────────────
 
     // How often to scan for stale writers.
@@ -142,15 +147,16 @@ public sealed partial class StorageEngine : IAsyncDisposable
         while (await timer.WaitForNextTickAsync(ct))
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            await EvictDictionaryAsync(_flagEvalWriters, today, _idleTimeout);
-            await EvictDictionaryAsync(_metricEventWriters, today, _idleTimeout);
+            await EvictDictionaryAsync(_flagEvalWriters, today, _idleTimeout, _observedCapacities);
+            await EvictDictionaryAsync(_metricEventWriters, today, _idleTimeout, _observedCapacities);
         }
     }
 
     private static async Task EvictDictionaryAsync<T>(
         ConcurrentDictionary<string, PartitionWriter<T>> dict,
         DateOnly today,
-        TimeSpan idleTimeout)
+        TimeSpan idleTimeout,
+        ConcurrentDictionary<string, int> capacityHints)
     {
         var idleCutoff = DateTime.UtcNow - idleTimeout;
 
@@ -170,7 +176,12 @@ public sealed partial class StorageEngine : IAsyncDisposable
             {
                 // TryRemove is atomic: only one thread disposes each writer.
                 if (dict.TryRemove(key, out var writer))
+                {
+                    // Save observed peak so the next writer for this partition starts
+                    // with an appropriately sized batch list instead of always 10 000.
+                    capacityHints[key] = Math.Max(16, writer.PeakBatchSeen);
                     await writer.DisposeAsync();
+                }
             }
         }
     }
@@ -192,11 +203,13 @@ public sealed partial class StorageEngine : IAsyncDisposable
 
         return _flagEvalWriters.GetOrAdd(key, _ =>
         {
+            int initialCapacity = _observedCapacities.GetValueOrDefault(key, 256);
             var writer = new PartitionWriter<FlagEvalRecord>(
                 dir,
                 (batch, path, ct) => FlagEvalSegmentWriter.WriteAsync(batch, path, ct),
                 _maxBatchSize,
-                _flushInterval);
+                _flushInterval,
+                initialCapacity);
             writer.Start();
             return writer;
         });
@@ -211,11 +224,13 @@ public sealed partial class StorageEngine : IAsyncDisposable
 
         return _metricEventWriters.GetOrAdd(key, _ =>
         {
+            int initialCapacity = _observedCapacities.GetValueOrDefault(key, 256);
             var writer = new PartitionWriter<MetricEventRecord>(
                 dir,
                 (batch, path, ct) => MetricEventSegmentWriter.WriteAsync(batch, path, ct),
                 _maxBatchSize,
-                _flushInterval);
+                _flushInterval,
+                initialCapacity);
             writer.Start();
             return writer;
         });

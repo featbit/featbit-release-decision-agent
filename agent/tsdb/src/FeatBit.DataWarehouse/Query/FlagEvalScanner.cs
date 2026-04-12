@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO.Hashing;
 using System.Text;
 using System.Text.Json;
@@ -27,8 +28,6 @@ internal static class FlagEvalScanner
     public static async Task<Dictionary<string, ExposureEntry>> BuildAsync(
         string dataRoot, ExperimentQuery query, CancellationToken ct)
     {
-        var exposureMap = new Dictionary<string, ExposureEntry>(capacity: 64_000);
-
         long startMs = query.Start.ToUnixTimeMilliseconds();
         long endMs   = query.End.ToUnixTimeMilliseconds();
 
@@ -42,21 +41,34 @@ internal static class FlagEvalScanner
         bool needBucket       = query.TrafficPercent < 100;
         bool needProps        = query.AudienceFilters is { Count: > 0 };
 
-        foreach (var dateDir in PathHelper.FlagEvalDateDirs(
-                     dataRoot, query.EnvId, query.FlagKey, startDate, endDate))
-        {
-            foreach (var segPath in Directory.EnumerateFiles(
-                         dateDir, $"*{SegmentConstants.FileExtension}").Order())
-            {
-                await ScanSegmentAsync(
-                    segPath, query, exposureMap, validVariants,
-                    startMs, endMs,
-                    needExperimentId, needLayerId, needBucket, needProps,
-                    ct);
-            }
-        }
+        // Collect all segment paths upfront so we can scan them in parallel.
+        var segPaths = PathHelper.FlagEvalDateDirs(dataRoot, query.EnvId, query.FlagKey, startDate, endDate)
+            .SelectMany(dir => Directory.EnumerateFiles(dir, $"*{SegmentConstants.FileExtension}").Order())
+            .ToList();
 
-        return exposureMap;
+        // Each segment scans into a throw-away local dict, then merges immediately into
+        // sharedMap so local dicts are freed promptly (avoids keeping all 24 000 in memory).
+        var sharedMap = new ConcurrentDictionary<string, ExposureEntry>(StringComparer.Ordinal);
+        var opts = new ParallelOptions
+        {
+            CancellationToken      = ct,
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
+        };
+
+        await Parallel.ForEachAsync(segPaths, opts, async (segPath, ct2) =>
+        {
+            var local = new Dictionary<string, ExposureEntry>();
+            await ScanSegmentAsync(
+                segPath, query, local, validVariants,
+                startMs, endMs,
+                needExperimentId, needLayerId, needBucket, needProps,
+                ct2);
+            foreach (var (key, entry) in local)
+                sharedMap.AddOrUpdate(key, entry,
+                    (_, e) => entry.FirstExposedAt < e.FirstExposedAt ? entry : e);
+        });
+
+        return new Dictionary<string, ExposureEntry>(sharedMap, StringComparer.Ordinal);
     }
 
     /// <summary>

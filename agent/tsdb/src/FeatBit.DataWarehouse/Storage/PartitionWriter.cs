@@ -17,7 +17,8 @@ internal sealed class PartitionWriter<T>(
     string partitionDir,
     Func<IReadOnlyList<T>, string, CancellationToken, Task> writeSegment,
     int maxBatchSize = 10_000,
-    TimeSpan? flushInterval = null) : IAsyncDisposable
+    TimeSpan? flushInterval = null,
+    int initialBatchCapacity = 256) : IAsyncDisposable
 {
     // Expose for tuning / testing
     public int      MaxBatchSize   { get; } = maxBatchSize;
@@ -38,6 +39,11 @@ internal sealed class PartitionWriter<T>(
     /// </summary>
     private long _lastWriteAt = DateTime.UtcNow.Ticks;
     public long LastWriteAt => Interlocked.Read(ref _lastWriteAt);
+
+    // Tracks the largest batch flushed — read by StorageEngine on eviction to seed
+    // the initial capacity of the next writer for the same partition.
+    private int _peakBatchSeen;
+    public int PeakBatchSeen => Volatile.Read(ref _peakBatchSeen);
 
     private readonly CancellationTokenSource _cts   = new();
     private readonly Task                    _bgTask = Task.CompletedTask; // replaced below
@@ -67,7 +73,7 @@ internal sealed class PartitionWriter<T>(
 
     private async Task RunAsync(CancellationToken ct)
     {
-        var batch = new List<T>(MaxBatchSize);
+        var batch = new List<T>(Math.Max(1, initialBatchCapacity));
         using var timer     = new PeriodicTimer(FlushInterval);
         var       timerTask = timer.WaitForNextTickAsync(ct).AsTask();
 
@@ -116,6 +122,9 @@ internal sealed class PartitionWriter<T>(
 
     private async Task FlushBatchAsync(List<T> batch, CancellationToken ct)
     {
+        int n = batch.Count;
+        if (n > _peakBatchSeen) Volatile.Write(ref _peakBatchSeen, n);
+
         long seq      = Interlocked.Increment(ref _segmentCounter);
         var  dir      = partitionDir;
         Directory.CreateDirectory(dir);

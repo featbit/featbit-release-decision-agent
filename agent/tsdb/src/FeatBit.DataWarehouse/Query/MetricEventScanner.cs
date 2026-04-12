@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using FeatBit.DataWarehouse.Storage;
 
 namespace FeatBit.DataWarehouse.Query;
@@ -24,28 +25,36 @@ internal static class MetricEventScanner
     {
         bool isBinary = query.MetricType == "binary";
 
-        // ── Per-user accumulators ─────────────────────────────────────────────
-        // Shared across all segments; keyed by user_key.
-        var perUser = new Dictionary<string, UserAccumulator>(exposureMap.Count);
-
         long startMs = query.Start.ToUnixTimeMilliseconds();
         long endMs   = query.End.ToUnixTimeMilliseconds();
 
         var startDate = DateOnly.FromDateTime(query.Start.UtcDateTime);
         var endDate   = DateOnly.FromDateTime(query.End.UtcDateTime);
 
-        // ── Scan metric-event segments ─────────────────────────────────────────
-        foreach (var dateDir in PathHelper.MetricEventDateDirs(
-                     dataRoot, query.EnvId, query.MetricEvent, startDate, endDate))
+        // Collect all segment paths upfront for parallel scanning.
+        var segPaths = PathHelper.MetricEventDateDirs(dataRoot, query.EnvId, query.MetricEvent, startDate, endDate)
+            .SelectMany(dir => Directory.EnumerateFiles(dir, $"*{SegmentConstants.FileExtension}").Order())
+            .ToList();
+
+        // Each segment scans into a throw-away local dict, then merges immediately into
+        // sharedPerUser so local dicts are freed promptly.
+        var sharedPerUser = new ConcurrentDictionary<string, UserAccumulator>(StringComparer.Ordinal);
+        var opts = new ParallelOptions
         {
-            foreach (var segPath in Directory.EnumerateFiles(
-                         dateDir, $"*{SegmentConstants.FileExtension}").Order())
-            {
-                await ScanSegmentAsync(
-                    segPath, query, exposureMap, perUser,
-                    isBinary, startMs, endMs, ct);
-            }
-        }
+            CancellationToken      = ct,
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
+        };
+
+        await Parallel.ForEachAsync(segPaths, opts, async (segPath, ct2) =>
+        {
+            var local = new Dictionary<string, UserAccumulator>(1024);
+            await ScanSegmentAsync(segPath, query, exposureMap, local, isBinary, startMs, endMs, ct2);
+            foreach (var (key, acc) in local)
+                sharedPerUser.AddOrUpdate(key, acc,
+                    (_, existing) => { existing.Merge(acc); return existing; });
+        });
+
+        var perUser = new Dictionary<string, UserAccumulator>(sharedPerUser, StringComparer.Ordinal);
 
         // ── Aggregate per variant ─────────────────────────────────────────────
         return isBinary
@@ -222,5 +231,18 @@ internal static class MetricEventScanner
             "latest" => _latestValue,
             _        => _count > 0 ? _sum              : (double?)null, // default = sum
         };
+
+        /// <summary>
+        /// Merge another accumulator into this one (used when combining parallel segment scans).
+        /// </summary>
+        public void Merge(UserAccumulator other)
+        {
+            if (!other.HasConversion) return;
+            HasConversion = true;
+            if (other._firstTs < _firstTs)   { _firstTs  = other._firstTs;  _firstValue  = other._firstValue; }
+            if (other._latestTs > _latestTs) { _latestTs = other._latestTs; _latestValue = other._latestValue; }
+            _sum   += other._sum;
+            _count += other._count;
+        }
     }
 }
