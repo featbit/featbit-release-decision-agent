@@ -111,7 +111,7 @@ services:
   #  flagKey: pricing-page   envSecret: pricing-env-secret-001
   #
   #  Exp 1+2 are DECIDED — seed data is pre-baked, ExperimentWorker ignores them.
-  #  Exp 3 (pricing-social-proof-ab) is RUNNING — simulator feeds live events.
+  #  Live experiment (checkout-flow-ab) is RUNNING — simulator feeds ~50 events/s.
   #
   simulator:
     build:
@@ -119,20 +119,19 @@ services:
       dockerfile: Dockerfile
     environment:
       TRACK_API_URL: "http://tsdb:5059/api/track"
-      ENV_SECRET: "pricing-env-secret-001"
+      ENV_SECRET: "checkout-env-secret-live-001"
       SCENARIO_COUNT: "1"
-      # ── Scenario 1: Social proof A/B (Bayesian, collecting — Exp 3) ──────────
-      SCENARIO_1_FLAG_KEY: "pricing-page"
-      SCENARIO_1_LAYER_OFFSET: "0"
-      SCENARIO_1_LAYER_PERCENT: "100"
-      SCENARIO_1_VARIANTS: "free-cta-pro,free-cta-pro-social"
+      # ── Scenario: Checkout Flow A/B (Bayesian, running) ──────────────────────
+      SCENARIO_1_FLAG_KEY: "checkout-flow-ab"
+      SCENARIO_1_EXPERIMENT_ID: "be73d73e-efa6-4807-9fc2-0e2a29b43793"
+      SCENARIO_1_VARIANTS: "standard,streamlined"
       SCENARIO_1_VARIANT_WEIGHTS: "50,50"
-      SCENARIO_1_CONV_RATES: "0.210,0.271"
-      SCENARIO_1_METRIC_EVENT: "trial_signup_started"
-      SCENARIO_1_GUARDRAIL_EVENTS: "support_chat_open:0.091:0.081,page_error:0.045:0.036"
-      # ── Shared ────────────────────────────────────────────────────────────────
-      BATCH_SIZE: "4"
-      BATCH_DELAY_MS: "1500"
+      SCENARIO_1_CONV_RATES: "0.220,0.290"
+      SCENARIO_1_METRIC_EVENT: "purchase_completed"
+      SCENARIO_1_GUARDRAIL_EVENTS: "checkout_abandoned:0.15:0.12,support_chat_open:0.08:0.07"
+      # ── Shared — 50 events/s ─────────────────────────────────────────────────
+      BATCH_SIZE: "50"
+      BATCH_DELAY_MS: "1000"
       STARTUP_DELAY_SEC: "5"
     depends_on:
       tsdb:

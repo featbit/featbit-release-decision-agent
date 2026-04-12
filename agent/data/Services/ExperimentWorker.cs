@@ -219,7 +219,7 @@ public sealed class ExperimentWorker : BackgroundService
         try
         {
             var resp = await _http.PostAsJsonAsync(
-                $"/api/projects/{Uri.EscapeDataString(exp.ProjectId)}/experiment",
+                $"/api/experiments/{Uri.EscapeDataString(exp.ProjectId)}/experiment-run",
                 new { slug = exp.Slug, inputData = inputDataJson },
                 JsonOpts, ct);
             resp.EnsureSuccessStatusCode();
@@ -262,7 +262,7 @@ public sealed class ExperimentWorker : BackgroundService
         try
         {
             var resp = await _http.PostAsJsonAsync(
-                $"/api/projects/{Uri.EscapeDataString(exp.ProjectId)}/experiment",
+                $"/api/experiments/{Uri.EscapeDataString(exp.ProjectId)}/experiment-run",
                 new { slug = exp.Slug, analysisResult = result.Value.GetRawText() },
                 JsonOpts, ct);
             resp.EnsureSuccessStatusCode();

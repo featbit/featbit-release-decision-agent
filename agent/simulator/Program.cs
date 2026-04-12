@@ -62,15 +62,16 @@ if (scenarioCount > 0)
     scenarios = [];
     for (var n = 1; n <= scenarioCount; n++)
     {
-        var sFlagKey      = Env($"SCENARIO_{n}_FLAG_KEY",       "");
-        var sMetricEvt    = Env($"SCENARIO_{n}_METRIC_EVENT",   "");
-        var sVariantsRaw  = Env($"SCENARIO_{n}_VARIANTS",       "control,treatment");
-        var sRatesRaw     = Env($"SCENARIO_{n}_CONV_RATES",     "0.3,0.4");
+        var sFlagKey      = Env($"SCENARIO_{n}_FLAG_KEY",        "");
+        var sMetricEvt    = Env($"SCENARIO_{n}_METRIC_EVENT",    "");
+        var sVariantsRaw  = Env($"SCENARIO_{n}_VARIANTS",        "control,treatment");
+        var sRatesRaw     = Env($"SCENARIO_{n}_CONV_RATES",      "0.3,0.4");
         var sWeightsRaw   = Env($"SCENARIO_{n}_VARIANT_WEIGHTS", "");
-        var sLayerId      = Env($"SCENARIO_{n}_LAYER_ID",        "");
-        var sLayerOff     = int.Parse(Env($"SCENARIO_{n}_LAYER_OFFSET",  "0"));
-        var sLayerPct     = int.Parse(Env($"SCENARIO_{n}_LAYER_PERCENT", "100"));
+        var sLayerId      = Env($"SCENARIO_{n}_LAYER_ID",         "");
+        var sLayerOff     = int.Parse(Env($"SCENARIO_{n}_LAYER_OFFSET",   "0"));
+        var sLayerPct     = int.Parse(Env($"SCENARIO_{n}_LAYER_PERCENT",  "100"));
         var sGuardrailRaw = Env($"SCENARIO_{n}_GUARDRAIL_EVENTS", "");
+        var sExperimentId = Env($"SCENARIO_{n}_EXPERIMENT_ID",    "");
 
         if (string.IsNullOrEmpty(sFlagKey) || string.IsNullOrEmpty(sMetricEvt))
         {
@@ -111,6 +112,7 @@ if (scenarioCount > 0)
         var def = new ScenarioDef
         {
             FlagKey         = sFlagKey,
+            ExperimentId    = string.IsNullOrEmpty(sExperimentId) ? null : sExperimentId,
             MetricEvent     = sMetricEvt,
             Variants        = variants,
             ConvRates       = rates,
@@ -121,7 +123,7 @@ if (scenarioCount > 0)
             GuardrailEvents = [.. guardrails],
         };
         scenarios.Add(def);
-        Console.WriteLine($"[simulator] scenario {n}: flag={sFlagKey} variants=[{string.Join(",", variants)}] " +
+        Console.WriteLine($"[simulator] scenario {n}: flag={sFlagKey} expId={sExperimentId ?? "none"} variants=[{string.Join(",", variants)}] " +
                           $"layer={sLayerId ?? "none"} offset={sLayerOff} pct={sLayerPct}%");
     }
 
@@ -214,10 +216,11 @@ while (!cts.Token.IsCancellationRequested)
 
             allVariations.Add(new FlagEvalDto
             {
-                FlagKey   = s.FlagKey,
-                Variant   = variant,
-                LayerId   = s.LayerId,
-                Timestamp = evalTs,
+                FlagKey      = s.FlagKey,
+                Variant      = variant,
+                LayerId      = s.LayerId,
+                ExperimentId = s.ExperimentId,
+                Timestamp    = evalTs,
             });
             totalFlagEvals++;
 
@@ -379,6 +382,7 @@ static T PickRandom<T>(Random rng, T[] items) => items[rng.Next(items.Length)];
 class ScenarioDef
 {
     public string FlagKey { get; set; } = "";
+    public string? ExperimentId { get; set; }
     public string MetricEvent { get; set; } = "";
     public string[] Variants { get; set; } = [];
     public double[] ConvRates { get; set; } = [];

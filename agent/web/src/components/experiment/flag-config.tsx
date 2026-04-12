@@ -203,16 +203,32 @@ export function FlagIntegrationHeader({
   const isConfigured = Boolean(experiment.flagKey);
   const featbitUrl = buildFeatBitUrl(experiment);
 
-  // Parse all flag-level variants from experiment.variants (pipe-separated)
-  const allVariants: { name: string; annotation?: string }[] = experiment.variants
-    ? experiment.variants.split("|").map((v) => {
-        const trimmed = v.trim();
-        const match = trimmed.match(/^(.+?)\s*\((.+)\)$/);
-        return match
-          ? { name: match[1].trim(), annotation: match[2].trim() }
-          : { name: trimmed };
-      })
-    : [];
+  // Parse all flag-level variants from experiment.variants
+  // Supports two formats:
+  //   1. Pipe-separated: "standard (control)|streamlined (treatment)"
+  //   2. JSON array:     [{"key":"standard","description":"..."},...]
+  const allVariants: { name: string; annotation?: string }[] = (() => {
+    if (!experiment.variants) return [];
+    const raw = experiment.variants.trim();
+    // Try JSON array first
+    if (raw.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(raw) as { key?: string; name?: string; description?: string }[];
+        return parsed.map((v) => ({
+          name: v.key ?? v.name ?? "",
+          annotation: v.description,
+        }));
+      } catch { /* fall through */ }
+    }
+    // Pipe-separated: "standard (control)|streamlined (treatment)"
+    return raw.split("|").map((v) => {
+      const trimmed = v.trim();
+      const match = trimmed.match(/^(.+?)\s*\((.+)\)$/);
+      return match
+        ? { name: match[1].trim(), annotation: match[2].trim() }
+        : { name: trimmed };
+    });
+  })();
 
   // Build a set of variants used in any experiment run (control or treatment)
   const usedInRuns = new Set<string>();

@@ -21,6 +21,7 @@ var app = builder.Build();
 
 app.MapTrackEndpoints();
 app.MapQueryEndpoints();
+app.MapStatsEndpoints();
 
 try
 {

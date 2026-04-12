@@ -120,6 +120,22 @@ export function StageContentPanel({
 /* ── Shared multi-line metric renderer ── */
 function MetricLines({ value }: { value: string | null | undefined }) {
   if (!value) return <p className="text-xs italic text-muted-foreground/50">Not set</p>;
+
+  // Gracefully handle JSON-encoded metric config (e.g. stored by agent scripts)
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && parsed.event) {
+      const parts = [
+        parsed.event,
+        parsed.metricType,
+        parsed.metricAgg ? `counted ${parsed.metricAgg}` : null,
+      ].filter(Boolean).join(" · ");
+      return <p className="text-xs leading-relaxed font-mono">{parts}</p>;
+    }
+  } catch {
+    // not JSON — fall through to plain-text rendering
+  }
+
   const lines = value.split("\n").filter(Boolean);
   if (lines.length === 1) return <p className="text-xs leading-relaxed">{lines[0]}</p>;
   return (

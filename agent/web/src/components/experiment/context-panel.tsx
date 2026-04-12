@@ -40,6 +40,23 @@ const FIELD_LABELS: Record<string, string> = {
   guardrails: "Guardrails",
 };
 
+function renderFieldText(field: string, value: string): string {
+  if (!value) return value;
+  if (field === "primaryMetric") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && parsed.event) {
+        return [parsed.event, parsed.metricType, parsed.metricAgg ? `counted ${parsed.metricAgg}` : null]
+          .filter(Boolean)
+          .join(" · ");
+      }
+    } catch {
+      // not JSON
+    }
+  }
+  return value;
+}
+
 export function ContextPanel({
   experiment,
 }: {
@@ -62,7 +79,8 @@ export function ContextPanel({
         </div>
         <div className="space-y-1.5">
           {config.fields.map((field) => {
-            const value = (experiment[field as keyof Experiment] as string) ?? "";
+            const raw = (experiment[field as keyof Experiment] as string) ?? "";
+            const value = renderFieldText(field, raw);
             return (
               <div key={field}>
                 <span className="text-[10px] font-medium text-muted-foreground uppercase">
