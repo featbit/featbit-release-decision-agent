@@ -42,9 +42,15 @@ router.post("/", async (req: Request, res: Response) => {
   // for resumed sessions, pass the user prompt as-is.
   const effectivePrompt = buildEffectivePrompt(body);
   if (effectivePrompt.trim() === "") {
-    res.status(400).json({
-      error: "prompt is required for resumed sessions",
-    });
+    // Resumed session with no prompt — the client just wants to confirm
+    // the session is alive (e.g. auto-init on mount). Return a lightweight
+    // SSE ack instead of 400 to keep the UI happy.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.write(`event: system\ndata: ${JSON.stringify({ type: "session_resumed", projectId: body.projectId ?? "default" })}\n\n`);
+    res.write(`event: done\ndata: {}\n\n`);
+    res.end();
     return;
   }
 

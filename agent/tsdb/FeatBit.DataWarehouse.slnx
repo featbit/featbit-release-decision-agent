@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="src/FeatBit.DataWarehouse/FeatBit.DataWarehouse.csproj" />
+  <Project Path="src/FeatBit.TsdbServer/FeatBit.TsdbServer.csproj" />
 </Solution>

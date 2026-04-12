@@ -290,10 +290,12 @@ public sealed class ExperimentWorkerOptions
 
 public sealed class RunningExperiment
 {
+    // ExperimentRun's own ID (used as experimentId filter for tsdb queries)
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    [JsonPropertyName("projectId")]
+    // Parent Experiment ID — maps to "project" in the web API paths
+    [JsonPropertyName("experimentId")]
     public required string ProjectId { get; init; }
 
     [JsonPropertyName("slug")]
@@ -305,8 +307,9 @@ public sealed class RunningExperiment
     [JsonPropertyName("method")]
     public string? Method { get; init; }
 
-    [JsonPropertyName("experimentId")]
-    public string? ExperimentId { get; init; }
+    // ExperimentRun's own ID reused as the experiment identifier for tsdb filtering
+    [JsonIgnore]
+    public string? ExperimentId => Id;
 
     [JsonPropertyName("layerId")]
     public string? LayerId { get; init; }
@@ -356,7 +359,7 @@ public sealed class RunningExperiment
     [JsonPropertyName("guardrailEvents")]
     public string? GuardrailEvents { get; init; }
 
-    [JsonPropertyName("project")]
+    [JsonPropertyName("experiment")]
     public ProjectSnapshot? Project { get; init; }
 }
 

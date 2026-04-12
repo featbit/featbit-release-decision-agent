@@ -4,7 +4,8 @@
 # Services:
 #   postgres   — shared database (Prisma tables + event tables)
 #   web        — Next.js app (frontend + API)
-#   data       — .NET data server (track API + ExperimentWorker + MetricCollector)
+#   tsdb       — columnar time-series DB (track API + experiment query)
+#   data       — .NET analysis server (ExperimentWorker + Bayesian analysis)
 #   simulator  — sends simulated flag evaluations + metric events
 #   sandbox    — Claude Code agent bridge (SSE, GLM backend)
 #
@@ -58,7 +59,27 @@ services:
       retries: 15
       start_period: 30s
 
-  # ── .NET Data Server ────────────────────────────────────────────────────────
+  # ── TSDB — Columnar time-series database ────────────────────────────────────
+  tsdb:
+    build:
+      context: ./agent/tsdb
+      dockerfile: Dockerfile
+    ports:
+      - "5059:5059"
+    environment:
+      DataRoot: /data/tsdb
+      Storage__MaxBatchSize: "10000"
+      Storage__FlushIntervalSeconds: "1"
+    volumes:
+      - tsdbdata:/data/tsdb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5059/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ── .NET Analysis Server ─────────────────────────────────────────────────────
   data:
     build:
       context: ./agent/data
@@ -66,7 +87,7 @@ services:
     ports:
       - "5058:5058"
     environment:
-      ConnectionStrings__EventStore: "Host=postgres;Port=5432;Database=release_decision;Username=postgres;Password=postgres"
+      TsdbBaseUrl: "http://tsdb:5059"
       ExperimentWorker__IntervalSeconds: "10"
       ExperimentWorker__MaxConcurrency: "4"
       ExperimentWorker__ApiBaseUrl: "http://web:3000"
@@ -74,6 +95,8 @@ services:
       SYNC_API_URL: "http://web:3000"
     depends_on:
       web:
+        condition: service_healthy
+      tsdb:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:5058/health || exit 1"]
@@ -95,7 +118,7 @@ services:
       context: ./agent/simulator
       dockerfile: Dockerfile
     environment:
-      TRACK_API_URL: "http://data:5058/api/track"
+      TRACK_API_URL: "http://tsdb:5059/api/track"
       ENV_SECRET: "pricing-env-secret-001"
       SCENARIO_COUNT: "1"
       # ── Scenario 1: Social proof A/B (Bayesian, collecting — Exp 3) ──────────
@@ -112,7 +135,7 @@ services:
       BATCH_DELAY_MS: "1500"
       STARTUP_DELAY_SEC: "5"
     depends_on:
-      data:
+      tsdb:
         condition: service_healthy
 
   # ── Sandbox — Claude Code agent bridge (GLM backend) ────────────────────────
@@ -135,3 +158,4 @@ services:
 
 volumes:
   pgdata:
+  tsdbdata:

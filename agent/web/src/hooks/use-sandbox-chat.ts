@@ -129,7 +129,7 @@ export function useSandboxChat({
 
       // Build request body
       const body: Record<string, unknown> = {
-        experimentId,
+        projectId: experimentId,
         maxTurns,
       };
       if (content.trim()) {
