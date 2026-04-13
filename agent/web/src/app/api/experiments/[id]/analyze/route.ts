@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateExperimentRun } from "@/lib/data";
-
-const DATA_SERVER_URL =
-  process.env.DATA_SERVER_URL ?? "http://localhost:5058";
+import { runAnalysis } from "@/lib/stats/analyze";
+import { runBanditAnalysis } from "@/lib/stats/bandit";
+import { collectMetric } from "@/lib/stats/tsdb-client";
+import type { MetricSummary } from "@/lib/stats/types";
 
 export async function POST(
   req: NextRequest,
@@ -52,69 +53,165 @@ export async function POST(
     );
   }
 
-  // Build the request for the .NET /analyze endpoint
-  const analyzePayload = {
-    slug: run.slug,
-    projectId: run.experimentId,
-    experimentId: run.id,
+  const controlVariant = run.controlVariant ?? "false";
+  const treatments = (run.treatmentVariant ?? "true")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const treatmentVariant = treatments[0] ?? "true";
+  const now = new Date();
+  const start = run.observationStart?.toISOString() ?? new Date(now.getTime() - 30 * 86400000).toISOString();
+  const end = run.observationEnd?.toISOString() ?? now.toISOString();
+  const method = run.method ?? "bayesian_ab";
+
+  // ── Step 1: Collect primary metric from TSDB ──
+  const primarySummary = await collectMetric({
     envId,
     flagKey,
-    method: run.method ?? "bayesian_ab",
-    layerId: run.layerId,
-    trafficPercent: run.trafficPercent,
-    trafficOffset: run.trafficOffset,
-    audienceFilters: run.audienceFilters,
-    primaryMetricEvent: run.primaryMetricEvent,
-    primaryMetricType: run.primaryMetricType ?? "binary",
-    primaryMetricAgg: run.primaryMetricAgg ?? "once",
-    controlVariant: run.controlVariant ?? "false",
-    treatmentVariant: run.treatmentVariant ?? "true",
-    observationStart: run.observationStart?.toISOString(),
-    observationEnd: run.observationEnd?.toISOString(),
-    priorProper: run.priorProper ?? false,
-    priorMean: run.priorMean ?? 0.0,
-    priorStddev: run.priorStddev ?? 0.3,
-    minimumSample: run.minimumSample ?? 0,
-    guardrailEvents: run.guardrailEvents,
-  };
+    metricEvent: run.primaryMetricEvent,
+    metricType: run.primaryMetricType ?? "binary",
+    metricAgg: run.primaryMetricAgg ?? "once",
+    controlVariant,
+    treatmentVariant,
+    start,
+    end,
+    experimentId: run.id,
+    layerId: run.layerId ?? undefined,
+    trafficPercent: run.trafficPercent ?? undefined,
+    trafficOffset: run.trafficOffset ?? undefined,
+    audienceFilters: run.audienceFilters ?? undefined,
+    method,
+  });
 
-  // Call .NET data server
-  let analyzeResult: { inputData?: string; analysisResult?: string; error?: string };
-  try {
-    const resp = await fetch(`${DATA_SERVER_URL}/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(analyzePayload),
-    });
-    analyzeResult = await resp.json();
-    if (!resp.ok && resp.status !== 200) {
-      return NextResponse.json(
-        { error: analyzeResult.error ?? "Analysis failed" },
-        { status: resp.status }
-      );
-    }
-  } catch (err) {
+  if (!primarySummary) {
     return NextResponse.json(
-      { error: `Failed to reach data server: ${(err as Error).message}` },
+      { error: "No data returned from TSDB" },
       { status: 502 }
     );
   }
 
-  // Save inputData + analysisResult back to the experiment run
-  const updateData: Record<string, unknown> = {};
-  if (analyzeResult.inputData) {
-    updateData.inputData = analyzeResult.inputData;
-  }
-  if (analyzeResult.analysisResult) {
-    updateData.analysisResult = analyzeResult.analysisResult;
+  const controlN = (primarySummary.control as { n: number }).n ?? 0;
+  const treatmentN = (primarySummary.treatment as { n: number }).n ?? 0;
+  if (controlN === 0 && treatmentN === 0) {
+    return NextResponse.json({
+      error: "No users collected yet",
+      inputData: null,
+    });
   }
 
-  if (Object.keys(updateData).length > 0) {
-    await updateExperimentRun(runId, updateData);
+  // ── Step 2: Collect guardrail metrics (Bayesian only) ──
+  let guardrailEventNames: string[] = [];
+  if (run.guardrailEvents && method !== "bandit") {
+    try {
+      const parsed = JSON.parse(run.guardrailEvents);
+      if (Array.isArray(parsed)) guardrailEventNames = parsed;
+    } catch { /* ignore malformed JSON */ }
   }
+
+  const guardrailSummaries: Record<string, MetricSummary> = {};
+  for (const gEvent of guardrailEventNames) {
+    const gs = await collectMetric({
+      envId,
+      flagKey,
+      metricEvent: gEvent,
+      metricType: "binary",
+      metricAgg: "once",
+      controlVariant,
+      treatmentVariant,
+      start,
+      end,
+      experimentId: run.id,
+      layerId: run.layerId ?? undefined,
+      trafficPercent: run.trafficPercent ?? undefined,
+      trafficOffset: run.trafficOffset ?? undefined,
+      audienceFilters: run.audienceFilters ?? undefined,
+      method,
+    });
+    if (gs) guardrailSummaries[gEvent] = gs;
+  }
+
+  // ── Step 3: Build metrics map ──
+  const metrics: Record<string, Record<string, unknown>> = {
+    [run.primaryMetricEvent]: {
+      [controlVariant]: primarySummary.control,
+      [treatmentVariant]: primarySummary.treatment,
+    },
+  };
+
+  // For bandit mode we support multi-arm by querying each treatment arm.
+  if (method === "bandit" && treatments.length > 1) {
+    for (const arm of treatments.slice(1)) {
+      const extra = await collectMetric({
+        envId,
+        flagKey,
+        metricEvent: run.primaryMetricEvent,
+        metricType: run.primaryMetricType ?? "binary",
+        metricAgg: run.primaryMetricAgg ?? "once",
+        controlVariant,
+        treatmentVariant: arm,
+        start,
+        end,
+        experimentId: run.id,
+        layerId: run.layerId ?? undefined,
+        trafficPercent: run.trafficPercent ?? undefined,
+        trafficOffset: run.trafficOffset ?? undefined,
+        audienceFilters: run.audienceFilters ?? undefined,
+        method,
+      });
+      if (extra) {
+        metrics[run.primaryMetricEvent][arm] = extra.treatment;
+      }
+    }
+  }
+
+  for (const [gEvent, gs] of Object.entries(guardrailSummaries)) {
+    metrics[gEvent] = {
+      [controlVariant]: gs.control,
+      [treatmentVariant]: gs.treatment,
+    };
+  }
+
+  const inputData = JSON.stringify({ metrics });
+
+  // ── Step 4: Run local TypeScript analysis ──
+  const analysisResult = method === "bandit"
+    ? runBanditAnalysis({
+        slug: run.slug ?? "on-demand",
+        metricEvent: run.primaryMetricEvent,
+        metrics,
+        control: controlVariant,
+        treatments,
+        observationStart: start,
+        observationEnd: end,
+        priorProper: run.priorProper ?? false,
+        priorMean: run.priorMean ?? 0,
+        priorStddev: run.priorStddev ?? 0.3,
+      })
+    : runAnalysis({
+        slug: run.slug ?? "on-demand",
+        metrics,
+        control: controlVariant,
+        treatments: [treatmentVariant],
+        observationStart: start,
+        observationEnd: end,
+        priorProper: run.priorProper ?? false,
+        priorMean: run.priorMean ?? 0,
+        priorStddev: run.priorStddev ?? 0.3,
+        minimumSample: run.minimumSample ?? 0,
+        guardrailEvents: guardrailEventNames.length > 0 ? guardrailEventNames : undefined,
+      });
+
+  const analysisResultJson = JSON.stringify(analysisResult);
+
+  // Save inputData + analysisResult back to the experiment run
+  const updateData: Record<string, unknown> = {
+    inputData,
+    analysisResult: analysisResultJson,
+  };
+  await updateExperimentRun(runId, updateData);
 
   return NextResponse.json({
-    inputData: analyzeResult.inputData ?? null,
-    analysisResult: analyzeResult.analysisResult ?? null,
+    inputData,
+    analysisResult: analysisResultJson,
   });
 }

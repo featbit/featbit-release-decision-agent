@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "featbit-web",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-04-01",
+  "vars": {
+    "NEXT_PUBLIC_SANDBOX_URL": "https://sandbox.featbit.ai",
+    "TSDB_BASE_URL": "https://tsdb.featbit.ai"
+  },
+  "containers": [
+    {
+      "class_name": "WebContainer",
+      "image": "./Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 2
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WEB_CONTAINER",
+        "class_name": "WebContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WebContainer"]
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "featbit.ai",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.featbit.ai",
+      "custom_domain": true
+    }
+  ]
+}
