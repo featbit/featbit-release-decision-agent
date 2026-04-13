@@ -1,20 +1,24 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  // Cloudflare Workers Containers configuration for agent/web (Next.js)
+  // Deploy: npx wrangler deploy  (Docker must be running locally)
+  // Secret:  npx wrangler secret put DATABASE_URL
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "featbit-web",
-  "main": "worker/index.ts",
-  "compatibility_date": "2026-04-01",
-  "vars": {
-    "NEXT_PUBLIC_SANDBOX_URL": "https://sandbox.featbit.ai",
-    "TSDB_BASE_URL": "https://tsdb.featbit.ai"
-  },
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-13",
+  "tsconfig": "tsconfig.worker.json",
+
+  // Container definition — Next.js server runs inside Docker on Cloudflare
   "containers": [
     {
       "class_name": "WebContainer",
       "image": "./Dockerfile",
-      "instance_type": "basic",
-      "max_instances": 2
+      "max_instances": 2,
+      "instance_type": "basic"
     }
   ],
+
+  // Durable Object binding that wires the Worker to the WebContainer class
   "durable_objects": {
     "bindings": [
       {
@@ -23,17 +27,17 @@
       }
     ]
   },
+
+  // IMPORTANT: must use new_sqlite_classes (not new_classes) for Containers
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["WebContainer"]
     }
   ],
+
+  // Custom domain — www.featbit.ai must be proxied through Cloudflare
   "routes": [
-    {
-      "pattern": "featbit.ai",
-      "custom_domain": true
-    },
     {
       "pattern": "www.featbit.ai",
       "custom_domain": true

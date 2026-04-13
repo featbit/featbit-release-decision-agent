@@ -10,7 +10,7 @@ import { persistMessagesAction } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Send, Square, Bot, User, AlertCircle, WifiOff, Loader2, CheckCircle2 } from "lucide-react";
-import type { Message } from "@/generated/prisma/client";
+import type { Message } from "@/generated/prisma";
 
 /** Map persisted DB messages to the hook's ChatMessage shape */
 function toChat(msg: Message): ChatMessage {

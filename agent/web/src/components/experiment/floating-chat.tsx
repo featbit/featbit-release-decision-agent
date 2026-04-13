@@ -13,7 +13,7 @@ import {
   Minimize2,
   X,
 } from "lucide-react";
-import type { Message } from "@/generated/prisma/client";
+import type { Message } from "@/generated/prisma";
 
 type ChatSize = "collapsed" | "normal" | "large";
 

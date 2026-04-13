@@ -1,47 +1,53 @@
-# ── Build stage ──────────────────────────────────────────────────────────────
-FROM node:22-alpine AS build
+FROM node:20-alpine AS base
+
+# ── Stage 1: Install dependencies ───────────────────────────────────────────
+FROM base AS deps
+RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
-
-# NEXT_PUBLIC_ vars are baked into the JS bundle at build time.
-# Default to production sandbox URL; override via --build-arg in local/dev compose.
-ARG NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai
-ENV NEXT_PUBLIC_SANDBOX_URL=$NEXT_PUBLIC_SANDBOX_URL
-
 COPY package.json package-lock.json ./
 RUN npm ci
 
-COPY prisma/ ./prisma/
-COPY prisma.config.ts tsconfig.json next.config.ts next-env.d.ts components.json postcss.config.mjs eslint.config.mjs ./
-COPY src/ ./src/
-COPY public/ ./public/
+# ── Stage 2: Build the application ──────────────────────────────────────────
+FROM base AS builder
+RUN apk add --no-cache libc6-compat openssl
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
-# Generate Prisma client (needs DATABASE_URL at build time for schema only)
-ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+# Build-time public env vars (injected by docker-compose build args)
+ARG NEXT_PUBLIC_SANDBOX_URL
+ENV NEXT_PUBLIC_SANDBOX_URL=${NEXT_PUBLIC_SANDBOX_URL}
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Generate Prisma client for the target platform (linux-musl / Alpine)
 RUN npx prisma generate
 
 RUN npm run build
 
-# ── Runtime stage ────────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+# ── Stage 3: Production runner ───────────────────────────────────────────────
+FROM base AS runner
+RUN apk add --no-cache openssl
 WORKDIR /app
 
-# Install tsx for running seed scripts at startup
-RUN npm install -g tsx
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/.next ./.next
-COPY --from=build /app/public ./public
-COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/prisma.config.ts ./
-COPY --from=build /app/tsconfig.json ./
-COPY --from=build /app/src/generated ./src/generated
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+# Static assets and standalone server bundle
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Prisma generated client + native query engine binary
+COPY --from=builder --chown=nextjs:nodejs /app/src/generated/prisma ./src/generated/prisma
+
+USER nextjs
 
 EXPOSE 3000
 ENV PORT=3000
-ENV HOSTNAME=0.0.0.0
+ENV HOSTNAME="0.0.0.0"
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["node", "server.js"]

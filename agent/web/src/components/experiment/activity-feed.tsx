@@ -4,7 +4,7 @@ import {
   CardTitle,
   CardContent,
 } from "@/components/ui/card";
-import type { Activity } from "@/generated/prisma/client";
+import type { Activity } from "@/generated/prisma";
 
 const TYPE_ICON: Record<string, string> = {
   stage_change: "🔄",

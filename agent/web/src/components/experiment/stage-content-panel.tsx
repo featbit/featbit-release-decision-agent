@@ -18,7 +18,7 @@ import {
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
-import type { Experiment, ExperimentRun } from "@/generated/prisma/client";
+import type { Experiment, ExperimentRun } from "@/generated/prisma";
 import { FlagIntegrationHeader } from "./flag-config";
 import { ExperimentRunTrafficConfig } from "./experiment-run-traffic-config";
 import { ExperimentRunTable } from "./experiment-run-table";

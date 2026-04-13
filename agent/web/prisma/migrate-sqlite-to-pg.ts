@@ -12,15 +12,17 @@ import "dotenv/config";
 // @ts-expect-error — better-sqlite3 has no bundled types; install @types/better-sqlite3 if you need them
 import Database from "better-sqlite3";
 import path from "node:path";
-import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaClient } from "../src/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
 // ── Source: SQLite ───────────────────────────────────────────────────────────
 const dbPath = path.join(process.cwd(), "prisma", "dev.db");
 const sqlite = new Database(dbPath, { readonly: true });
 
 // ── Target: PostgreSQL ───────────────────────────────────────────────────────
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL! });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

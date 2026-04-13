@@ -16,7 +16,7 @@ import type {
   ExperimentRun,
   Activity,
   Message,
-} from "@/generated/prisma/client";
+} from "@/generated/prisma";
 
 type ExperimentWithRelations = Experiment & {
   experimentRuns: ExperimentRun[];

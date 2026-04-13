@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "src/worker.ts",
+    "open-next.config.ts",
+    "prisma/*.ts",
+    "scripts/*.ts"
+  ]
 }

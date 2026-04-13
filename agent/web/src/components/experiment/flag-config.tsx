@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Flag, Pencil, Eye, EyeOff, ExternalLink, Code, GitBranch, Plus, X } from "lucide-react";
-import type { Experiment, ExperimentRun } from "@/generated/prisma/client";
+import type { Experiment, ExperimentRun } from "@/generated/prisma";
 
 /* ── Types ── */
 type VariantRow = { key: string; description: string };

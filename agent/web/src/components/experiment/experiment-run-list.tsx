@@ -5,7 +5,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { ExperimentRun } from "@/generated/prisma/client";
+import type { ExperimentRun } from "@/generated/prisma";
 
 function parseGuardrailEvents(raw: string | null | undefined): string[] {
   if (!raw) return [];

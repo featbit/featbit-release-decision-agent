@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { AnalysisView } from "./analysis-markdown";
 import { ExperimentRunTrafficConfig } from "./experiment-run-traffic-config";
 import { useChatTrigger } from "./chat-trigger-context";
-import type { ExperimentRun } from "@/generated/prisma/client";
+import type { ExperimentRun } from "@/generated/prisma";
 
 /* ── Colour maps ── */
 
@@ -406,12 +406,13 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
     }
   }, [experimentId, exp.id]);
 
-  // Auto-trigger analysis on mount
+  // Auto-trigger analysis on mount only when no result exists yet
   useEffect(() => {
     if (hasAutoTriggered.current) return;
+    if (exp.analysisResult) return;
     hasAutoTriggered.current = true;
     runAnalysis();
-  }, [runAnalysis]);
+  }, [runAnalysis, exp.analysisResult]);
 
   if (loading) {
     return (

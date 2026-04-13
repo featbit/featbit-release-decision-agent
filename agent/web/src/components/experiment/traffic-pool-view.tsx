@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import type { ExperimentRun } from "@/generated/prisma/client";
+import type { ExperimentRun } from "@/generated/prisma";
 
 /* ── Palette ── */
 const PALETTE = [

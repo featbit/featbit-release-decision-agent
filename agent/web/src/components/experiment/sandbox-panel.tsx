@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Terminal, Play, Square, RefreshCw } from "lucide-react";
-import type { Experiment } from "@/generated/prisma/client";
+import type { Experiment } from "@/generated/prisma";
 
 const STATUS_MAP: Record<
   string,

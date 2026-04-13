@@ -76,6 +76,29 @@ agent/sandbox/.env
 !agent/sandbox/.env.example
 
 # =======
+# agent/sandbox0/ (ts)
+# =======
+agent/sandbox0/dist/
+agent/sandbox0/node_modules/
+agent/sandbox0/.pnp
+agent/sandbox0/.pnp.*
+agent/sandbox0/.yarn/*
+!agent/sandbox0/.yarn/patches
+!agent/sandbox0/.yarn/plugins
+!agent/sandbox0/.yarn/releases
+!agent/sandbox0/.yarn/versions
+agent/sandbox0/coverage/
+agent/sandbox0/.next/
+agent/sandbox0/out/
+agent/sandbox0/build/
+agent/sandbox0/.vercel/
+agent/sandbox0/next-env.d.ts
+agent/sandbox0/*.tsbuildinfo
+agent/sandbox0/.env
+!agent/sandbox0/.env.example
+agent/sandbox0/.sessions.json
+
+# =======
 # skills/experiment-workspace/scripts (Python)
 # =======
 skills/experiment-workspace/scripts/__pycache__/
@@ -87,6 +110,7 @@ skills/experiment-workspace/scripts/*.pyo
 # =======
 agent/web/prisma/dev.db
 !agent/web/prisma/dev.db.example
+agent/web/.open-next/
 
 # =======
 # featbit/FeatBit.TrackApi (.NET 10)
