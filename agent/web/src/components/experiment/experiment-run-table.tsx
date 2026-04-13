@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Beaker,
   Bot,
@@ -373,10 +373,13 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const hasAutoTriggered = useRef(false);
 
   const runAnalysis = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setWarning(null);
     try {
       const resp = await fetch(`/api/experiments/${experimentId}/analyze`, {
         method: "POST",
@@ -390,6 +393,9 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
       }
       if (data.analysisResult) {
         setAnalysisResult(data.analysisResult);
+        if (typeof data.warning === "string" && data.warning.length > 0) {
+          setWarning(data.warning);
+        }
       } else if (data.error) {
         setError(data.error);
       }
@@ -402,6 +408,8 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
 
   // Auto-trigger analysis on mount
   useEffect(() => {
+    if (hasAutoTriggered.current) return;
+    hasAutoTriggered.current = true;
     runAnalysis();
   }, [runAnalysis]);
 
@@ -442,6 +450,9 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
 
   return (
     <div className="px-4 pb-6 overflow-x-auto">
+      {warning && (
+        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{warning}</p>
+      )}
       <div className="rounded border bg-muted/20 px-3 py-2.5">
         <AnalysisView content={analysisResult} />
       </div>

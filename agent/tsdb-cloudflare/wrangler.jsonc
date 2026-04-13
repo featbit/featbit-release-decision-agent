@@ -3,6 +3,12 @@
   "name": "featbit-tsdb",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-01",
+  "vars": {
+    "TSDB_MAX_BATCH_SIZE": "10000",
+    "TSDB_FLUSH_INTERVAL_MS": "2000",
+    "TSDB_MIN_FLUSH_ROWS": "200",
+    "TSDB_MAX_BUFFER_AGE_MS": "3000"
+  },
   "r2_buckets": [
     {
       "binding": "TSDB_BUCKET",
@@ -28,5 +34,8 @@
       "pattern": "tsdb.featbit.ai",
       "custom_domain": true
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 */3 * * *"]
+  }
 }

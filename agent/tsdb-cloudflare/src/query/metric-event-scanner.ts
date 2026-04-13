@@ -19,6 +19,7 @@ import type {
   VariantStatsDto,
 } from "../models/dtos";
 import {
+  parseHeaderFromMetadata,
   parseSegment,
   overlapsTimeRange,
   readSelectedColumns,
@@ -28,21 +29,22 @@ import {
   decodeStrings,
   decodeNullableDoubles,
 } from "../storage/column-encoder";
-import { metricEventPrefixes } from "../storage/path-helper";
+import { metricEventPrefixes, metricEventPrefix, dateRange } from "../storage/path-helper";
+import { readMetricRollup, listMetricRollupDates, listMetricRawDates } from "../rollup/reader";
 
 /** Max concurrent R2 segment fetches. */
 const CONCURRENCY = 16;
 
 // ── Per-user accumulator ──────────────────────────────────────────────────────
 
-class UserAccumulator {
+export class UserAccumulator {
   hasConversion = false;
-  private firstTs = Number.MAX_SAFE_INTEGER;
-  private firstValue: number | null = null;
-  private latestTs = Number.MIN_SAFE_INTEGER;
-  private latestValue: number | null = null;
-  private sum = 0;
-  private count = 0;
+  firstTs = Number.MAX_SAFE_INTEGER;
+  firstValue: number | null = null;
+  latestTs = Number.MIN_SAFE_INTEGER;
+  latestValue: number | null = null;
+  sum = 0;
+  count = 0;
 
   addEvent(numericValue: number | null, occurredAt: number): void {
     this.hasConversion = true;
@@ -58,6 +60,30 @@ class UserAccumulator {
     }
     this.sum += numericValue;
     this.count++;
+  }
+
+  /** Merge a pre-aggregated rollup entry into this accumulator. */
+  mergeFromRollup(
+    hasConv: boolean,
+    fTs: number,
+    fVal: number | null,
+    lTs: number,
+    lVal: number | null,
+    s: number,
+    c: number,
+  ): void {
+    if (!hasConv) return;
+    this.hasConversion = true;
+    if (fTs < this.firstTs) {
+      this.firstTs = fTs;
+      this.firstValue = fVal;
+    }
+    if (lTs > this.latestTs) {
+      this.latestTs = lTs;
+      this.latestValue = lVal;
+    }
+    this.sum += s;
+    this.count += c;
   }
 
   getValue(agg: string): number | null {
@@ -102,17 +128,139 @@ export async function aggregateMetricEvents(
 ): Promise<ExperimentQueryResponse> {
   const isBinary = query.metricType === "binary";
 
-  // Enumerate all segment object keys.
+  const perUser = new Map<string, UserAccumulator>();
+
+  // Parallel discovery: which dates have rollups, which have raw data?
+  const [rollupDates, rawDates] = await Promise.all([
+    listMetricRollupDates(bucket, query.envId, query.metricEvent),
+    listMetricRawDates(bucket, query.envId, query.metricEvent),
+  ]);
+
+  if (rollupDates.size > 0 || rawDates.size > 0) {
+    // For continuous metrics, compute the set of dates where ≥1 user was
+    // first exposed. On those dates the rollup mixes pre- and post-exposure
+    // events, so we must fall back to raw scanning.
+    const exposureDates = new Set<string>();
+    if (!isBinary) {
+      for (const entry of exposureMap.values()) {
+        const d = new Date(entry.firstExposedAt).toISOString().slice(0, 10);
+        exposureDates.add(d);
+      }
+    }
+
+    const dates = dateRange(query.startDate, query.endDate);
+    const coldDates: string[] = [];
+    const hotDates: string[] = [];
+
+    for (const d of dates) {
+      const hasRollup = rollupDates.has(d);
+      const hasRaw = rawDates.has(d);
+
+      // Skip dates with no data at all.
+      if (!hasRollup && !hasRaw) continue;
+
+      const dayStartMs = Date.parse(d + "T00:00:00Z");
+      // Use rollup when it exists, query fully covers the day (1s tolerance),
+      // and (for continuous) not an exposure-overlap day.
+      if (
+        hasRollup &&
+        query.startMs <= dayStartMs &&
+        query.endMs >= dayStartMs + 86_399_000 &&
+        (isBinary || !exposureDates.has(d))
+      ) {
+        coldDates.push(d);
+      } else {
+        hotDates.push(d);
+      }
+    }
+
+    // Read only the rollups that actually exist, in parallel.
+    if (coldDates.length > 0) {
+      const rollups = await Promise.all(
+        coldDates.map((d) =>
+          readMetricRollup(bucket, query.envId, query.metricEvent, d),
+        ),
+      );
+
+      for (const rollup of rollups) {
+        if (!rollup) continue;
+
+        for (const [userKey, entry] of Object.entries(rollup.u)) {
+          const exposure = exposureMap.get(userKey);
+          if (!exposure) continue;
+
+          const [hasConv, fTs, fVal, lTs, lVal, s, c] = entry;
+
+          if (isBinary) {
+            if (lTs < exposure.firstExposedAt) continue;
+          }
+          // Continuous: all events on this date are guaranteed post-exposure
+          // (we excluded exposure-overlap dates above).
+
+          let acc = perUser.get(userKey);
+          if (!acc) {
+            acc = new UserAccumulator();
+            perUser.set(userKey, acc);
+          }
+          acc.mergeFromRollup(!!hasConv, fTs, fVal, lTs, lVal, s, c);
+        }
+      }
+    }
+
+    // Scan raw segments only for hot dates.
+    if (hotDates.length > 0) {
+      const hotPrefixes = hotDates.map((d) =>
+        metricEventPrefix(query.envId, query.metricEvent, d),
+      );
+      await scanRawIntoPerUser(
+        bucket,
+        hotPrefixes,
+        query,
+        exposureMap,
+        isBinary,
+        perUser,
+      );
+    }
+
+    return isBinary
+      ? buildBinaryResult(query, exposureMap, perUser)
+      : buildContinuousResult(query, exposureMap, perUser);
+  }
+
+  // No rollups — full raw-segment path.
   const prefixes = metricEventPrefixes(
     query.envId,
     query.metricEvent,
     query.startDate,
     query.endDate,
   );
-  const segKeys = await listSegmentKeys(bucket, prefixes);
+  await scanRawIntoPerUser(
+    bucket,
+    prefixes,
+    query,
+    exposureMap,
+    isBinary,
+    perUser,
+  );
 
-  // Parallel scan with bounded concurrency.
-  const perUser = new Map<string, UserAccumulator>();
+  return isBinary
+    ? buildBinaryResult(query, exposureMap, perUser)
+    : buildContinuousResult(query, exposureMap, perUser);
+}
+
+/**
+ * Scan raw segments for the given prefixes and merge into perUser map.
+ */
+async function scanRawIntoPerUser(
+  bucket: R2Bucket,
+  prefixes: string[],
+  query: ExperimentQuery,
+  exposureMap: ReadonlyMap<string, ExposureEntry>,
+  isBinary: boolean,
+  perUser: Map<string, UserAccumulator>,
+): Promise<void> {
+  const segKeys = await listSegmentKeys(bucket, prefixes, query);
+
   for (let i = 0; i < segKeys.length; i += CONCURRENCY) {
     const batch = segKeys.slice(i, i + CONCURRENCY);
     const locals = await Promise.all(
@@ -120,7 +268,6 @@ export async function aggregateMetricEvents(
         scanSegment(bucket, key, query, exposureMap, isBinary),
       ),
     );
-    // Merge.
     for (const local of locals) {
       for (const [userKey, acc] of local) {
         const existing = perUser.get(userKey);
@@ -132,10 +279,6 @@ export async function aggregateMetricEvents(
       }
     }
   }
-
-  return isBinary
-    ? buildBinaryResult(query, exposureMap, perUser)
-    : buildContinuousResult(query, exposureMap, perUser);
 }
 
 // ── Per-segment scan ──────────────────────────────────────────────────────────
@@ -273,6 +416,7 @@ function buildContinuousResult(
 async function listSegmentKeys(
   bucket: R2Bucket,
   prefixes: string[],
+  query: ExperimentQuery,
 ): Promise<string[]> {
   const keys: string[] = [];
   for (const prefix of prefixes) {
@@ -280,6 +424,13 @@ async function listSegmentKeys(
     do {
       const list = await bucket.list({ prefix, cursor });
       for (const obj of list.objects) {
+        const header = obj.customMetadata
+          ? parseHeaderFromMetadata(obj.customMetadata)
+          : null;
+        if (header && !overlapsTimeRange(header, query.startMs, query.endMs)) {
+          continue;
+        }
+
         keys.push(obj.key);
       }
       cursor = list.truncated ? list.cursor : undefined;

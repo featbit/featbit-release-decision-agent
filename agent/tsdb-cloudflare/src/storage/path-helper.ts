@@ -45,3 +45,21 @@ export function metricEventPrefixes(
 ): string[] {
   return dateRange(startDate, endDate).map(d => metricEventPrefix(envId, eventName, d));
 }
+
+// ── Rollup paths ──────────────────────────────────────────────────────────────
+
+export function flagEvalRollupKey(envId: string, flagKey: string, date: string): string {
+  return `rollups/flag-evals/${sanitize(envId)}/${sanitize(flagKey)}/${date}.json`;
+}
+
+export function metricEventRollupKey(envId: string, eventName: string, date: string): string {
+  return `rollups/metric-events/${sanitize(envId)}/${sanitize(eventName)}/${date}.json`;
+}
+
+export function flagEvalRollupPrefix(envId: string, flagKey: string): string {
+  return `rollups/flag-evals/${sanitize(envId)}/${sanitize(flagKey)}/`;
+}
+
+export function metricEventRollupPrefix(envId: string, eventName: string): string {
+  return `rollups/metric-events/${sanitize(envId)}/${sanitize(eventName)}/`;
+}

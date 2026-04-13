@@ -16,9 +16,10 @@ import type {
 import { audienceFilterMatches } from "../models/dtos";
 import { hashForBalance } from "../lib/hash";
 import {
-  parseSegment,
   parseHeaderFromMetadata,
+  parseSegment,
   overlapsTimeRange,
+  mightContain,
   readSelectedColumns,
 } from "../storage/segment-reader";
 import type { SegmentHeader } from "../storage/segment-format";
@@ -28,7 +29,8 @@ import {
   decodeNullableStrings,
   decodeBytes,
 } from "../storage/column-encoder";
-import { flagEvalPrefixes } from "../storage/path-helper";
+import { flagEvalPrefix, flagEvalPrefixes, dateRange } from "../storage/path-helper";
+import { readFlagEvalRollup, listFlagEvalRollupDates, listFlagEvalRawDates } from "../rollup/reader";
 
 /** Max concurrent R2 segment fetches. */
 const CONCURRENCY = 16;
@@ -39,6 +41,9 @@ const CONCURRENCY = 16;
  * Build the exposure map for an experiment query.
  * Returns user_key → ExposureEntry (first_exposed_at, variant).
  * Only control and treatment variants are included.
+ *
+ * Uses daily rollups for cold days when available, falling back to
+ * raw segment scanning for hot days and when audience filters are active.
  */
 export async function buildExposureMap(
   bucket: R2Bucket,
@@ -52,17 +57,140 @@ export async function buildExposureMap(
   const needProps =
     query.audienceFilters !== null && query.audienceFilters.length > 0;
 
-  // Enumerate all segment object keys across the date range.
+  const exposureMap = new Map<string, ExposureEntry>();
+
+  // Rollups don't contain user_props — skip tiered path when audience filters are active.
+  if (!needProps) {
+    // Parallel discovery: which dates have rollups, which have raw data?
+    const [rollupDates, rawDates] = await Promise.all([
+      listFlagEvalRollupDates(bucket, query.envId, query.flagKey),
+      listFlagEvalRawDates(bucket, query.envId, query.flagKey),
+    ]);
+
+    if (rollupDates.size > 0 || rawDates.size > 0) {
+      const dates = dateRange(query.startDate, query.endDate);
+      const coldDates: string[] = [];
+      const hotDates: string[] = [];
+
+      for (const d of dates) {
+        const hasRollup = rollupDates.has(d);
+        const hasRaw = rawDates.has(d);
+
+        // Skip dates with no data at all.
+        if (!hasRollup && !hasRaw) continue;
+
+        const dayStartMs = Date.parse(d + "T00:00:00Z");
+        // Use rollup when it exists and the query fully covers the day.
+        // 1-second tolerance for common "23:59:59" end-of-day convention.
+        if (
+          hasRollup &&
+          query.startMs <= dayStartMs &&
+          query.endMs >= dayStartMs + 86_399_000
+        ) {
+          coldDates.push(d);
+        } else {
+          hotDates.push(d);
+        }
+      }
+
+      // Read only the rollups that actually exist, in parallel.
+      if (coldDates.length > 0) {
+        const rollups = await Promise.all(
+          coldDates.map((d) =>
+            readFlagEvalRollup(bucket, query.envId, query.flagKey, d),
+          ),
+        );
+
+        for (const rollup of rollups) {
+          if (!rollup) continue;
+          for (const [userKey, entry] of Object.entries(rollup.u)) {
+            const [ts, variant, expId, layerId, hashBucket] = entry;
+
+            if (ts < query.startMs || ts > query.endMs) continue;
+            if (!validVariants.has(variant)) continue;
+            if (needExperimentId && expId !== query.experimentId) continue;
+            if (needLayerId && layerId !== query.layerId) continue;
+            if (
+              needBucket &&
+              (hashBucket < query.trafficOffset ||
+                hashBucket >= query.trafficOffset + query.trafficPercent)
+            )
+              continue;
+
+            const existing = exposureMap.get(userKey);
+            if (!existing || ts < existing.firstExposedAt) {
+              exposureMap.set(userKey, { firstExposedAt: ts, variant });
+            }
+          }
+        }
+      }
+
+      // Scan raw segments only for hot dates.
+      if (hotDates.length > 0) {
+        const hotPrefixes = hotDates.map((d) =>
+          flagEvalPrefix(query.envId, query.flagKey, d),
+        );
+        await scanRawIntoExposureMap(
+          bucket,
+          hotPrefixes,
+          query,
+          validVariants,
+          needExperimentId,
+          needLayerId,
+          needBucket,
+          needProps,
+          exposureMap,
+        );
+      }
+
+      return exposureMap;
+    }
+  }
+
+  // No rollups available or audience filters active — full raw-segment path.
   const prefixes = flagEvalPrefixes(
     query.envId,
     query.flagKey,
     query.startDate,
     query.endDate,
   );
-  const segKeys = await listSegmentKeys(bucket, prefixes);
+  await scanRawIntoExposureMap(
+    bucket,
+    prefixes,
+    query,
+    validVariants,
+    needExperimentId,
+    needLayerId,
+    needBucket,
+    needProps,
+    exposureMap,
+  );
 
-  // Parallel scan with bounded concurrency.
-  const exposureMap = new Map<string, ExposureEntry>();
+  return exposureMap;
+}
+
+/**
+ * Scan raw segments for the given prefixes and merge into the exposure map.
+ */
+async function scanRawIntoExposureMap(
+  bucket: R2Bucket,
+  prefixes: string[],
+  query: ExperimentQuery,
+  validVariants: Set<string>,
+  needExperimentId: boolean,
+  needLayerId: boolean,
+  needBucket: boolean,
+  needProps: boolean,
+  exposureMap: Map<string, ExposureEntry>,
+): Promise<void> {
+  const segKeys = await listSegmentKeys(
+    bucket,
+    prefixes,
+    query,
+    validVariants,
+    needExperimentId,
+  );
+
   for (let i = 0; i < segKeys.length; i += CONCURRENCY) {
     const batch = segKeys.slice(i, i + CONCURRENCY);
     const locals = await Promise.all(
@@ -79,7 +207,6 @@ export async function buildExposureMap(
         ),
       ),
     );
-    // Merge batch results into shared map.
     for (const local of locals) {
       for (const [userKey, entry] of local) {
         const existing = exposureMap.get(userKey);
@@ -89,8 +216,6 @@ export async function buildExposureMap(
       }
     }
   }
-
-  return exposureMap;
 }
 
 /**
@@ -238,6 +363,9 @@ async function scanSegment(
 async function listSegmentKeys(
   bucket: R2Bucket,
   prefixes: string[],
+  query: ExperimentQuery,
+  validVariants: ReadonlySet<string>,
+  needExperimentId: boolean,
 ): Promise<string[]> {
   const keys: string[] = [];
   for (const prefix of prefixes) {
@@ -245,6 +373,36 @@ async function listSegmentKeys(
     do {
       const list = await bucket.list({ prefix, cursor });
       for (const obj of list.objects) {
+        const header = obj.customMetadata
+          ? parseHeaderFromMetadata(obj.customMetadata)
+          : null;
+
+        if (header && !overlapsTimeRange(header, query.startMs, query.endMs)) {
+          continue;
+        }
+
+        if (header) {
+          let variantMatch = false;
+          for (const variant of validVariants) {
+            if (mightContain(header, "variant", variant)) {
+              variantMatch = true;
+              break;
+            }
+          }
+
+          if (!variantMatch) {
+            continue;
+          }
+
+          if (
+            needExperimentId &&
+            query.experimentId !== null &&
+            !mightContain(header, "experiment_id", query.experimentId)
+          ) {
+            continue;
+          }
+        }
+
         keys.push(obj.key);
       }
       cursor = list.truncated ? list.cursor : undefined;

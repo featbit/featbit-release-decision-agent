@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { updateExperimentRun } from "@/lib/data";
 import { runAnalysis } from "@/lib/stats/analyze";
 import { runBanditAnalysis } from "@/lib/stats/bandit";
-import { collectMetric } from "@/lib/stats/tsdb-client";
+import { collectManyMetrics, collectMetric } from "@/lib/stats/tsdb-client";
 import type { MetricSummary } from "@/lib/stats/types";
 
 export async function POST(
@@ -54,6 +54,7 @@ export async function POST(
   }
 
   const controlVariant = run.controlVariant ?? "false";
+  const primaryMetricEvent = run.primaryMetricEvent;
   const treatments = (run.treatmentVariant ?? "true")
     .split(",")
     .map((x) => x.trim())
@@ -64,11 +65,24 @@ export async function POST(
   const end = run.observationEnd?.toISOString() ?? now.toISOString();
   const method = run.method ?? "bayesian_ab";
 
-  // ── Step 1: Collect primary metric from TSDB ──
-  const primarySummary = await collectMetric({
+  let guardrailEventNames: string[] = [];
+  if (run.guardrailEvents && method !== "bandit") {
+    try {
+      const parsed = JSON.parse(run.guardrailEvents);
+      if (Array.isArray(parsed)) {
+        guardrailEventNames = parsed.filter(
+          (value): value is string => typeof value === "string" && value.length > 0,
+        );
+      }
+    } catch {
+      // ignore malformed JSON
+    }
+  }
+
+  const sharedQueryParams = {
     envId,
     flagKey,
-    metricEvent: run.primaryMetricEvent,
+    metricEvent: primaryMetricEvent,
     metricType: run.primaryMetricType ?? "binary",
     metricAgg: run.primaryMetricAgg ?? "once",
     controlVariant,
@@ -81,12 +95,32 @@ export async function POST(
     trafficOffset: run.trafficOffset ?? undefined,
     audienceFilters: run.audienceFilters ?? undefined,
     method,
-  });
+  };
+
+  // ── Step 1: Collect primary metric and guardrails from TSDB ──
+  const batchSummaries = method !== "bandit"
+    ? await collectManyMetrics({
+        ...sharedQueryParams,
+        guardrailEvents: guardrailEventNames,
+      })
+    : null;
+
+  const primarySummary = batchSummaries?.[primaryMetricEvent]
+    ?? await collectMetric(sharedQueryParams);
 
   if (!primarySummary) {
+    if (run.inputData && run.analysisResult) {
+      return NextResponse.json({
+        inputData: run.inputData,
+        analysisResult: run.analysisResult,
+        stale: true,
+        warning: "TSDB is temporarily unavailable, showing the last successful analysis.",
+      });
+    }
+
     return NextResponse.json(
       { error: "No data returned from TSDB" },
-      { status: 502 }
+      { status: 503 }
     );
   }
 
@@ -99,40 +133,29 @@ export async function POST(
     });
   }
 
-  // ── Step 2: Collect guardrail metrics (Bayesian only) ──
-  let guardrailEventNames: string[] = [];
-  if (run.guardrailEvents && method !== "bandit") {
-    try {
-      const parsed = JSON.parse(run.guardrailEvents);
-      if (Array.isArray(parsed)) guardrailEventNames = parsed;
-    } catch { /* ignore malformed JSON */ }
-  }
-
   const guardrailSummaries: Record<string, MetricSummary> = {};
   for (const gEvent of guardrailEventNames) {
-    const gs = await collectMetric({
-      envId,
-      flagKey,
+    const summary = batchSummaries?.[gEvent];
+    if (summary) {
+      guardrailSummaries[gEvent] = summary;
+      continue;
+    }
+
+    const fallbackSummary = await collectMetric({
+      ...sharedQueryParams,
       metricEvent: gEvent,
       metricType: "binary",
       metricAgg: "once",
-      controlVariant,
-      treatmentVariant,
-      start,
-      end,
-      experimentId: run.id,
-      layerId: run.layerId ?? undefined,
-      trafficPercent: run.trafficPercent ?? undefined,
-      trafficOffset: run.trafficOffset ?? undefined,
-      audienceFilters: run.audienceFilters ?? undefined,
-      method,
     });
-    if (gs) guardrailSummaries[gEvent] = gs;
+
+    if (fallbackSummary) {
+      guardrailSummaries[gEvent] = fallbackSummary;
+    }
   }
 
   // ── Step 3: Build metrics map ──
   const metrics: Record<string, Record<string, unknown>> = {
-    [run.primaryMetricEvent]: {
+    [primaryMetricEvent]: {
       [controlVariant]: primarySummary.control,
       [treatmentVariant]: primarySummary.treatment,
     },
@@ -140,26 +163,33 @@ export async function POST(
 
   // For bandit mode we support multi-arm by querying each treatment arm.
   if (method === "bandit" && treatments.length > 1) {
-    for (const arm of treatments.slice(1)) {
-      const extra = await collectMetric({
-        envId,
-        flagKey,
-        metricEvent: run.primaryMetricEvent,
-        metricType: run.primaryMetricType ?? "binary",
-        metricAgg: run.primaryMetricAgg ?? "once",
-        controlVariant,
-        treatmentVariant: arm,
-        start,
-        end,
-        experimentId: run.id,
-        layerId: run.layerId ?? undefined,
-        trafficPercent: run.trafficPercent ?? undefined,
-        trafficOffset: run.trafficOffset ?? undefined,
-        audienceFilters: run.audienceFilters ?? undefined,
-        method,
-      });
-      if (extra) {
-        metrics[run.primaryMetricEvent][arm] = extra.treatment;
+    const extraArmEntries = await Promise.all(
+      treatments.slice(1).map(async (arm) => {
+        const extra = await collectMetric({
+          envId,
+          flagKey,
+          metricEvent: primaryMetricEvent,
+          metricType: run.primaryMetricType ?? "binary",
+          metricAgg: run.primaryMetricAgg ?? "once",
+          controlVariant,
+          treatmentVariant: arm,
+          start,
+          end,
+          experimentId: experiment.id,
+          layerId: run.layerId ?? undefined,
+          trafficPercent: run.trafficPercent ?? undefined,
+          trafficOffset: run.trafficOffset ?? undefined,
+          audienceFilters: run.audienceFilters ?? undefined,
+          method,
+        });
+        return extra ? ([arm, extra] as const) : null;
+      }),
+    );
+
+    for (const entry of extraArmEntries) {
+      if (entry) {
+        const [arm, extra] = entry;
+        metrics[primaryMetricEvent][arm] = extra.treatment;
       }
     }
   }
@@ -177,7 +207,7 @@ export async function POST(
   const analysisResult = method === "bandit"
     ? runBanditAnalysis({
         slug: run.slug ?? "on-demand",
-        metricEvent: run.primaryMetricEvent,
+        metricEvent: primaryMetricEvent,
         metrics,
         control: controlVariant,
         treatments,

@@ -51,10 +51,16 @@ export interface ExperimentQueryRequest {
   method?: string; // bayesian_ab | bandit
 }
 
+export interface ExperimentManyQueryRequest extends ExperimentQueryRequest {
+  guardrailEvents?: string[];
+}
+
 export interface ExperimentQueryResponse {
   metricType: string;
   variants: Record<string, VariantStatsDto>;
 }
+
+export type ExperimentManyQueryResponse = Record<string, ExperimentQueryResponse>;
 
 export interface VariantStatsDto {
   n: number;

@@ -100,6 +100,8 @@ export interface TsdbQueryResponse {
   variants: Record<string, TsdbVariantStats>;
 }
 
+export type TsdbManyQueryResponse = Record<string, TsdbQueryResponse>;
+
 export interface TsdbVariantStats {
   n: number;
   k?: number;

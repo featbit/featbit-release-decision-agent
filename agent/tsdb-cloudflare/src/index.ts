@@ -9,8 +9,10 @@
 
 import type { Env } from "./env";
 import { handleTrack } from "./endpoints/track";
-import { handleQuery } from "./endpoints/query";
+import { handleQuery, handleQueryMany } from "./endpoints/query";
 import { handleStats } from "./endpoints/stats";
+import { handleCompact } from "./endpoints/compact";
+import { handleScheduled } from "./scheduled/handler";
 
 // Re-export the Durable Object class so wrangler can bind it.
 export { PartitionWriterDO } from "./durable-objects/partition-writer";
@@ -28,10 +30,22 @@ export default {
       return handleQuery(request, env);
     }
 
+    if (pathname === "/api/query/experiment-many" && request.method === "POST") {
+      return handleQueryMany(request, env);
+    }
+
     if (pathname === "/api/stats" && request.method === "GET") {
       return handleStats(request, env);
     }
 
+    if (pathname === "/api/compact" && request.method === "POST") {
+      return handleCompact(request, env);
+    }
+
     return new Response("Not Found", { status: 404 });
+  },
+
+  async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext) {
+    await handleScheduled(env);
   },
 } satisfies ExportedHandler<Env>;
