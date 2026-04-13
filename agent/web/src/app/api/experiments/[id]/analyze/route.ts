@@ -12,7 +12,7 @@ export async function POST(
 ) {
   const { id: experimentId } = await params;
   const body = await req.json();
-  const { runId } = body as { runId?: string };
+  const { runId, forceFresh } = body as { runId?: string; forceFresh?: boolean };
 
   if (!runId) {
     return NextResponse.json(
@@ -109,6 +109,13 @@ export async function POST(
     ?? await collectMetric(sharedQueryParams);
 
   if (!primarySummary) {
+    if (forceFresh) {
+      return NextResponse.json(
+        { error: "Failed to fetch fresh data from TSDB. Please retry in a few seconds." },
+        { status: 503 }
+      );
+    }
+
     if (run.inputData && run.analysisResult) {
       return NextResponse.json({
         inputData: run.inputData,

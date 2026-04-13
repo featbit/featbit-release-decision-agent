@@ -26,7 +26,11 @@ export async function handleQuery(
   const query = buildExperimentQuery(body);
   const result = await queryExperiment(env.TSDB_BUCKET, query);
 
-  return Response.json(result);
+  return Response.json(result, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
 }
 
 export async function handleQueryMany(
@@ -46,5 +50,9 @@ export async function handleQueryMany(
     body.guardrailEvents?.filter(Boolean),
   );
 
-  return Response.json(result);
+  return Response.json(result, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+    },
+  });
 }

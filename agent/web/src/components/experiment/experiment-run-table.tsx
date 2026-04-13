@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Loader2,
   MessageCircle,
+  RefreshCw,
   ShieldCheck,
   Target,
   TrendingUp,
@@ -376,7 +377,13 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
   const [warning, setWarning] = useState<string | null>(null);
   const hasAutoTriggered = useRef(false);
 
-  const runAnalysis = useCallback(async () => {
+  useEffect(() => {
+    setAnalysisResult(exp.analysisResult ?? null);
+    setError(null);
+    setWarning(null);
+  }, [exp.id, exp.analysisResult]);
+
+  const runAnalysis = useCallback(async (forceFresh = false) => {
     setLoading(true);
     setError(null);
     setWarning(null);
@@ -384,7 +391,7 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
       const resp = await fetch(`/api/experiments/${experimentId}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ runId: exp.id }),
+        body: JSON.stringify({ runId: exp.id, forceFresh }),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -411,7 +418,7 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
     if (hasAutoTriggered.current) return;
     if (exp.analysisResult) return;
     hasAutoTriggered.current = true;
-    runAnalysis();
+    runAnalysis(true);
   }, [runAnalysis, exp.analysisResult]);
 
   if (loading) {
@@ -431,7 +438,7 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
         <p className="text-xs text-destructive">{error}</p>
         <button
           className="text-xs text-blue-600 dark:text-blue-400 underline"
-          onClick={runAnalysis}
+          onClick={() => runAnalysis(true)}
         >
           Retry
         </button>
@@ -441,16 +448,36 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
 
   if (!analysisResult) {
     return (
-      <div className="px-4 pb-6 pt-2">
-        <p className="text-xs text-muted-foreground/60">
-          No analysis available yet.
-        </p>
+      <div className="px-4 pb-6 pt-2 space-y-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-[11px] px-2.5 gap-1"
+          onClick={() => runAnalysis(true)}
+          disabled={loading}
+        >
+          <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
+          Refresh Latest Analysis
+        </Button>
+        <p className="text-xs text-muted-foreground/60">No analysis available yet.</p>
       </div>
     );
   }
 
   return (
     <div className="px-4 pb-6 overflow-x-auto">
+      <div className="mb-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-[11px] px-2.5 gap-1"
+          onClick={() => runAnalysis(true)}
+          disabled={loading}
+        >
+          <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
+          Refresh Latest Analysis
+        </Button>
+      </div>
       {warning && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{warning}</p>
       )}

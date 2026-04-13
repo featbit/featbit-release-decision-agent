@@ -1,267 +1,516 @@
-# AGENTS.md — FeatBit Release Decision Agent
+# AGENTS.md — FeatBit Release Decision Services
 
-> Coding-agent reference. Read this before touching any service.
-> For the full product narrative see README.md.
-
----
-
-## Repository at a Glance
-
-A mono-repo that delivers an end-to-end product-experimentation system built on the loop:
-
-```
-intent → hypothesis → implementation → exposure → measurement → decision → learning
-```
-
-Four runtime services collaborate at runtime:
-
-| Service | Language | Role |
-|---|---|---|
-| `agent/web` | TypeScript / Next.js 16 | Web UI + REST API + Prisma ORM |
-| `agent/data` | C# / .NET 10 | Event ingest + Bayesian analysis worker |
-| `agent/simulator` | C# / .NET 10 | Synthetic traffic generator (dev/test) |
-| `agent/sandbox` | TypeScript / Node.js | SSE bridge for the Claude Agent SDK |
-
-One shared database: **PostgreSQL** (single instance, two logical schemas — Prisma tables + raw event tables).
+> Deployment and operation guide for three production services.
 
 ---
 
-## Service Map
+## 🏗️ Three-Service Architecture
 
-### `agent/web` — Next.js Web App
+```
+┌─────────────────────┐
+│   agent/web         │  Next.js + Prisma
+│   Cloudflare        │  Dashboard + REST API
+│   Containers        │  Analysis compute
+└──────────┬──────────┘
+           ↑ queries/results
+           ↓
+┌─────────────────────────────────────────┐           ┌──────────────────┐
+│  agent/tsdb-cloudflare                  │           │   agent/sandbox  │
+│  Cloudflare Workers                     │←────────→ │  Claude SDK      │
+│  - /api/track (ingest)                  │           │  Node.js SSE     │
+│  - /api/query (metrics)                 │           │  Worker          │
+│  - /api/stats (R2 info)                 │           │  [Optional]      │
+│  - Cron: compact + analyze (every 3h)   │           └──────────────────┘
+│  - R2 storage (segments + rollups)      │
+└─────────────────────────────────────────┘
+```
 
-**Port:** 3000  
-**Purpose:** The primary user-facing application. Serves the experiment dashboard and exposes the HTTP API consumed by agent skills.
+---
 
-**Key internals:**
+## 1️⃣ agent/web — Next.js Dashboard & API
+
+**Language**: TypeScript (Next.js 16)  
+**Platform**: Cloudflare Containers  
+**Port** (local): 3000  
+**URL** (production): `https://www.featbit.ai`
+
+### Responsibilities
+
+- **UI**: Experiment dashboard, workflow wizard (CF-01 through CF-08)
+- **REST API**: Experiment CRUD, project state, activity log
+- **Analysis Engine**: Bayesian A/B, Bandit analysis (in-process TypeScript)
+- **Database**: PostgreSQL (Prisma ORM)
+
+### Key Files
 
 ```
 src/
-  app/
-    (dashboard)/        ← dashboard pages (experiments list, project overview)
-    (project)/          ← per-project pages (intent, hypothesis, metrics, results)
-    api/
-      projects/[id]/    ← REST: project CRUD, state, stage, activity, experiment
-      experiments/      ← REST: experiment list, running experiments health-check
-  components/
-    ui/                 ← shadcn/ui primitives only — do NOT create custom equivalents
-  hooks/                ← custom React hooks
-  lib/                  ← utilities, API clients, shared types
-  generated/prisma/     ← Prisma client (auto-generated — never hand-edit)
-prisma/
-  schema.prisma         ← canonical data model (Project, Experiment, Activity, Message)
-  migrations/           ← applied migration history
-  seed.ts               ← dev seed data
+├─ app/
+│  ├─ (dashboard)/experiments/          ← Experiments list
+│  ├─ (project)/experiments/[id]/       ← Experiment detail + workflow stages
+│  └─ api/
+│     ├─ experiments/[id]/analyze/route.ts   ← Analysis orchestrator
+│     ├─ experiments/[id]/state/route.ts     ← Experiment state CRUD
+│     ├─ experiments/running/route.ts        ← Running experiments list (for cron)
+│     └─ (other CRUD endpoints)
+├─ lib/
+│  ├─ stats/
+│  │  ├─ analyze.ts          ← Bayesian A/B orchestrator
+│  │  ├─ bandit.ts           ← Thompson sampling
+│  │  ├─ bayesian.ts         ← Bayesian math (Beta-Binomial, Normal)
+│  │  ├─ tsdb-client.ts      ← TSDB HTTP client (metrics collection)
+│  │  └─ types.ts            ← Metric types
+│  ├─ prisma.ts              ← Prisma client singleton
+│  ├─ data.ts                ← Experiment queries + mutations
+│  └─ actions.ts             ← Server actions (revalidatePath calls)
+└─ components/experiment/     ← UI components
+   ├─ experiment-run-table.tsx   ← Experiment runs + analysis drawer
+   ├─ analysis-markdown.tsx      ← Renders analysis JSON
+   └─ (stage-specific components)
 ```
 
-**Data model highlights (schema.prisma):**
-- `Project` — top-level container; holds stage (`intent` → `hypothesis` → `implementing` → `measuring` → `learning`), decision state fields (`goal`, `hypothesis`, `primaryMetric`, `lastLearning`, etc.), and FeatBit flag config.
-- `Experiment` — one A/B run inside a project; stores variant config, traffic allocation, Bayesian priors, and analysis results.
-- `Activity` — append-only audit log per project (each agent step appends an entry).
-- `Message` — chat message log per project.
+### Database Schema (Prisma)
 
-**Critical rules:**
-- Next.js 16 App Router — read `node_modules/next/dist/docs/` before writing routing or data-fetching code.
-- Server Components by default; `"use client"` only for browser APIs / state / event handlers.
-- Import alias: `@/*` → `src/`.
-- Prisma client is in `src/generated/prisma` — import from there, not from `@prisma/client`.
-- Database URL comes from `DATABASE_URL` env var; defined in `prisma.config.ts`.
+**Core entities**:
+- `Project` — top-level container (stage, goal, hypothesis, etc.)
+- `Experiment` — parent of runs (flags, metrics definition)
+- `ExperimentRun` — individual A/B test instance (variants, observation window, results)
+- `Activity` — append-only audit log per project
+- `Message` — chat history per project
 
----
+### Analysis Orchestration
 
-### `agent/data` — .NET Data Server
+**Flow** (`POST /api/experiments/{id}/analyze`):
+1. Accept `runId` + optional `forceFresh`
+2. Fetch metrics from TSDB: `collectMetric()` or `collectManyMetrics()`
+   - `metricEvent`: primary metric
+   - `guardrailEvents`: array of guardrail metric names
+3. Run `runAnalysis()` or `runBanditAnalysis()` in-process
+   - Computes Bayesian posterior, credible intervals, P(win), verdicts
+4. Store `inputData` + `analysisResult` in `ExperimentRun`
+5. Return JSON (can have `stale: true` if TSDB unavailable + DB fallback exists)
 
-**Port:** 5058  
-**Purpose:** Receives raw telemetry (flag evaluations and metric events) via HTTP, buffers through in-memory channels, batch-writes to PostgreSQL, and runs a periodic Bayesian analysis worker.
+**If `forceFresh=true`**: Reject with 503 if TSDB unavailable (no fallback to stale DB result).
 
-**Key internals:**
+### Environment Variables
 
-```
-Endpoints/
-  TrackEndpoints.cs       ← POST /api/track  (flag evals + metric events)
-Services/
-  EventChannel.cs         ← System.Threading.Channels bus (no Redis/Kafka dependency)
-  FlagEvalConsumer.cs     ← background: drains flag-eval channel → PG COPY
-  MetricEventConsumer.cs  ← background: drains metric channel → PG COPY
-  MetricCollector.cs      ← queries aggregated metrics from PG for experiments
-  ExperimentWorker.cs     ← timed loop: fetches running experiments from web API,
-                             invokes PythonAnalyzer, POSTs results back to web API
-  PythonAnalyzer.cs       ← spawns python3 with analyze-bayesian.py
-  EnvAuth.cs              ← validates Authorization header = env secret
-Scripts/
-  analyze-bayesian.py     ← Bayesian A/B analysis (Beta-Binomial or Normal)
-  stats_utils.py          ← HDI, ROPE, probability-of-being-best helpers
-  db_client.py            ← reads raw events from PG for the Python script
-  init-db.sql             ← DDL for event tables (flag_evaluations, metric_events)
-```
+| Variable | Type | Required | Example |
+|---|---|---|---|
+| `DATABASE_URL` | Secret | Yes | `postgresql://user:pass@host:5432/release_decision` |
+| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | No | `http://localhost:3100` |
+| `TSDB_BASE_URL` | Code default | No | Defaults to `https://tsdb.featbit.ai` |
 
-**Data flow:**
-```
-POST /api/track
-  → EnvAuth validates secret
-  → payload routed to EventChannel (flag_eval | metric_event)
-  → FlagEvalConsumer / MetricEventConsumer batch-flush to PG
+### Deployment (Cloudflare Containers)
 
-ExperimentWorker (every N seconds)
-  → GET web:3000/api/experiments/running
-  → MetricCollector aggregates raw events from PG
-  → PythonAnalyzer runs analyze-bayesian.py
-  → POST web:3000/api/experiments/{id}/result
-```
-
-**Critical rules:**
-- `EventChannel` is the only message bus — no Redis, no Kafka.
-- `ExperimentWorker__ApiBaseUrl` env var must point to the web service.
-- Python 3 must be available in the container (`python3` by default; override via `ExperimentWorker__PythonPath`).
-- Event tables are **not** in the Prisma schema — they are created by `init-db.sql` / `docker/init-events.sql`.
-
----
-
-### `agent/simulator` — Traffic Simulator
-
-**Purpose:** Sends synthetic flag evaluations and metric events to the data server at a configurable rate and conversion split. Used for local development and E2E testing — not deployed in production.
-
-**Key behaviour:**
-- Runs a continuous loop: generate N users per batch, assign each to control/treatment, fire a flag-eval event, then probabilistically fire a metric event (conversion).
-- All parameters set via env vars: `TRACK_API_URL`, `FLAG_KEY`, `BATCH_SIZE`, `BATCH_DELAY_MS`, `CONTROL_CONV_RATE`, `TREATMENT_CONV_RATE`.
-- Stopped by Ctrl+C / SIGTERM (clean cancellation via `CancellationTokenSource`).
-
----
-
-### `agent/sandbox` — Claude Code Agent Bridge
-
-**Purpose:** A TypeScript Express server that hosts a **Claude Code** agent and exposes it over SSE. The agent is powered by `@anthropic-ai/claude-agent-sdk` with `systemPrompt: { preset: "claude_code" }` — meaning Claude Code is the runtime, not a generic chat model.
-
-**Agent entry point:**  
-Every new session sends the slash command `/featbit-release-decision <projectId> <accessToken>` as its first prompt. The SDK resolves that to the `featbit-release-decision` SKILL.md registered in `~/.claude/skills/`, which is the hub skill that routes all subsequent turns to satellite skills in `skills/`.
-
-**Session continuity:**  
-Each project gets a stable UUID (`projectIdToSessionId`). Resumed sessions skip the slash command and pass the user prompt through directly, preserving Claude Code's conversation memory across HTTP requests.
-
-```
-src/
-  server.ts       ← Express + SSE endpoint
-  agent.ts        ← claude-agent-sdk query runner; allowed tools: Bash, Read, Write,
-                    Edit, Glob, Grep, WebFetch, WebSearch, Skill
-  prompt.ts       ← builds effective prompt: slash command (new) or passthrough (resume)
-  session-id.ts   ← projectId → UUID mapping + known-session registry
-data/             ← local JSON files readable by agent scripts
-scripts/          ← standalone .ts scripts runnable with `tsx`
-```
-
-**Skill wiring:**  
-`skills/featbit-release-decision/SKILL.md` is the hub. All other skills under `skills/` are satellite skills invoked by the hub based on current project stage (CF-01 … CF-08).
-
-**Critical rules:**
-- All source files use ES module syntax (`import`/`export`) — no `require`.
-- Credentials via env vars only — never hard-code secrets.
-- Scripts in `scripts/` are plain `.ts` files; run with `npx tsx scripts/<file>.ts`.
-
----
-
-## Skills Directory (`skills/`)
-
-Agent skill definitions (Markdown). Each sub-folder is one skill loaded by VS Code Copilot / Claude.
-
-| Skill | Trigger (CF) | What it does |
-|---|---|---|
-| `featbit-release-decision` | hub | Entry point; routes to all satellite skills based on user intent and current stage |
-| `intent-shaping` | CF-01 | Clarifies vague goals into measurable outcomes |
-| `hypothesis-design` | CF-02 | Converts goal into falsifiable causal hypothesis |
-| `reversible-exposure-control` | CF-03/04 | Designs feature flag + rollout strategy |
-| `measurement-design` | CF-05 | Defines primary metric, guardrails, event schema |
-| `experiment-workspace` | CF-05+ | Creates and manages experiment records; runs stats |
-| `evidence-analysis` | CF-06/07 | Interprets collected data → CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE |
-| `learning-capture` | CF-08 | Captures structured learning at cycle end |
-| `project-sync` | all | CLI (`scripts/sync.ts`) that persists state to web DB via HTTP |
-
-**project-sync contract:**
-```
-npx tsx scripts/sync.ts <command> [args]
-```
-Commands: `get-project`, `update-state`, `set-stage`, `add-activity`, `upsert-experiment`.  
-All paths are relative to the `skills/project-sync/` root.  
-Transport: HTTP → `agent/web` API → Prisma → PostgreSQL.
-
----
-
-## Infrastructure
-
-### `docker-compose.yml`
-
-Brings up the full stack for local development and E2E testing:
-
-```
-postgres   (port 5433 host → 5432 container) — shared DB
-web        (port 3000) — depends on postgres:healthy
-data       (port 5058) — depends on web:healthy
-simulator  (no exposed port) — depends on data:healthy
-```
-
-Start everything:
 ```bash
-docker compose up --build
-# open http://localhost:3000
+cd agent/web
+
+# Set PostgreSQL connection secret
+npx wrangler secret put DATABASE_URL
+
+# Deploy
+npx wrangler deploy
 ```
 
-### `docker/init-events.sql`
+**Result**: Custom domain `https://www.featbit.ai` routes through Cloudflare to Next.js container.
 
-DDL executed at container startup to create the raw event tables (`flag_evaluations`, `metric_events`) inside the shared `release_decision` database. This is **not** managed by Prisma migrations.
+### Caching
 
----
-
-## Database Layout
-
-Single PostgreSQL instance, single database `release_decision`.
-
-| Tables | Managed by | Purpose |
-|---|---|---|
-| `project`, `experiment`, `activity`, `message` | Prisma migrations | Application state, agent decision state |
-| `flag_evaluations`, `metric_events` | `docker/init-events.sql` | Raw telemetry written by data server |
-
-Connection string pattern: `postgresql://postgres:postgres@<host>:5432/release_decision`
+- No HTTP caching on `/api/experiments/{id}/analyze`
+- Page-level revalidation via `revalidatePath()` after state changes
+- Prisma client configured for PostgreSQL connection pooling
 
 ---
 
-## Environment Variables Cheat Sheet
+## 2️⃣ agent/tsdb-cloudflare — Time-Series Data & Cron
 
-### `agent/web`
-| Var | Default | Notes |
-|---|---|---|
-| `DATABASE_URL` | — | Required; Prisma connection string |
+**Language**: TypeScript  
+**Platform**: Cloudflare Workers + R2  
+**URL** (production): `https://tsdb.featbit.ai`
 
-### `agent/data`
-| Var | Default | Notes |
-|---|---|---|
-| `ConnectionStrings__EventStore` | `Host=localhost;Port=5432;Database=...` | Npgsql connection string |
-| `ExperimentWorker__IntervalSeconds` | `10` | Analysis loop cadence |
-| `ExperimentWorker__ApiBaseUrl` | `http://web:3000` | Web service base URL |
-| `ExperimentWorker__PythonPath` | `python3` | Python executable |
+### Responsibilities
 
-### `agent/simulator`
-| Var | Default | Notes |
-|---|---|---|
-| `TRACK_API_URL` | `http://localhost:5058/api/track` | Data server endpoint |
-| `ENV_SECRET` | `sim-env-001` | Must match data server env config |
-| `FLAG_KEY` | `onboarding-checklist` | Feature flag being simulated |
-| `CONTROL_CONV_RATE` | `0.32` | Conversion probability for control variant |
-| `TREATMENT_CONV_RATE` | `0.45` | Conversion probability for treatment variant |
-| `BATCH_SIZE` | `5` | Users per batch |
-| `BATCH_DELAY_MS` | `3000` | Delay between batches (ms) |
+- **Data Ingestion**: `POST /api/track` → buffers → PartitionWriter DO → R2
+- **Metric Queries**: `POST /api/query/experiment` → scans R2 segments → aggregate statistics
+- **Storage Optimization**: Cron job (every 3h) compacts raw segments into daily rollups
+- **Experiment Analysis**: Cron job (every 3h) fetches running experiments, triggers analysis
+
+### Architecture
+
+**Event Flow**:
+```
+POST /api/track (event payload)
+  ↓
+Worker (track.ts)
+  ├─ Group by partition: (table, envId, key, date)
+  └─ Dispatch to PartitionWriter DO
+       ↓
+PartitionWriter DO (durable-objects/partition-writer.ts)
+  ├─ Buffer records in memory
+  ├─ Flush on: size threshold OR time threshold
+  └─ Write compressed segment to R2
+       ↓
+R2 Bucket: featbit-tsdb/
+  ├─ flag-evals/{envId}/{flagKey}/{date}/seg-00000001.bin
+  ├─ flag-evals/{envId}/{flagKey}/{date}/seg-00000002.bin
+  ├─ metric-events/{envId}/{eventName}/{date}/seg-*.bin
+  └─ (daily) rollups/flag-evals/{envId}/{flagKey}/{date}.bin
+```
+
+**Query Flow**:
+```
+POST /api/query/experiment
+  ↓
+Worker (query.ts)
+  └─ Call queryExperiment(bucket, query)
+       ↓
+ExperimentEngine (query/experiment-engine.ts)
+  ├─ Step 1: Build exposure map
+  │    └─ flagEvalScanner: read flag-evals → filter by time/experiment_id/layer_id/audience
+  ├─ Step 2: Balance variants (bayesian_ab only)
+  ├─ Step 3: Aggregate metrics
+  │    └─ metricEventScanner: read metric-events → join on exposure map
+  └─ Return: VariantStats[] (n, k/mean, variance)
+       ↓
+Response JSON (Cache-Control: no-store)
+  {
+    "metricType": "binary" | "continuous",
+    "variants": {
+      "control": { "n": 2318, "k": 0 },
+      "treatment": { "n": 2318, "k": 0 }
+    }
+  }
+```
+
+### Cron Job Details
+
+**Schedule**: `0 */3 * * *` (every 3 hours)  
+**Location**: `src/scheduled/handler.ts`
+
+**Step 1: Compact R2**
+```
+For each running experiment run (fetched from web:3000/api/experiments/running):
+  1. Call compact(bucket, { envId, flagKey, metricEvents, startDate, endDate, force })
+  2. Idempotent: skips today (in-flight data)
+  3. Merges raw segments → daily rollups
+  4. Logs: e.g., "fe=3new/5skip, me=4new/2skip (1234ms)"
+```
+
+**Step 2: Analyze**
+```
+For each running experiment run:
+  1. Fetch fresh metrics: POST /api/query/experiment with metric events
+  2. Call web:3000/api/experiments/{id}/analyze with { runId, forceFresh: true }
+  3. Store result in Experiment.analysisResult
+  4. Logs: "Analyzed run {id} ({flagKey})"
+```
+
+### Key Files
+
+```
+src/
+├─ index.ts                    ← Worker entry, route handlers
+├─ env.ts                      ← Env interface
+├─ endpoints/
+│  ├─ track.ts                 ← POST /api/track
+│  ├─ query.ts                 ← POST /api/query/experiment (with Cache-Control headers)
+│  ├─ stats.ts                 ← GET /api/stats
+│  └─ compact.ts               ← [internal]
+├─ scheduled/
+│  └─ handler.ts               ← Cron job (handleScheduled)
+├─ durable-objects/
+│  └─ partition-writer.ts      ← PartitionWriterDO (buffering)
+├─ query/
+│  ├─ experiment-engine.ts     ← Query orchestrator
+│  ├─ flag-eval-scanner.ts     ← Flag exposure aggregation
+│  └─ metric-event-scanner.ts  ← Metric aggregation
+├─ rollup/
+│  └─ compact.ts               ← Compaction logic
+└─ storage/
+   ├─ segment-writer.ts        ← Compress + write
+   ├─ segment-reader.ts        ← Decompress + read
+   └─ segment-format.ts        ← Binary format spec
+```
+
+### Environment Variables
+
+| Variable | Type | Required | Purpose |
+|---|---|---|---|
+| `TSDB_BUCKET` | R2 binding | Yes | R2 bucket name: `featbit-tsdb` |
+| `WEB_API_URL` | Env var | Yes | Web service base URL: `https://www.featbit.ai` |
+| `TSDB_MAX_BATCH_SIZE` | Env var | No | Max records per flush (default: 10000) |
+| `TSDB_FLUSH_INTERVAL_MS` | Env var | No | Time-based flush trigger (default: 2000ms) |
+| `TSDB_MIN_FLUSH_ROWS` | Env var | No | Min rows to trigger flush (default: 200) |
+| `TSDB_MAX_BUFFER_AGE_MS` | Env var | No | Max age before force flush (default: 3000ms) |
+
+### Deployment (Cloudflare Workers)
+
+```bash
+cd agent/tsdb-cloudflare
+
+# Verify R2 bucket exists
+wrangler r2 bucket list
+# If not: wrangler r2 bucket create featbit-tsdb
+
+# Deploy
+npx wrangler deploy
+```
+
+**Result**: Custom domain `https://tsdb.featbit.ai` routes through Cloudflare to Worker.
+
+### Monitoring
+
+- **Cron logs**: Cloudflare Workers Analytics → Cron Triggers
+- **Custom logging**: `console.log()` in handler visible in real-time logs
+- **R2 usage**: `GET /api/stats` returns segment counts and total bytes
 
 ---
 
-## Making Changes — Where to Look
+## 3️⃣ agent/sandbox — Claude Code Agent (Optional)
 
-| Task | Files to touch |
-|---|---|
-| Add/change a page or UI component | `agent/web/src/app/` or `agent/web/src/components/` |
-| Add/change an API endpoint | `agent/web/src/app/api/` |
-| Change the data model | `agent/web/prisma/schema.prisma` → run `prisma migrate dev` |
-| Change event ingestion logic | `agent/data/Endpoints/TrackEndpoints.cs` + consumers |
-| Change Bayesian analysis | `agent/data/Scripts/analyze-bayesian.py` + `stats_utils.py` |
-| Change experiment worker cadence/logic | `agent/data/Services/ExperimentWorker.cs` |
-| Change simulation parameters | `agent/simulator/Program.cs` or env vars |
-| Update agent skill behaviour | `skills/<skill-name>/SKILL.md` |
-| Change sync CLI | `skills/project-sync/scripts/sync.ts` |
-| Change raw event table schema | `docker/init-events.sql` (then rebuild postgres container) |
+**Language**: TypeScript (Node.js)  
+**Platform**: Standalone or Cloud  
+**Port** (local): 3000  
+**Type**: SSE endpoint (Server-Sent Events)
+
+### Responsibilities
+
+- **Agent Hosting**: Runs Claude Code agent via `@anthropic-ai/claude-agent-sdk`
+- **Skill Integration**: Routes to satellite skills based on workflow stage (CF-01 through CF-08)
+- **SSE Streaming**: Real-time agent thoughts and actions to client
+- **Project Sync**: CLI script to persist experiment state to web DB
+
+### Architecture
+
+**Session Model**:
+- Each project gets a stable UUID → session ID mapping
+- New sessions begin with `/featbit-release-decision <projectId>` slash command
+- Resumed sessions pass user prompt directly, preserving agent memory
+
+**Skill Routing**:
+- Hub skill: `skills/featbit-release-decision/SKILL.md`
+- Satellite skills (in `skills/` directory):
+  - `intent-shaping/SKILL.md` (CF-01)
+  - `hypothesis-design/SKILL.md` (CF-02)
+  - `reversible-exposure-control/SKILL.md` (CF-03/04)
+  - `measurement-design/SKILL.md` (CF-05)
+  - `experiment-workspace/SKILL.md` (CF-05+)
+  - `evidence-analysis/SKILL.md` (CF-06/07)
+  - `learning-capture/SKILL.md` (CF-08)
+  - `project-sync/SKILL.md` (all stages)
+
+### Key Files
+
+```
+src/
+├─ server.ts         ← Express + SSE endpoint
+├─ agent.ts          ← agent-sdk query runner
+├─ prompt.ts         ← Builds effective prompt
+└─ session-id.ts     ← projectId ↔ UUID mapping
+
+scripts/
+└─ sync.ts           ← Project sync CLI (invoked by project-sync skill)
+
+data/                ← Local JSON for project state (optional)
+```
+
+### Deployment (Standalone)
+
+```bash
+cd agent/sandbox
+
+npm install
+npm run build
+npm start
+```
+
+**Environment Variables**:
+- `GLM_API_KEY`: Zhipuai API key (for local testing)
+- `SYNC_API_URL`: Web service base URL (e.g., `http://localhost:3000`)
+- `PORT`: Server port (default: 3000)
+
+### SSE Endpoint
+
+```
+POST http://localhost:3000/query
+{
+  "projectId": "proj-123",
+  "message": "please analyze the results"
+}
+```
+
+Response: Server-Sent Events stream with agent thoughts, actions, and final response.
+
+---
+
+## 📡 API Contracts
+
+### agent/web → agent/tsdb-cloudflare
+
+**Metrics Query** (from analysis API):
+```bash
+POST https://tsdb.featbit.ai/api/query/experiment
+Authorization: {envId}
+Content-Type: application/json
+
+{
+  "envId": "pricing-env-123",
+  "flagKey": "pricing-page",
+  "metricEvent": "page_view",
+  "metricType": "binary",
+  "metricAgg": "once",
+  "controlVariant": "original",
+  "treatmentVariant": "redesigned",
+  "start": "2026-04-01T00:00:00Z",
+  "end": "2026-04-14T23:59:59Z",
+  "experimentId": "exp-456",
+  "method": "bayesian_ab"
+}
+```
+
+**Response**:
+```json
+{
+  "metricType": "binary",
+  "variants": {
+    "original": { "n": 2318, "k": 45 },
+    "redesigned": { "n": 2318, "k": 61 }
+  }
+}
+```
+
+### agent/tsdb-cloudflare → agent/web
+
+**Fetch Running Experiments** (from cron):
+```bash
+GET https://www.featbit.ai/api/experiments/running
+```
+
+**Response**:
+```json
+[
+  {
+    "id": "run-789",
+    "experimentId": "exp-456",
+    "primaryMetricEvent": "page_view",
+    "guardrailEvents": "[\"bounce_rate\", \"timeout_errors\"]",
+    "observationStart": "2026-04-01T00:00:00Z",
+    "experiment": {
+      "id": "exp-456",
+      "flagKey": "pricing-page",
+      "envSecret": "pricing-env-123"
+    }
+  }
+]
+```
+
+**Trigger Analysis** (from cron):
+```bash
+POST https://www.featbit.ai/api/experiments/exp-456/analyze
+Content-Type: application/json
+
+{
+  "runId": "run-789",
+  "forceFresh": true
+}
+```
+
+**Response**:
+```json
+{
+  "inputData": "{\"metrics\": {...}}",
+  "analysisResult": "{\"type\": \"bayesian\", \"verdict\": \"...\"}"
+}
+```
+
+---
+
+## 🔍 Troubleshooting
+
+### TSDB `/api/query` returns empty data
+
+**Symptoms**:
+- Web API analysis fails with "No data returned from TSDB"
+- Or falls back to stale DB result
+
+**Diagnosis**:
+1. Check R2 bucket exists:
+   ```bash
+   npm run wrangler r2 bucket list
+   ```
+2. Check segment files exist:
+   ```bash
+   npm run wrangler r2 object list --bucket=featbit-tsdb
+   ```
+3. Check cron job logs:
+   - Cloudflare Dashboard → Workers → featbit-tsdb → Logs
+   - Look for "Found N running experiment run(s)"
+
+**Fix**:
+- Verify `WEB_API_URL` is accessible from Cloudflare Workers
+- Ensure firewall rules allow outbound to web API
+- Check if events were actually ingested: `GET /api/stats`
+
+### Cron job not running
+
+**Symptoms**:
+- Analysis results never update
+- R2 segments accumulate without compaction
+
+**Diagnosis**:
+1. Verify trigger in `wrangler.jsonc`:
+   ```json
+   "triggers": {
+     "crons": ["0 */3 * * *"]
+   }
+   ```
+2. Check Cloudflare dashboard:
+   - Workers → Triggers → Check cron status
+3. Look at logs:
+   - Workers → Tail → Filter by `handleScheduled`
+
+**Fix**:
+- Redeploy: `npx wrangler deploy`
+- Verify `WEB_API_URL` environment variable is set
+- Manually trigger for testing:
+   ```bash
+   # Not possible directly, but check logs after next cron window
+   ```
+
+### Analysis results show "stale: true"
+
+**Symptoms**:
+- UI displays old analysis with warning: "last successful analysis"
+- User wants latest results
+
+**Solution**:
+- Click "Refresh Latest Analysis" button in Full Analysis tab
+- Or wait up to 3 hours for next cron run
+
+---
+
+## 📊 Monitoring & Metrics
+
+**Key metrics to watch**:
+- **TSDB cron job success rate**: Should be 100%
+- **Web API `/analyze` latency**: <5s typical
+- **R2 segment size distribution**: Healthy if <100MB rollups
+- **PostgreSQL connection pool**: Monitor active connections
+
+**Logging**:
+- **agent/web**: Check application logs for `/api/experiments/{id}/analyze` calls
+- **agent/tsdb-cloudflare**: Cloudflare Dashboard → Logs
+- **agent/sandbox**: STDOUT in container or cloud logs
+
+---
+
+## 🚀 Scaling Considerations
+
+- **Concurrent experiments**: TSDB scales with R2 throughput; CPU limited by Cloudflare Workers
+- **Metric cardinality**: Each unique (envId, flagKey, metricEvent) creates separate R2 partition
+- **Query latency**: Inversely related to compaction frequency; every 3h is tunable
+- **PostgreSQL**: Ensure connection pooling configured for concurrent web requests
+
+---
+
+**Last Updated**: April 2026
