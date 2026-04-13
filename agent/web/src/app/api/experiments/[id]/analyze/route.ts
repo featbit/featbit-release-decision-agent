@@ -75,7 +75,7 @@ export async function POST(
     treatmentVariant,
     start,
     end,
-    experimentId: run.id,
+    experimentId: experiment.id,
     layerId: run.layerId ?? undefined,
     trafficPercent: run.trafficPercent ?? undefined,
     trafficOffset: run.trafficOffset ?? undefined,
