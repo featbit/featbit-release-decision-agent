@@ -1,7 +1,7 @@
 import { Container, getContainer } from "@cloudflare/containers";
 
 interface Env {
-  WEB_CONTAINER: DurableObjectNamespace<WebContainer>;
+  WEB_CONTAINER: unknown;
   DATABASE_URL: string;
   NEXT_PUBLIC_SANDBOX_URL?: string;
   TSDB_BASE_URL?: string;
@@ -15,7 +15,7 @@ export class WebContainer extends Container {
 
   enableInternet = true;
 
-  constructor(ctx: DurableObjectState, env: Env) {
+  constructor(ctx: unknown, env: Env) {
     super(ctx, env);
     this.envVars = {
       NODE_ENV: "production",

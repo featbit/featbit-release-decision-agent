@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "npx tsx prisma/seed.ts",
-    "seed:pricing": "npx tsx prisma/seed-pricing.ts"
+    "seed:pricing": "npx tsx prisma/seed-pricing.ts",
+    "db:apply-structure": "npx tsx scripts/apply-db-structure.ts",
+    "db:compare-structure": "npx tsx scripts/compare-db-structure.ts",
+    "db:migrate-business-data": "npx tsx scripts/migrate-business-data.ts",
+    "deploy:cloudflare": "powershell -ExecutionPolicy Bypass -File scripts/deploy-cloudflare.ps1"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

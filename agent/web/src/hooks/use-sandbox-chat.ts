@@ -48,7 +48,7 @@ function nextId() {
 
 export function useSandboxChat({
   experimentId,
-  sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "http://localhost:3100",
+  sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "https://sandbox.featbit.ai",
   maxTurns = 50,
   cwd,
   initialMessages = [],
