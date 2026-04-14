@@ -323,15 +323,17 @@ async function scanMetricSegmentForRollup(
     }
 
     acc.hasConversion = true;
+    // Always update timestamps (needed for post-exposure filtering in roller)
+    if (ts < acc.firstTs) {
+      acc.firstTs = ts;
+      acc.firstValue = value;
+    }
+    if (ts > acc.latestTs) {
+      acc.latestTs = ts;
+      acc.latestValue = value;
+    }
+    // Only accumulate numeric stats for non-null values
     if (value !== null) {
-      if (ts < acc.firstTs) {
-        acc.firstTs = ts;
-        acc.firstValue = value;
-      }
-      if (ts > acc.latestTs) {
-        acc.latestTs = ts;
-        acc.latestValue = value;
-      }
       acc.sum += value;
       acc.count++;
     }

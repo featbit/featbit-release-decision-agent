@@ -9,7 +9,10 @@ using System.Text;
 //   Reads: TRACK_API_URL, ENV_SECRET, FLAG_KEY, EXPERIMENT_ID,
 //          CONTROL_VARIANT, TREATMENT_VARIANT, METRIC_EVENT,
 //          CONTROL_CONV_RATE, TREATMENT_CONV_RATE,
-//          BATCH_SIZE, BATCH_DELAY_MS, STARTUP_DELAY_SEC
+//          BATCH_SIZE, BATCH_DELAY_MS, STARTUP_DELAY_SEC,
+//          EVAL_LOOKBACK_SECS (default 120; increase to pass more metric events through
+//                              the timing filter — e.g. 7200 for backfill mode)
+//          MAX_EVALS          (default 0 = unlimited; stop after N flag evaluations)
 //
 // MULTI-SCENARIO MODE  (activated when SCENARIO_COUNT > 0)
 //   Shares: TRACK_API_URL, ENV_SECRET, BATCH_SIZE, BATCH_DELAY_MS, STARTUP_DELAY_SEC
@@ -40,11 +43,13 @@ using System.Text;
 
 // ── Shared configuration ──────────────────────────────────────────────────────
 
-var trackApiUrl     = Env("TRACK_API_URL", "http://localhost:5058/api/track");
-var envSecret       = Env("ENV_SECRET",    "sim-env-001");
-var batchSize       = int.Parse(Env("BATCH_SIZE",       "5"));
-var batchDelayMs    = int.Parse(Env("BATCH_DELAY_MS",   "3000"));
-var startupDelaySec = int.Parse(Env("STARTUP_DELAY_SEC", "5"));
+var trackApiUrl      = Env("TRACK_API_URL", "http://localhost:5058/api/track");
+var envSecret        = Env("ENV_SECRET",    "sim-env-001");
+var batchSize        = int.Parse(Env("BATCH_SIZE",          "5"));
+var batchDelayMs     = int.Parse(Env("BATCH_DELAY_MS",      "3000"));
+var startupDelaySec  = int.Parse(Env("STARTUP_DELAY_SEC",   "5"));
+var evalLookbackSecs = int.Parse(Env("EVAL_LOOKBACK_SECS",  "120"));
+var maxEvals         = int.Parse(Env("MAX_EVALS",           "0"));
 
 var scenarioCount = int.Parse(Env("SCENARIO_COUNT", "0"));
 
@@ -199,8 +204,8 @@ while (!cts.Token.IsCancellationRequested)
         var allVariations = new List<FlagEvalDto>();
         var allMetrics    = new List<MetricEventDto>();
 
-        // Base timestamp: a random moment in the last 2 minutes
-        var evalTime = DateTimeOffset.UtcNow.AddSeconds(-rng.Next(0, 120));
+        // Base timestamp: a random moment in the configurable lookback window
+        var evalTime = DateTimeOffset.UtcNow.AddSeconds(-rng.Next(0, evalLookbackSecs));
         var evalTs   = evalTime.ToUnixTimeSeconds();
 
         foreach (var s in scenarios)
@@ -302,6 +307,12 @@ while (!cts.Token.IsCancellationRequested)
         {
             Console.WriteLine($"[simulator] batch {batchNum}: +{batch.Count} users " +
                 $"| total evals={totalFlagEvals}  conversions={totalMetrics}");
+
+            if (maxEvals > 0 && totalFlagEvals >= maxEvals)
+            {
+                Console.WriteLine($"[simulator] reached MAX_EVALS={maxEvals} — stopping");
+                cts.Cancel();
+            }
         }
     }
     catch (OperationCanceledException) { break; }

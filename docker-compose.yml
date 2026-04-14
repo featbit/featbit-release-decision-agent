@@ -135,6 +135,34 @@ services:
       BATCH_DELAY_MS: "1000"
       STARTUP_DELAY_SEC: "5"
 
+  # ── Simulator Pricing — pricing-page-redesign experiment (running) ─────────
+  #
+  #  Sends flag evaluations + metric events for experiment pricing-page-exp-001.
+  #  Primary metric:  plan_selected      (control ~8.5%, treatment ~13.3%)
+  #  Guardrail:       pricing_page_bounce (control ~35%,  treatment ~33%)
+  #  Guardrail:       support_chat_opened (control ~10%,  treatment ~8%)
+  #
+  simulator-pricing:
+    build:
+      context: ./agent/simulator
+      dockerfile: Dockerfile
+    environment:
+      TRACK_API_URL: "https://tsdb.featbit.ai/api/track"
+      ENV_SECRET: "pricing-env-secret-001"
+      SCENARIO_COUNT: "1"
+      # ── Scenario: Pricing Page Redesign (Bayesian, running) ──────────────────
+      SCENARIO_1_FLAG_KEY: "pricing-page-redesign"
+      SCENARIO_1_VARIANTS: "original,redesigned"
+      SCENARIO_1_VARIANT_WEIGHTS: "50,50"
+      SCENARIO_1_CONV_RATES: "0.085,0.133"
+      SCENARIO_1_METRIC_EVENT: "plan_selected"
+      SCENARIO_1_GUARDRAIL_EVENTS: "pricing_page_bounce:0.35:0.33,support_chat_opened:0.10:0.08"
+      # ── Shared — 20 users/batch every 2s, 2h lookback for backfill ──────────
+      BATCH_SIZE: "20"
+      BATCH_DELAY_MS: "2000"
+      STARTUP_DELAY_SEC: "5"
+      EVAL_LOOKBACK_SECS: "7200"
+
   # ── Sandbox — Claude Code agent bridge (GLM backend) ────────────────────────
   sandbox:
     build:
