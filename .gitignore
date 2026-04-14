@@ -29,6 +29,24 @@ Thumbs.db
 
 tutorial/experimentation-for-engineers.md
 
+# =======
+# data-process/cf-worker (Cloudflare Worker)
+# =======
+data-process/cf-worker/node_modules/
+data-process/cf-worker/.wrangler/
+data-process/cf-worker/dist/
+data-process/cf-worker/.dev.vars
+data-process/cf-worker/*.tsbuildinfo
+
+# =======
+# data-process/rollup-service (.NET 10)
+# =======
+data-process/rollup-service/bin/
+data-process/rollup-service/obj/
+data-process/rollup-service/appsettings.Development.json
+data-process/rollup-service/appsettings.*.json
+!data-process/rollup-service/appsettings.json
+
 
 # =======
 # agent/web/ (Next.js)

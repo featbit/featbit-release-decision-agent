@@ -1,0 +1,15 @@
+{
+  "name": "featbit-data-process-cf-worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev --remote",
+    "deploy": "wrangler deploy",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250409.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.10.0"
+  }
+}
