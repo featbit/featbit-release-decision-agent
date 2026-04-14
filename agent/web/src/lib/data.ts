@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 export async function getExperiments() {
   return prisma.experiment.findMany({
     orderBy: { updatedAt: "desc" },
-    include: { _count: { select: { experimentRuns: true } } },
   });
 }
 

@@ -214,23 +214,32 @@ export function useSandboxChat({
       function handleSseEvent(event: string, data: unknown) {
         const d = data as Record<string, unknown>;
 
-        if (event === "stream_event") {
-          // Extract text deltas
-          const evt = d.event as Record<string, unknown> | undefined;
-          if (!evt) return;
-
-          if (evt.type === "content_block_delta") {
-            const delta = evt.delta as Record<string, string> | undefined;
-            if (delta?.type === "text_delta" && delta.text) {
-              appendAssistantDelta(delta.text);
+        if (event === "agent.message") {
+          // Extract text from content blocks
+          const content = d.content as Array<{ type: string; text?: string }> | undefined;
+          if (!content) return;
+          for (const block of content) {
+            if (block.type === "text" && block.text) {
+              appendAssistantDelta(block.text);
             }
           }
+        } else if (event === "session.status_idle") {
+          // Agent finished — stream will close naturally
+        } else if (event === "session.status_terminated") {
+          const errMsg =
+            ((d.error as Record<string, unknown> | undefined)?.message as string | undefined) ??
+            "Session terminated";
+          setError(errMsg);
+        } else if (event === "session.error") {
+          const errMsg =
+            ((d.error as Record<string, unknown> | undefined)?.message as string | undefined) ??
+            "Session error";
+          setError(errMsg);
         } else if (event === "error") {
-          const msg =
-            (d as { message?: string }).message ?? "Unknown agent error";
+          const msg = (d as { message?: string }).message ?? "Unknown error";
           setError(msg);
         }
-        // system, message, result, tool_progress, done — ignored for chat display
+        // agent.tool_use, agent.tool_result — ignored for chat display
       }
     },
     [experimentId, sandboxUrl, maxTurns, cwd, appendAssistantDelta]

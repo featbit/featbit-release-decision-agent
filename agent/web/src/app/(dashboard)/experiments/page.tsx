@@ -73,11 +73,7 @@ export default async function ExperimentsPage() {
                     )}
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
-                        {experiment._count.experimentRuns} run
-                        {experiment._count.experimentRuns !== 1 ? "s" : ""}
-                      </span>
+                    <div className="flex items-center justify-end text-xs text-muted-foreground">
                       <span>
                         Updated{" "}
                         {new Date(experiment.updatedAt).toLocaleDateString()}

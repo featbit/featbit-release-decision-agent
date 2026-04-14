@@ -368,11 +368,69 @@ function SummaryTab({
   );
 }
 
+const AUTO_REFRESH_INTERVAL = 15; // seconds, must match experiment-detail-layout.tsx
+
+function RefreshAnalysisButton({
+  loading,
+  onConfirm,
+}: {
+  loading: boolean;
+  onConfirm: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="rounded-md border border-dashed px-3 py-2.5 space-y-2 bg-muted/20">
+        <p className="text-xs font-medium">Refresh Latest Analysis?</p>
+        <p className="text-xs text-muted-foreground">
+          This will roll up the latest event data and re-run the analysis from
+          scratch. It may take a minute or more to complete. The page
+          auto-refreshes every {AUTO_REFRESH_INTERVAL}s — you can come back
+          later and results will appear automatically.
+        </p>
+        <div className="flex gap-2 pt-1">
+          <Button
+            size="sm"
+            className="h-7 text-[11px] px-2.5"
+            onClick={() => { setConfirming(false); onConfirm(); }}
+          >
+            Start Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px] px-2.5"
+            onClick={() => setConfirming(false)}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 text-[11px] px-2.5 gap-1"
+      onClick={() => setConfirming(true)}
+      disabled={loading}
+    >
+      <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
+      Refresh Latest Analysis
+    </Button>
+  );
+}
+
 function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: string }) {
   const [analysisResult, setAnalysisResult] = useState<string | null>(
     exp.analysisResult ?? null
   );
   const [loading, setLoading] = useState(false);
+  const [isFreshRefresh, setIsFreshRefresh] = useState(false);
+  const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const hasAutoTriggered = useRef(false);
@@ -383,8 +441,22 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
     setWarning(null);
   }, [exp.id, exp.analysisResult]);
 
+  // Countdown ticker shown while loading a fresh refresh
+  useEffect(() => {
+    if (!loading || !isFreshRefresh) return;
+    setCountdown(AUTO_REFRESH_INTERVAL);
+    const id = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) return AUTO_REFRESH_INTERVAL;
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [loading, isFreshRefresh]);
+
   const runAnalysis = useCallback(async (forceFresh = false) => {
     setLoading(true);
+    setIsFreshRefresh(forceFresh);
     setError(null);
     setWarning(null);
     try {
@@ -425,9 +497,18 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
     return (
       <div className="px-4 pb-6 pt-8 flex flex-col items-center gap-3">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">
-          Running Bayesian analysis…
-        </p>
+        <p className="text-xs text-muted-foreground">Running Bayesian analysis…</p>
+        {isFreshRefresh && (
+          <>
+            <p className="text-xs text-muted-foreground/70 text-center max-w-xs">
+              Rolling up the latest data — this may take a moment. You can
+              navigate away; results will appear automatically.
+            </p>
+            <p className="text-xs text-muted-foreground/50">
+              Next auto-refresh in {countdown}s
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -449,16 +530,7 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
   if (!analysisResult) {
     return (
       <div className="px-4 pb-6 pt-2 space-y-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-[11px] px-2.5 gap-1"
-          onClick={() => runAnalysis(true)}
-          disabled={loading}
-        >
-          <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
-          Refresh Latest Analysis
-        </Button>
+        <RefreshAnalysisButton loading={loading} onConfirm={() => runAnalysis(true)} />
         <p className="text-xs text-muted-foreground/60">No analysis available yet.</p>
       </div>
     );
@@ -467,16 +539,7 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
   return (
     <div className="px-4 pb-6 overflow-x-auto">
       <div className="mb-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-[11px] px-2.5 gap-1"
-          onClick={() => runAnalysis(true)}
-          disabled={loading}
-        >
-          <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
-          Refresh Latest Analysis
-        </Button>
+        <RefreshAnalysisButton loading={loading} onConfirm={() => runAnalysis(true)} />
       </div>
       {warning && (
         <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{warning}</p>

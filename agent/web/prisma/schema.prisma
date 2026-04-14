@@ -1,6 +1,7 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -8,36 +9,48 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Activity {
+  id           String     @id @default(uuid())
+  type         String
+  title        String
+  detail       String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  experimentId String     @map("experiment_id")
+  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@map("activity")
+}
+
 model Experiment {
-  id            String          @id @default(uuid())
-  name          String
-  description   String?
-  stage         String          @default("hypothesis")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  flagKey       String?         @map("flag_key")
-  envSecret     String?         @map("env_secret")
-  accessToken   String?         @map("access_token")
-  flagServerUrl String?         @map("flag_server_url")
-  featbitProjectKey String?     @map("featbit_project_key")
-  featbitEnvId      String?     @map("featbit_env_id")
-  sandboxId     String?         @map("sandbox_id")
-  sandboxStatus String?         @default("idle") @map("sandbox_status")
-  goal          String?
-  intent        String?
-  hypothesis    String?
-  change        String?
-  variants      String?
-  primaryMetric String?         @map("primary_metric")
-  guardrails    String?
-  constraints   String?
-  conflictAnalysis String?     @map("conflict_analysis")
-  openQuestions String?         @map("open_questions")
-  lastAction    String?         @map("last_action")
-  lastLearning  String?         @map("last_learning")
-  activities    Activity[]
-  experimentRuns ExperimentRun[]
-  messages      Message[]
+  id                 String          @id @default(uuid())
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  hypothesis         String?
+  accessToken        String?         @map("access_token")
+  change             String?
+  constraints        String?
+  description        String?
+  envSecret          String?         @map("env_secret")
+  flagKey            String?         @map("flag_key")
+  flagServerUrl      String?         @map("flag_server_url")
+  goal               String?
+  guardrails         String?
+  intent             String?
+  lastAction         String?         @map("last_action")
+  lastLearning       String?         @map("last_learning")
+  name               String
+  openQuestions      String?         @map("open_questions")
+  primaryMetric      String?         @map("primary_metric")
+  sandboxId          String?         @map("sandbox_id")
+  sandboxStatus      String?         @default("idle") @map("sandbox_status")
+  stage              String          @default("hypothesis")
+  variants           String?
+  featbitProjectKey  String?         @map("featbit_project_key")
+  featbitEnvId       String?         @map("featbit_env_id")
+  conflictAnalysis   String?         @map("conflict_analysis")
+  activities         Activity[]
+  experimentRuns     ExperimentRun[]
+  messages           Message[]
 
   @@map("experiment")
 }
@@ -88,25 +101,13 @@ model ExperimentRun {
   @@map("experiment_run")
 }
 
-model Activity {
-  id           String     @id @default(uuid())
-  experimentId String     @map("experiment_id")
-  type         String
-  title        String
-  detail       String?
-  createdAt    DateTime   @default(now()) @map("created_at")
-  experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-
-  @@map("activity")
-}
-
 model Message {
   id           String     @id @default(uuid())
-  experimentId String     @map("experiment_id")
   role         String
   content      String
   metadata     String?
   createdAt    DateTime   @default(now()) @map("created_at")
+  experimentId String     @map("experiment_id")
   experiment   Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 
   @@map("message")

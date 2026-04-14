@@ -321,6 +321,9 @@ function BayesianView({ data }: { data: BayesianAnalysis }) {
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
         <span>Window: {data.window.start} → {data.window.end}</span>
         <span>Prior: {data.prior}</span>
+        {data.computed_at && (
+          <span>Data as of: {new Date(data.computed_at).toLocaleString()}</span>
+        )}
       </div>
 
       <SrmBadge srm={data.srm} />
@@ -352,6 +355,9 @@ function BanditView({ data }: { data: BanditAnalysis }) {
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
         <span>Window: {data.window.start} → {data.window.end}</span>
         <span>Algorithm: {data.algorithm}</span>
+        {data.computed_at && (
+          <span>Data as of: {new Date(data.computed_at).toLocaleString()}</span>
+        )}
       </div>
 
       <SrmBadge srm={data.srm} />
