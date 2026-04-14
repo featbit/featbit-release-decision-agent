@@ -164,3 +164,22 @@ agent/data/.wrangler/
 agent/data/.dev.vars
 agent/data/package-lock.json
 agent/data/*.tsbuildinfo
+
+# =======
+# data-process/cf-worker
+# =======
+data-process/cf-worker/node_modules/
+data-process/cf-worker/.wrangler/
+data-process/cf-worker/.dev.vars
+data-process/cf-worker/package-lock.json
+data-process/cf-worker/*.tsbuildinfo
+
+
+# =======
+# data-process/tests
+# =======
+data-process/tests/*/node_modules/
+data-process/tests/*/.wrangler/
+data-process/tests/*/.dev.vars
+data-process/tests/*/package-lock.json
+data-process/tests/*/*.tsbuildinfo

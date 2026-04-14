@@ -15,9 +15,15 @@ import { generateSeedData } from "./seed.ts";
 import { writeEvents }      from "./write.ts";
 import { flushAndRollup }   from "./flush.ts";
 import { verify }           from "./verify.ts";
+import { cleanupTestData }  from "./cleanup.ts";
 
 async function main(): Promise<void> {
   console.log("=== FeatBit Integration Test ===\n");
+
+  // 0. Clean up leftover R2 data from previous runs
+  console.log("[0/4] Cleaning up R2 test data...");
+  await cleanupTestData();
+  console.log();
 
   // 1. Generate seed data with known expected outcomes
   console.log("[1/4] Generating seed data...");
@@ -28,17 +34,17 @@ async function main(): Promise<void> {
   console.log();
 
   // 2. Write events to cf-worker
-  console.log("[2/4] Writing events to cf-worker...");
+  console.log("[2/5] Writing events to cf-worker...");
   await writeEvents(data);
   console.log();
 
   // 3. Flush DOs and run rollup
-  console.log("[3/4] Flushing DOs and running rollup-service...");
+  console.log("[3/5] Flushing DOs and running rollup-service...");
   await flushAndRollup();
   console.log();
 
   // 4. Verify results
-  console.log("[4/4] Verifying results...");
+  console.log("[5/5] Verifying results...");
   await verify(data);
 }
 

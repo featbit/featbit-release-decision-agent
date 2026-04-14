@@ -47,8 +47,18 @@ export class PartitionWriterDO implements DurableObject {
     if (url.pathname === "/flush" && request.method === "POST") {
       await this.flushMemToStorage();
       const cfg = await this.state.storage.get<PartitionConfig>("cfg");
-      if (cfg) await this.writeDeltaToR2(cfg);
+      if (cfg) {
+        try { await this.writeDeltaToR2(cfg); }
+        catch (e) {
+          return new Response(JSON.stringify({ error: String(e) }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
       await this.state.storage.put("lastDelta", Date.now());
+      await this.state.storage.deleteAlarm();
+      this.alarmScheduled = false;
       return new Response("flushed", { status: 200 });
     }
 
@@ -109,11 +119,11 @@ export class PartitionWriterDO implements DurableObject {
     if (this.memBuffer.length === 0) return;
 
     const ts  = Date.now();
-    const map = new Map<string, string>();
+    const obj: Record<string, unknown> = {};
     for (let i = 0; i < this.memBuffer.length; i += CHUNK_SIZE) {
-      map.set(`buf:${ts}-${i}`, JSON.stringify(this.memBuffer.slice(i, i + CHUNK_SIZE)));
+      obj[`buf:${ts}-${i}`] = JSON.stringify(this.memBuffer.slice(i, i + CHUNK_SIZE));
     }
-    await this.state.storage.put(map as unknown as Record<string, unknown>);
+    await this.state.storage.put(obj);
     this.memBuffer = [];
   }
 

@@ -123,17 +123,98 @@ function runRollupOnce(): number {
       R2_ACCOUNT_ID:        ACCOUNT_ID,
       R2_ACCESS_KEY_ID:     ACCESS_KEY,
       R2_SECRET_ACCESS_KEY: SECRET_KEY,
+      Logging__LogLevel__Default: "Information",
     },
     timeout: 300_000,
   });
   const elapsed = performance.now() - start;
 
+  // Print dotnet logs — strip the verbose "info: Category[0]" prefix
+  const out = (result.stdout?.toString() ?? "") + (result.stderr?.toString() ?? "");
+  if (out.trim()) {
+    for (const raw of out.trim().split("\n")) {
+      const line = raw.replace(/^\s*(info|dbug|warn|fail|crit):\s+[\w.]+\[\d+\]\s*/i, "").trimEnd();
+      if (line) console.log("    " + line);
+    }
+  }
+
   if (result.status !== 0) {
-    const stderr = result.stderr?.toString() ?? "";
-    throw new Error(`rollup-service failed (${result.status}): ${stderr.slice(0, 500)}`);
+    throw new Error(`rollup-service failed (${result.status})`);
   }
 
   return elapsed;
+}
+
+// ── Rollup JSON generators ─────────────────────────────────────────────────────
+
+function makeFlagEvalRollup(userCount: number): string {
+  const u: Record<string, [number, string, string | null, string | null, number]> = {};
+  const now = Date.now();
+  for (let i = 0; i < userCount; i++) {
+    const userKey = `bench-user-${i.toString().padStart(8, "0")}`;
+    const variant = i % 2 === 0 ? "off" : "on";
+    u[userKey] = [now - i * 1000, variant, "exp-bench", null, i % 100];
+  }
+  return JSON.stringify({ v: 1, u });
+}
+
+function makeMetricEventRollup(userCount: number): string {
+  // ~33% conversion, same shape as what rollup-service writes
+  const u: Record<string, [number, number, null, number, null, number, number]> = {};
+  const now = Date.now();
+  for (let i = 0; i < userCount; i++) {
+    if (i % 3 === 0) {
+      const userKey = `bench-user-${i.toString().padStart(8, "0")}`;
+      u[userKey] = [1, now - i * 1000, null, now - i * 1000, null, 0, 1];
+    }
+  }
+  return JSON.stringify({ v: 1, u });
+}
+
+// ── Steady-state benchmark ─────────────────────────────────────────────────────
+//
+// Simulates a real production cycle with both tables:
+//   flag-evals  : 150k-user rollup + 30k-user delta
+//   metric-events: 50k-user rollup + 10k-user delta
+//
+// Rollup files are left in R2 after the run (no cleanup).
+
+async function runSteadyStateBenchmark(
+  envId: string, flagKey: string, metric: string, date: string,
+): Promise<void> {
+  const FE_ROLLUP = 150_000;
+  const FE_DELTA  =  30_000;
+  const ME_ROLLUP =  50_000;
+  const ME_DELTA  =  10_000;
+
+  const ts = Date.now();
+
+  const feRollupKey = `rollups/flag-evals/${envId}/${flagKey}/${date}.json`;
+  const feDeltaKey  = `deltas/flag-evals/${envId}/${flagKey}/${date}/${ts}.json`;
+  const meRollupKey = `rollups/metric-events/${envId}/${metric}/${date}.json`;
+  const meDeltaKey  = `deltas/metric-events/${envId}/${metric}/${date}/${ts}.json`;
+
+  console.log("── Steady-state: flag-evals (150k+30k) + metric-events (50k+10k) ──");
+
+  async function upload(label: string, key: string, body: string): Promise<void> {
+    const mb = (Buffer.byteLength(body) / 1024 / 1024).toFixed(2);
+    const t  = performance.now();
+    await s3.send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: "application/json" }));
+    console.log(`  ${label.padEnd(30)}: ${mb.padStart(6)} MB  upload ${((performance.now() - t) / 1000).toFixed(2)}s`);
+  }
+
+  await upload("flag-eval rollup (150k)",  feRollupKey, makeFlagEvalRollup(FE_ROLLUP));
+  await upload("flag-eval delta  (30k)",   feDeltaKey,  makeFlagEvalDelta(FE_DELTA,  envId, flagKey, date));
+  await upload("metric-event rollup (50k)", meRollupKey, makeMetricEventRollup(ME_ROLLUP));
+  await upload("metric-event delta  (10k)", meDeltaKey,  makeMetricEventDelta(ME_DELTA, envId, metric, date));
+
+  console.log("  running rollup-service --run-once...");
+  const rollupMs = runRollupOnce();
+  console.log(`  total (incl. dotnet startup ~2s): ${(rollupMs / 1000).toFixed(2)}s`);
+  console.log(`  rollups left at:`);
+  console.log(`    ${feRollupKey}`);
+  console.log(`    ${meRollupKey}`);
+  console.log();
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -150,30 +231,32 @@ async function main(): Promise<void> {
   const metric  = "bench-metric";
 
   console.log("=== Rollup-Service Benchmark ===\n");
-  console.log(`${"Users".padStart(10)}  ${"Delta Upload".padStart(14)}  ${"Rollup Time".padStart(12)}`);
-  console.log("-".repeat(42));
 
+  // ── Scale sweep (fresh delta only, no pre-existing rollup) ──
   for (const userCount of USER_COUNTS) {
-    process.stdout.write(`${userCount.toLocaleString().padStart(10)}  `);
+    console.log(`── ${userCount.toLocaleString()} users ──────────────────────────────`);
 
     // Upload deltas
     const uploadStart = performance.now();
     const writtenKeys = await uploadDeltas(userCount, envId, flagKey, metric, today);
     const uploadMs    = performance.now() - uploadStart;
-    process.stdout.write(`${(uploadMs / 1000).toFixed(2)}s upload    `);
+    console.log(`  delta upload : ${(uploadMs / 1000).toFixed(2)}s`);
 
     // Run rollup
     let rollupMs: number;
     try {
       rollupMs = runRollupOnce();
     } finally {
-      // Always clean up, even on failure
       await cleanupKeys(writtenKeys);
       await cleanupRollups(envId, flagKey, metric, today);
     }
 
-    console.log(`${(rollupMs / 1000).toFixed(2)}s`);
+    console.log(`  total (incl. dotnet startup ~2s): ${(rollupMs / 1000).toFixed(2)}s`);
+    console.log();
   }
+
+  // ── Steady-state case: flag-evals (150k+30k) + metric-events (50k+10k) ──
+  await runSteadyStateBenchmark(envId, flagKey, metric, today);
 
   console.log("\nBenchmark complete.");
 }

@@ -75,12 +75,15 @@ public sealed class R2Client : IDisposable
 
     public async Task PutStringAsync(string key, string content, CancellationToken ct = default)
     {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
         var req = new PutObjectRequest
         {
-            BucketName  = _bucket,
-            Key         = key,
-            ContentBody = content,
-            ContentType = "application/json",
+            BucketName            = _bucket,
+            Key                   = key,
+            InputStream           = new MemoryStream(bytes),
+            ContentType           = "application/json",
+            DisablePayloadSigning = true,   // R2 does not support chunked PAYLOAD-TRAILER
+            UseChunkEncoding      = false,
         };
         await _s3.PutObjectAsync(req, ct);
         _log.LogDebug("PUT {Key} ({Bytes} bytes)", key, content.Length);

@@ -30,7 +30,7 @@ export async function handleDevFlush(request: Request, env: Env): Promise<Respon
 
   const failed = results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-    .map((r) => r.reason as string);
+    .map((r) => String(r.reason));
 
   return new Response(JSON.stringify({ flushed, failed }), {
     headers: { "Content-Type": "application/json" },

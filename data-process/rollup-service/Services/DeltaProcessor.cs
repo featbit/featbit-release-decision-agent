@@ -23,37 +23,53 @@ public sealed class DeltaProcessor(R2Client r2, ILogger<DeltaProcessor> log)
 
     public async Task ProcessAsync(string deltaKey, CancellationToken ct)
     {
-        // Derive table type from path:  deltas/flag-evals/... or deltas/metric-events/...
         var isFlagEval = deltaKey.StartsWith("deltas/flag-evals/");
         var rollupKey  = DeltaKeyToRollupKey(deltaKey, isFlagEval);
+        var sw         = System.Diagnostics.Stopwatch.StartNew();
 
-        log.LogInformation("Processing delta {Delta} → rollup {Rollup}", deltaKey, rollupKey);
-
-        var deltaJson  = await r2.GetStringAsync(deltaKey, ct);
+        // Step 1 — download delta
+        var t0        = sw.ElapsedMilliseconds;
+        var deltaJson = await r2.GetStringAsync(deltaKey, ct);
         if (deltaJson is null) { log.LogWarning("Delta not found: {Key}", deltaKey); return; }
+        var deltaBytes = System.Text.Encoding.UTF8.GetByteCount(deltaJson);
+        log.LogInformation("[{Key}] GET delta {Bytes:N0}B → {Ms}ms",
+            System.IO.Path.GetFileName(deltaKey), deltaBytes, sw.ElapsedMilliseconds - t0);
 
         var delta = JsonSerializer.Deserialize<DeltaFile>(deltaJson, JsonOpts);
         if (delta is null || delta.U.Count == 0) { await r2.DeleteAsync(deltaKey, ct); return; }
+        log.LogInformation("[{Key}] {Users} users in delta", System.IO.Path.GetFileName(deltaKey), delta.U.Count);
 
+        // Step 2 — merge + upload
+        t0 = sw.ElapsedMilliseconds;
         if (isFlagEval)
-            await MergeFlagEvalAsync(rollupKey, delta, ct);
+            await MergeFlagEvalAsync(rollupKey, delta, ct, sw);
         else
-            await MergeMetricEventAsync(rollupKey, delta, ct);
+            await MergeMetricEventAsync(rollupKey, delta, ct, sw);
 
+        // Step 3 — delete delta
+        t0 = sw.ElapsedMilliseconds;
         await r2.DeleteAsync(deltaKey, ct);
-        log.LogInformation("Done: {Delta}", deltaKey);
+        log.LogInformation("[{Key}] DELETE delta → {Ms}ms  |  total {Total}ms",
+            System.IO.Path.GetFileName(deltaKey), sw.ElapsedMilliseconds - t0, sw.ElapsedMilliseconds);
     }
 
     // ── Flag-eval merge ───────────────────────────────────────────────────────
 
-    private async Task MergeFlagEvalAsync(string rollupKey, DeltaFile delta, CancellationToken ct)
+    private async Task MergeFlagEvalAsync(string rollupKey, DeltaFile delta, CancellationToken ct,
+        System.Diagnostics.Stopwatch sw)
     {
+        var t0         = sw.ElapsedMilliseconds;
         var rollupJson = await r2.GetStringAsync(rollupKey, ct);
-        var rollup     = rollupJson is not null
+        var rollupBytes = rollupJson is not null ? System.Text.Encoding.UTF8.GetByteCount(rollupJson) : 0;
+        log.LogInformation("  GET existing rollup {Bytes:N0}B → {Ms}ms",
+            rollupBytes, sw.ElapsedMilliseconds - t0);
+
+        var rollup = rollupJson is not null
             ? JsonSerializer.Deserialize<FlagEvalRollup>(rollupJson, JsonOpts) ?? new()
             : new FlagEvalRollup();
 
         // Merge: keep entry with min timestamp
+        t0 = sw.ElapsedMilliseconds;
         foreach (var (userKey, entry) in delta.U)
         {
             if (!rollup.U.TryGetValue(userKey, out var existing))
@@ -67,20 +83,31 @@ public sealed class DeltaProcessor(R2Client r2, ILogger<DeltaProcessor> log)
                 if (newTs < existingTs) rollup.U[userKey] = entry;
             }
         }
+        log.LogInformation("  merge {Users} → {Ms}ms", rollup.U.Count, sw.ElapsedMilliseconds - t0);
 
-        await r2.PutStringAsync(rollupKey, SerializeRollup(rollup), ct);
+        t0 = sw.ElapsedMilliseconds;
+        var serialized = SerializeRollup(rollup);
+        await r2.PutStringAsync(rollupKey, serialized, ct);
+        log.LogInformation("  PUT rollup {Bytes:N0}B → {Ms}ms",
+            System.Text.Encoding.UTF8.GetByteCount(serialized), sw.ElapsedMilliseconds - t0);
     }
 
     // ── Metric-event merge ────────────────────────────────────────────────────
 
-    private async Task MergeMetricEventAsync(string rollupKey, DeltaFile delta, CancellationToken ct)
+    private async Task MergeMetricEventAsync(string rollupKey, DeltaFile delta, CancellationToken ct,
+        System.Diagnostics.Stopwatch sw)
     {
+        var t0         = sw.ElapsedMilliseconds;
         var rollupJson = await r2.GetStringAsync(rollupKey, ct);
+        var rollupBytes = rollupJson is not null ? System.Text.Encoding.UTF8.GetByteCount(rollupJson) : 0;
+        log.LogInformation("  GET existing rollup {Bytes:N0}B → {Ms}ms",
+            rollupBytes, sw.ElapsedMilliseconds - t0);
         var rollup     = rollupJson is not null
             ? JsonSerializer.Deserialize<MetricEventRollup>(rollupJson, JsonOpts) ?? new()
             : new MetricEventRollup();
 
         // Convert existing entries to mutable accumulators
+        t0 = sw.ElapsedMilliseconds;
         var accMap = new Dictionary<string, MetricAcc>(rollup.U.Count);
         foreach (var (uk, e) in rollup.U)
             accMap[uk] = MetricAcc.FromJsonElement(e);
@@ -94,8 +121,10 @@ public sealed class DeltaProcessor(R2Client r2, ILogger<DeltaProcessor> log)
             else
                 existing.Merge(incoming);
         }
+        log.LogInformation("  merge {Users} → {Ms}ms", accMap.Count, sw.ElapsedMilliseconds - t0);
 
         // Serialize back
+        t0 = sw.ElapsedMilliseconds;
         using var ms  = new MemoryStream();
         using var w   = new Utf8JsonWriter(ms);
         w.WriteStartObject();
@@ -113,6 +142,8 @@ public sealed class DeltaProcessor(R2Client r2, ILogger<DeltaProcessor> log)
 
         var json = System.Text.Encoding.UTF8.GetString(ms.ToArray());
         await r2.PutStringAsync(rollupKey, json, ct);
+        log.LogInformation("  PUT rollup {Bytes:N0}B → {Ms}ms",
+            System.Text.Encoding.UTF8.GetByteCount(json), sw.ElapsedMilliseconds - t0);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
