@@ -94,3 +94,11 @@ public class R2Options
     public string SecretKey   { get; set; } = "";
     public string BucketName  { get; set; } = "featbit-tsdb";
 }
+
+// ── Database config ───────────────────────────────────────────────────────────
+
+public class DatabaseOptions
+{
+    /// <summary>PostgreSQL connection string (Npgsql format). Leave empty to skip DB filtering.</summary>
+    public string Url { get; set; } = "";
+}

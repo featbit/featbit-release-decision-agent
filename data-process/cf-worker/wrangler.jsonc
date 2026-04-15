@@ -26,5 +26,11 @@
       "tag": "v1",
       "new_sqlite_classes": ["PartitionWriterDO"]
     }
+  ],
+  "routes": [
+    {
+      "pattern": "data-process.featbit.ai",
+      "custom_domain": true
+    }
   ]
 }

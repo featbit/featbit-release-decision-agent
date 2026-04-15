@@ -183,3 +183,23 @@ data-process/tests/*/.wrangler/
 data-process/tests/*/.dev.vars
 data-process/tests/*/package-lock.json
 data-process/tests/*/*.tsbuildinfo
+
+# =======
+# data-process/run-active-test (Node.js/tsx)
+# =======
+data-process/run-active-test/node_modules/
+data-process/run-active-test/package-lock.json
+data-process/run-active-test/*.tsbuildinfo
+data-process/run-active-test/.env
+!data-process/run-active-test/.env.example
+
+# =======
+# data-process/stats-service (Python)
+# =======
+data-process/stats-service/__pycache__/
+data-process/stats-service/**/__pycache__/
+data-process/stats-service/*.pyc
+data-process/stats-service/.venv/
+data-process/stats-service/venv/
+data-process/stats-service/.env
+!data-process/stats-service/.env.example

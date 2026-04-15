@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "data-process.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ include "data-process.fullname" . }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ include "data-process.fullname" . }}
+  ports:
+    - name: rollup
+      port: {{ .Values.rollupService.port }}
+      targetPort: http-rollup
+      protocol: TCP
+    - name: stats
+      port: {{ .Values.statsService.port }}
+      targetPort: http-stats
+      protocol: TCP

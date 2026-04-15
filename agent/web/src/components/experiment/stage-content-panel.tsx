@@ -298,11 +298,7 @@ function MetricsIntegrationSection({
         {/* Primary metric */}
         <div>
           <span className="text-[10px] font-medium text-muted-foreground uppercase">Primary Metric</span>
-          {experiment.primaryMetric ? (
-            <p className="text-xs leading-relaxed whitespace-pre-line">{experiment.primaryMetric}</p>
-          ) : (
-            <p className="text-xs italic text-muted-foreground/50">Not defined yet</p>
-          )}
+          <MetricLines value={experiment.primaryMetric} />
         </div>
 
         {/* Metric event name */}
