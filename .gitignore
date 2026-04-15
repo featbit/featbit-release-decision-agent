@@ -185,6 +185,15 @@ data-process/tests/*/package-lock.json
 data-process/tests/*/*.tsbuildinfo
 
 # =======
+# data-process/track-service (.NET 10)
+# =======
+data-process/track-service/bin/
+data-process/track-service/obj/
+data-process/track-service/appsettings.Development.json
+data-process/track-service/appsettings.*.json
+!data-process/track-service/appsettings.json
+
+# =======
 # data-process/run-active-test-worker (Cloudflare Worker)
 # =======
 data-process/run-active-test-worker/node_modules/

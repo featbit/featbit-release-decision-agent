@@ -1,5 +1,35 @@
 services:
 
+  # Local ClickHouse for development/testing of track-service.
+  # NOT for production — production points at the Azure VM ClickHouse.
+  # Schema is auto-loaded from track-service/sql/schema.sql on first start
+  # via /docker-entrypoint-initdb.d (a feature of the official image).
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.10
+    container_name: clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"   # HTTP — track-service connects here
+      - "9000:9000"   # Native TCP — clickhouse-client / Tabix / DataGrip
+    environment:
+      CLICKHOUSE_DB:                  featbit
+      CLICKHOUSE_USER:                default
+      CLICKHOUSE_PASSWORD:            ${CLICKHOUSE_PASSWORD:-clickhouse}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./track-service/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   rollup-service:
     build:
       context: ./rollup-service
@@ -53,3 +83,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+volumes:
+  clickhouse-data:
