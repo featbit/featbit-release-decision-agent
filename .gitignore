@@ -185,13 +185,14 @@ data-process/tests/*/package-lock.json
 data-process/tests/*/*.tsbuildinfo
 
 # =======
-# data-process/run-active-test (Node.js/tsx)
+# data-process/run-active-test-worker (Cloudflare Worker)
 # =======
-data-process/run-active-test/node_modules/
-data-process/run-active-test/package-lock.json
-data-process/run-active-test/*.tsbuildinfo
-data-process/run-active-test/.env
-!data-process/run-active-test/.env.example
+data-process/run-active-test-worker/node_modules/
+data-process/run-active-test-worker/.wrangler/
+data-process/run-active-test-worker/dist/
+data-process/run-active-test-worker/.dev.vars
+data-process/run-active-test-worker/package-lock.json
+data-process/run-active-test-worker/*.tsbuildinfo
 
 # =======
 # data-process/stats-service (Python)

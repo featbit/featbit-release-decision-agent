@@ -4,11 +4,11 @@ A/B 实验数据处理管道，分五个子项目：
 
 ```
 data-process/
-├── cf-worker/         # Cloudflare Worker — 事件接收 + 实验查询
-├── rollup-service/    # .NET 10 — 每10分钟将 delta 合并进 rollup（仅处理 running 实验）
-├── stats-service/     # Python FastAPI — 定期读 rollup、运行 Bayesian/Bandit、写分析结果入 DB
-├── run-active-test/   # Node.js — 永远保持一个 running 实验在产生数据，作为端到端健康信号
-└── shared/            # 数据格式契约 — TypeScript 类型 + R2 路径约定
+├── cf-worker/                # Cloudflare Worker — 事件接收 + 实验查询
+├── rollup-service/           # .NET 10 — 每10分钟将 delta 合并进 rollup（仅处理 running 实验）
+├── stats-service/            # Python FastAPI — 定期读 rollup、运行 Bayesian/Bandit、写分析结果入 DB
+├── run-active-test-worker/   # Cloudflare Worker — cron 每分钟触发，HTTP 打 cf-worker 持续喂 canary 数据
+└── shared/                   # 数据格式契约 — TypeScript 类型 + R2 路径约定
 ```
 
 ## 系统健康信号：run-active-test

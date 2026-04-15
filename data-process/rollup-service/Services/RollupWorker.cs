@@ -42,44 +42,69 @@ public sealed class RollupWorker(
 
     public async Task RunCycleAsync(CancellationToken ct)
     {
-        // Query DB for running experiments; fail-open (empty = process all)
-        var (allowedFe, allowedMe) = await db.GetRunningKeySegmentsAsync(ct);
-        bool filterActive = allowedFe.Count > 0 || allowedMe.Count > 0;
+        var startedAt = DateTimeOffset.UtcNow;
+        var sw        = System.Diagnostics.Stopwatch.StartNew();
+        log.LogInformation("─── Cycle START  {Started:u}", startedAt);
 
-        var deltaKeys = await r2.ListKeysAsync("deltas/", ct);
-        if (deltaKeys.Count == 0)
+        int processed = 0;
+        int failed    = 0;
+        try
         {
-            log.LogDebug("No deltas found.");
-            return;
-        }
+            // Query DB for running experiments; fail-open (empty = process all)
+            var (allowedFe, allowedMe) = await db.GetRunningKeySegmentsAsync(ct);
+            bool filterActive = allowedFe.Count > 0 || allowedMe.Count > 0;
 
-        if (filterActive)
-        {
-            deltaKeys = deltaKeys
-                .Where(k => IsAllowed(k, allowedFe, allowedMe))
-                .ToList();
-
+            var deltaKeys = await r2.ListKeysAsync("deltas/", ct);
             if (deltaKeys.Count == 0)
             {
-                log.LogDebug("No deltas match running experiments.");
+                log.LogInformation("No deltas found.");
                 return;
             }
+
+            if (filterActive)
+            {
+                deltaKeys = deltaKeys
+                    .Where(k => IsAllowed(k, allowedFe, allowedMe))
+                    .ToList();
+
+                if (deltaKeys.Count == 0)
+                {
+                    log.LogInformation("No deltas match running experiments.");
+                    return;
+                }
+            }
+
+            log.LogInformation("Found {Count} delta(s) to process.", deltaKeys.Count);
+
+            // Process in parallel with bounded concurrency
+            var parallelOpts = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = opts.Value.MaxConcurrency,
+                CancellationToken      = ct,
+            };
+
+            await Parallel.ForEachAsync(deltaKeys, parallelOpts, async (key, innerCt) =>
+            {
+                try
+                {
+                    await processor.ProcessAsync(key, innerCt);
+                    Interlocked.Increment(ref processed);
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref failed);
+                    log.LogError(ex, "Failed to process {Key}", key);
+                }
+            });
         }
-
-        log.LogInformation("Found {Count} delta(s) to process.", deltaKeys.Count);
-
-        // Process in parallel with bounded concurrency
-        var parallelOpts = new ParallelOptions
+        finally
         {
-            MaxDegreeOfParallelism = opts.Value.MaxConcurrency,
-            CancellationToken      = ct,
-        };
-
-        await Parallel.ForEachAsync(deltaKeys, parallelOpts, async (key, innerCt) =>
-        {
-            try   { await processor.ProcessAsync(key, innerCt); }
-            catch (Exception ex) { log.LogError(ex, "Failed to process {Key}", key); }
-        });
+            sw.Stop();
+            var endedAt = DateTimeOffset.UtcNow;
+            log.LogInformation(
+                "─── Cycle END    {Ended:u}  elapsed={Elapsed}s  processed={Processed}  failed={Failed}",
+                endedAt, sw.Elapsed.TotalSeconds.ToString("F2"), processed, failed);
+        }
     }
 
     /// <summary>

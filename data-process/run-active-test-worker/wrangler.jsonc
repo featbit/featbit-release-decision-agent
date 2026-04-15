@@ -1,0 +1,31 @@
+{
+  // run-active-test-worker
+  //
+  // Cron-triggered Cloudflare Worker. Every minute, its `scheduled` handler
+  // sends 12 bursts of 0–10 synthetic events to cf-worker's /api/track, with
+  // a 5-second sleep between bursts — producing the "every 5 seconds" rhythm
+  // you'd get from a long-running generator, but entirely serverless.
+  //
+  // Deliberately a SEPARATE worker from data-process/cf-worker so that each
+  // burst hits the real public HTTP endpoint — the whole point is to prove
+  // that /api/track is alive end-to-end.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "featbit-run-active-test",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-01",
+  "account_id": "1f45ccf79bea72356d22bfa7ccec6e32",
+
+  // Every minute. Scheduled handler bursts 12×5s inside one invocation.
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+
+  // Target cf-worker — override per-env if needed.
+  "vars": {
+    "WORKER_URL": "https://data-process.featbit.ai",
+    "ENV_ID":     "rat-env-v1",
+    "BURSTS_PER_INVOCATION": "12",
+    "BURST_INTERVAL_MS":     "5000",
+    "MAX_EVENTS_PER_BURST":  "10"
+  }
+}
