@@ -45,8 +45,8 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       ASPNETCORE_ENVIRONMENT: Development
-      # Inside the compose network, "clickhouse" resolves to the CH container.
-      CLICKHOUSE_CONNECTION_STRING: "Host=clickhouse;Port=8123;Username=default;Password=${CLICKHOUSE_PASSWORD:-clickhouse};Protocol=http;Database=featbit"
+      # Read from .env — points at local docker CH or remote Azure VM CH.
+      CLICKHOUSE_CONNECTION_STRING: ${CLICKHOUSE_CONNECTION_STRING}
       Ingest__ChannelCapacity: ${INGEST_CHANNEL_CAPACITY:-100000}
       Ingest__BatchSize:       ${INGEST_BATCH_SIZE:-1000}
       Ingest__FlushIntervalMs: ${INGEST_FLUSH_INTERVAL_MS:-5000}
