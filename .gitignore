@@ -30,42 +30,23 @@ Thumbs.db
 tutorial/experimentation-for-engineers.md
 
 # =======
-# data-process/cf-worker (Cloudflare Worker)
+# /web/ (Next.js)
 # =======
-data-process/cf-worker/node_modules/
-data-process/cf-worker/.wrangler/
-data-process/cf-worker/dist/
-data-process/cf-worker/.dev.vars
-data-process/cf-worker/*.tsbuildinfo
-
-# =======
-# data-process/rollup-service (.NET 10)
-# =======
-data-process/rollup-service/bin/
-data-process/rollup-service/obj/
-data-process/rollup-service/appsettings.Development.json
-data-process/rollup-service/appsettings.*.json
-!data-process/rollup-service/appsettings.json
-
-
-# =======
-# agent/web/ (Next.js)
-# =======
-agent/web/node_modules/
-agent/web/.pnp
-agent/web/.pnp.*
-agent/web/.yarn/*
-!agent/web/.yarn/patches
-!agent/web/.yarn/plugins
-!agent/web/.yarn/releases
-!agent/web/.yarn/versions
-agent/web/coverage/
-agent/web/.next/
-agent/web/out/
-agent/web/build/
-agent/web/.vercel/
-agent/web/next-env.d.ts
-agent/web/*.tsbuildinfo
+modules/web/node_modules/
+modules/web/.pnp
+modules/web/.pnp.*
+modules/web/.yarn/*
+!modules/web/.yarn/patches
+!modules/web/.yarn/plugins
+!modules/web/.yarn/releases
+!modules/web/.yarn/versions
+modules/web/coverage/
+modules/web/.next/
+modules/web/out/
+modules/web/build/
+modules/web/.vercel/
+modules/web/next-env.d.ts
+modules/web/*.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -124,11 +105,11 @@ skills/experiment-workspace/scripts/*.pyc
 skills/experiment-workspace/scripts/*.pyo
 
 # =======
-# agent/web/prisma
+# /web/prisma
 # =======
-agent/web/prisma/dev.db
-!agent/web/prisma/dev.db.example
-agent/web/.open-next/
+modules/web/prisma/dev.db
+!modules/web/prisma/dev.db.example
+modules/web/.open-next/
 
 # =======
 # featbit/FeatBit.TrackApi (.NET 10)
@@ -147,14 +128,6 @@ featbit/**/*.user
 # =======
 tsdb/temp/
 
-# =======
-# agent/tsdb-cloudflare (Cloudflare Workers)
-# =======
-agent/tsdb-cloudflare/node_modules/
-agent/tsdb-cloudflare/dist/
-agent/tsdb-cloudflare/.wrangler/
-agent/tsdb-cloudflare/.dev.vars
-agent/tsdb-cloudflare/*.tsbuildinfo
 
 # =======
 # agent/data (Cloudflare Container Worker)
@@ -166,42 +139,23 @@ agent/data/package-lock.json
 agent/data/*.tsbuildinfo
 
 # =======
-# data-process/cf-worker
+# modules/track-service (.NET 10)
 # =======
-data-process/cf-worker/node_modules/
-data-process/cf-worker/.wrangler/
-data-process/cf-worker/.dev.vars
-data-process/cf-worker/package-lock.json
-data-process/cf-worker/*.tsbuildinfo
-
-
-# =======
-# data-process/tests
-# =======
-data-process/tests/*/node_modules/
-data-process/tests/*/.wrangler/
-data-process/tests/*/.dev.vars
-data-process/tests/*/package-lock.json
-data-process/tests/*/*.tsbuildinfo
+modules/track-service/bin/
+modules/track-service/obj/
+modules/track-service/appsettings.Development.json
+modules/track-service/appsettings.*.json
+!dmodules/track-service/appsettings.json
 
 # =======
-# data-process/track-service (.NET 10)
+# modules/run-active-test-worker (Cloudflare Worker)
 # =======
-data-process/track-service/bin/
-data-process/track-service/obj/
-data-process/track-service/appsettings.Development.json
-data-process/track-service/appsettings.*.json
-!data-process/track-service/appsettings.json
-
-# =======
-# data-process/run-active-test-worker (Cloudflare Worker)
-# =======
-data-process/run-active-test-worker/node_modules/
-data-process/run-active-test-worker/.wrangler/
-data-process/run-active-test-worker/dist/
-data-process/run-active-test-worker/.dev.vars
-data-process/run-active-test-worker/package-lock.json
-data-process/run-active-test-worker/*.tsbuildinfo
+modules/run-active-test-worker/node_modules/
+modules/run-active-test-worker/.wrangler/
+data-modules/run-active-test-worker/dist/
+modules/run-active-test-worker/.dev.vars
+modules/run-active-test-worker/package-lock.json
+modules/run-active-test-worker/*.tsbuildinfo
 
 # =======
 # data-process/stats-service (Python)

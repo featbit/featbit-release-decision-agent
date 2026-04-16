@@ -30,28 +30,26 @@ services:
       retries: 5
       start_period: 15s
 
-  rollup-service:
+  track-service:
     build:
-      context: ./rollup-service
+      context: ./track-service
       dockerfile: Dockerfile
-    image: featbit/rollup-service:local
-    container_name: rollup-service
+    image: featbit/track-service:local
+    container_name: track-service
     restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
     ports:
-      - "8080:8080"
+      - "5050:8080"
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       ASPNETCORE_ENVIRONMENT: Development
-      DATABASE_URL: ${DATABASE_URL}
-      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
-      Worker__IntervalSeconds: ${WORKER_INTERVAL_SECONDS:-600}
-      Worker__MaxConcurrency: ${WORKER_MAX_CONCURRENCY:-4}
-    # Windows/Mac 本地调试时访问宿主机 PostgreSQL 需要加此配置
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Inside the compose network, "clickhouse" resolves to the CH container.
+      CLICKHOUSE_CONNECTION_STRING: "Host=clickhouse;Port=8123;Username=default;Password=${CLICKHOUSE_PASSWORD:-clickhouse};Protocol=http;Database=featbit"
+      Ingest__ChannelCapacity: ${INGEST_CHANNEL_CAPACITY:-100000}
+      Ingest__BatchSize:       ${INGEST_BATCH_SIZE:-1000}
+      Ingest__FlushIntervalMs: ${INGEST_FLUSH_INTERVAL_MS:-5000}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -59,30 +57,42 @@ services:
       retries: 3
       start_period: 20s
 
-  stats-service:
+  run-active-test:
     build:
-      context: ./stats-service
+      context: ./run-active-test-worker
       dockerfile: Dockerfile
-    image: featbit/stats-service:local
-    container_name: stats-service
+    image: featbit/run-active-test:local
+    container_name: run-active-test
+    restart: unless-stopped
+    depends_on:
+      track-service:
+        condition: service_healthy
+    environment:
+      WORKER_URL: "http://track-service:8080"
+      ENV_ID:     "rat-env-v1"
+      TICK_MS:    "5000"
+      MAX_EVENTS: "8"
+
+  # Next.js web app — the experiment dashboard / management UI.
+  # Connects to Azure PostgreSQL remotely (no local PG needed).
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    image: featbit/web:local
+    container_name: web
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "3000:3000"
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
-      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
-      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
-      R2_BUCKET_NAME: ${R2_BUCKET_NAME}
-      ANALYSIS_INTERVAL_SECONDS: ${ANALYSIS_INTERVAL_SECONDS:-600}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      NODE_ENV:     production
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 30s
 
 volumes:
   clickhouse-data:
