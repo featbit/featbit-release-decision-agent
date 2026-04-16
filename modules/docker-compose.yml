@@ -82,11 +82,15 @@ services:
     image: featbit/web:local
     container_name: web
     restart: unless-stopped
+    depends_on:
+      track-service:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL: ${DATABASE_URL}
-      NODE_ENV:     production
+      DATABASE_URL:        ${DATABASE_URL}
+      TRACK_SERVICE_URL:   "http://track-service:8080"
+      NODE_ENV:            production
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]
       interval: 30s
