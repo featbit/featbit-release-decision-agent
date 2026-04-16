@@ -14,7 +14,7 @@
  */
 
 import { getClient } from "./client.js";
-import { getExperiment, saveSandboxSession } from "./db.js";
+import { getExperiment, saveSandboxSession, getManagedAgent, getVault } from "./db.js";
 
 export interface SessionInfo {
   sessionId: string;
@@ -55,15 +55,22 @@ async function isSessionValid(sessionId: string): Promise<boolean> {
 }
 
 async function createSession(experimentId: string): Promise<string> {
-  const agentId = process.env.MANAGED_AGENT_ID;
-  const environmentId = process.env.MANAGED_ENVIRONMENT_ID;
-  if (!agentId || !environmentId) {
-    throw new Error("MANAGED_AGENT_ID and MANAGED_ENVIRONMENT_ID must be set in .env");
+  const version = process.env.MANAGED_AGENT_VERSION ?? "default";
+  const agent = await getManagedAgent(version);
+  if (!agent) {
+    throw new Error(
+      `No managed agent found for version "${version}". Run: npm run setup-agent`,
+    );
   }
 
+  // Attach LLM vault if available
+  const llmVault = await getVault("llm");
+  const vaultIds = llmVault ? [llmVault.vaultId] : [];
+
   const session = await (getClient().beta as any).sessions.create({
-    agent: agentId,
-    environment_id: environmentId,
+    agent: agent.agentId,
+    environment_id: agent.environmentId,
+    vault_ids: vaultIds,
     title: `FeatBit Release Decision — ${experimentId}`,
   });
   return session.id as string;

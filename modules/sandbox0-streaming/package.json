@@ -4,6 +4,9 @@
   "description": "SSE proxy layer between Claude Managed Agents and the FeatBit web client",
   "type": "module",
   "scripts": {
+    "setup-vaults": "tsx src/setup-vaults.ts",
+    "setup-agent": "tsx src/setup-agent.ts",
+    "test-console": "tsx src/test-console.ts",
     "dev": "tsx --watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",

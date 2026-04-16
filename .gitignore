@@ -98,6 +98,29 @@ agent/sandbox0/.env
 agent/sandbox0/.sessions.json
 
 # =======
+# modules/sandbox0-streaming/ (ts)
+# =======
+modules/sandbox0-streaming/dist/
+modules/sandbox0-streaming/node_modules/
+modules/sandbox0-streaming/.pnp
+modules/sandbox0-streaming/.pnp.*
+modules/sandbox0-streaming/.yarn/*
+!modules/sandbox0-streaming/.yarn/patches
+!modules/sandbox0-streaming/.yarn/plugins
+!modules/sandbox0-streaming/.yarn/releases
+!modules/sandbox0-streaming/.yarn/versions
+modules/sandbox0-streaming/coverage/
+modules/sandbox0-streaming/.next/
+modules/sandbox0-streaming/out/
+modules/sandbox0-streaming/build/
+modules/sandbox0-streaming/.vercel/
+modules/sandbox0-streaming/next-env.d.ts
+modules/sandbox0-streaming/*.tsbuildinfo
+modules/sandbox0-streaming/.env
+!modules/sandbox0-streaming/.env.example
+modules/sandbox0-streaming/.sessions.json
+
+# =======
 # skills/experiment-workspace/scripts (Python)
 # =======
 skills/experiment-workspace/scripts/__pycache__/
