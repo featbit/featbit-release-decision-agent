@@ -25,7 +25,7 @@ These two control principles are handled together because they represent a singl
 
 ## On Entry — Read Current State
 
-Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+Before doing any work, read the project from the database using the `project-sync` skill's `get-experiment` command.
 
 Check these fields:
 
@@ -67,7 +67,7 @@ Use this path only if the current user actually owns flag operations. Otherwise,
 
 1. Confirm feature flag key naming (kebab-case, descriptive, environment-agnostic)
 2. Define variants: baseline (control) and candidate (treatment) — if non-boolean, set up variants in the web UI first
-3. Look up the environment ID: `featbit flag list <env-id>` or `featbit project get <project-id>`
+3. Look up the environment ID: `featbit flag list <env-id>` or `featbit project get <experiment-id>`
 4. Create the flag in the OFF state: `featbit flag create <env-id> --flag-name "..." --flag-key ...`
 5. For multi-variant flags or custom variation values: use [references/tool-featbit-webui.md](references/tool-featbit-webui.md)
 

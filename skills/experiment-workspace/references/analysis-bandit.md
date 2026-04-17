@@ -8,10 +8,10 @@ Unlike Bayesian A/B testing (fixed 50/50 split, one-shot analysis), a bandit exp
 
 ## When to Use Bandit vs. A/B
 
-| Goal | Method |
-|------|--------|
-| "Did this feature improve the metric? By how much?" | Bayesian A/B (`analyze-bayesian.py`) |
-| "Which variant should get more traffic right now to maximize reward during the experiment?" | Bandit (`analyze-bandit.py`) |
+| Goal | Run's `method` field |
+|------|----------------------|
+| "Did this feature improve the metric? By how much?" | `bayesian_ab` |
+| "Which variant should get more traffic right now to maximize reward during the experiment?" | `bandit` |
 
 Bandit is appropriate when:
 - Minimizing regret during the experiment matters (e.g. revenue-critical features)
@@ -29,36 +29,39 @@ Bandit is **not** appropriate when:
 
 ## How It Works
 
-Every time you run `analyze-bandit.py`:
+Every time the web `/analyze` endpoint runs a bandit:
 
-1. Builds a Gaussian posterior for each arm from current data (same CLT approximation as `analyze-bayesian.ts`)
+1. Builds a Gaussian posterior for each arm from current data (same CLT approximation as the Bayesian A/B path)
 2. Draws 10,000 samples from a multivariate normal across all arm posteriors
 3. Computes `best_arm_probabilities`: how often each arm drew the highest value
 4. Applies **Top-Two strategy**: only the top two arms compete for majority traffic; all others hold the minimum floor
 5. Enforces a **1% minimum floor** on every arm — no arm is ever fully cut off
 
 > **Book reference** — *Experimentation for Engineers*, Chapter 3: the book warns against allocating zero traffic to any arm. Early data is noisy; an arm that looks bad after 50 samples may be the true winner. The minimum floor ensures you can always recover from early misreadings. The Top-Two strategy is the book's recommended refinement for reducing regret while keeping exploration focused on real contenders.
-6. Outputs recommended weights to the experiment's `analysisResult` in the database
+6. Writes recommended weights to the run's `analysisResult` in the database
 
-**Burn-in guard**: if any arm has fewer than 100 users, dynamic weighting does not activate. The script reports the shortfall and exits without writing weights. This prevents early noise from corrupting allocation decisions.
+**Burn-in guard**: if any arm has fewer than 100 users, dynamic weighting does not activate. The response reports the shortfall and no weights are written. This prevents early noise from corrupting allocation decisions.
 
 > **Book reference** — *Experimentation for Engineers*, Chapter 3: the book notes that the bootstrap posterior (and by extension the Gaussian CLT approximation) converges reliably only above ~100 samples per arm. Acting on weights computed from fewer samples introduces harmful early skew that can be hard to recover from.
 
 ---
 
-## Running the Script
+## Triggering Bandit Analysis
+
+The web app's analyze endpoint picks `bandit` automatically from the run's `method` field — no separate script invocation:
 
 ```bash
-python skills/experiment-workspace/scripts/analyze-bandit.py <project-id> <slug>
+npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
 ```
 
 Reads:
-- Experiment record from the database (`inputData`, variant names, metric events)
+- Run record from the database (variant names, metric events, `method: "bandit"`)
+- Per-variant counts from `track-service`
 
 Writes:
-- `analysisResult` back to the experiment's database record
+- `inputData` and `analysisResult` back to the run record
 
-Input format is identical to `analyze-bayesian.py` — proportion `{"n", "k"}` or continuous `{"n", "sum", "sum_squares"}`.
+`inputData` format is identical across methods — proportion `{"n", "k"}` or continuous `{"n", "sum", "sum_squares"}` per variant.
 
 ---
 
@@ -124,7 +127,7 @@ PUT /api/v1/envs/{envId}/feature-flags/{flagKey}/targeting
 
 Update the `fallthrough.variations[].rollout` field with the computed ranges.
 
-This step requires FeatBit system integration. Full automation (scheduled reweighting without manual intervention) requires implementing a scheduler that calls `analyze-bandit.py` periodically and applies weights via the API.
+This step requires FeatBit system integration. Full automation (scheduled reweighting without manual intervention) requires implementing a scheduler that hits the web `/api/experiments/:id/analyze` endpoint periodically and applies the returned weights via the FeatBit API.
 
 > **Book reference** — *Experimentation for Engineers*, Chapter 3: the book describes the full Thompson Sampling feedback loop as a continuous "sample → estimate posterior → allocate → repeat" cycle. The scheduling interval (how often to reweight) is a tuning parameter: shorter intervals react faster but add noise; longer intervals are more stable but slower to adapt.
 
@@ -148,10 +151,10 @@ At this point:
 
 ## Transition to Final Analysis
 
-After stopping, run the standard Bayesian analysis on the full collected dataset:
+After stopping, switch the run's `method` to `bayesian_ab` (`project-sync upsert-experiment --method bayesian_ab`) and trigger a final analysis on the full collected dataset:
 
 ```bash
-python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
+npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
 ```
 
 **Important caveat**: bandit experiments produce unequal traffic splits (e.g. 90/10 by the end). This means:
@@ -171,6 +174,6 @@ Hand off to `evidence-analysis` with:
 | Phase | Action | Frequency |
 |-------|--------|-----------|
 | Burn-in | Collect data, do not reweight | Until every arm ≥ 100 users |
-| Exploit | Run `analyze-bandit.py`, apply weights to FeatBit | Every 6–24 hours |
+| Exploit | Trigger `analyze.ts` (run is on `method: bandit`), apply the returned weights to FeatBit | Every 6–24 hours |
 | Stopping | `best_arm_probabilities >= 0.95` | Check each cycle |
-| Wrap-up | Run `analyze-bayesian.py`, hand off to `evidence-analysis` | Once, after stopping |
+| Wrap-up | Switch run to `method: bayesian_ab`, trigger `analyze.ts`, hand off to `evidence-analysis` | Once, after stopping |

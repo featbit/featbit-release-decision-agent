@@ -23,7 +23,7 @@ Its job is to convert a goal into a testable, falsifiable statement before any i
 
 ## On Entry — Read Current State
 
-Use the `project-sync` skill's `get-project` command to load the current project state from the database. Check:
+Use the `project-sync` skill's `get-experiment` command to load the current project state from the database. Check:
 
 - `goal` and `intent` — were they set by `intent-shaping`? If empty, go back to `intent-shaping` first.
 - `hypothesis`, `change`, `variants`, `primaryMetric` — are they already filled? If so, verify with the user whether to refine or start fresh.
@@ -71,9 +71,9 @@ The hypothesis does not need a specific number at this stage. It needs a directi
 
 Use the `project-sync` skill to sync state to the web database:
 
-- `update-state <project-id> --hypothesis "We believe [change] will [move metric] for [audience] because [reason]" --change "[specific change]" --variants "[control / treatment]" --primaryMetric "[metric name]"`
-- `set-stage <project-id> hypothesis`
-- `add-activity <project-id> --type stage_update --title "Hypothesis formed"`
+- `update-state <experiment-id> --hypothesis "We believe [change] will [move metric] for [audience] because [reason]" --change "[specific change]" --variants "[control / treatment]" --primaryMetric "[metric name]"`
+- `set-stage <experiment-id> hypothesis`
+- `add-activity <experiment-id> --type stage_update --title "Hypothesis formed"`
 
 ## Reference Files
 

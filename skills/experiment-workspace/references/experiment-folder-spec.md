@@ -118,7 +118,7 @@ For **orthogonal** experiments (same user in two independent experiments simulta
 
 ## `inputData` Format
 
-Holds aggregated exposure and conversion counts for every metric and variant. Written by `collect-input.ts` or manually populated.
+Holds aggregated exposure and conversion counts for every metric and variant. Written by the web `/api/experiments/:id/analyze` endpoint after it queries `track-service`.
 
 ```json
 {
@@ -140,13 +140,13 @@ Rules:
 - Inner keys are variant values — must match `controlVariant` and `treatmentVariant` in the experiment record
 - `n` = unique users exposed to that variant in the observation window
 - `k` = unique users who fired the event at least once, out of those `n`
-- Source: see `references/data-source-guide.md` for §FeatBit / §Database / §Custom patterns
+- Source: see `references/data-source-guide.md` for how events land in track-service
 
 ---
 
 ## `analysisResult` Format
 
-Written by the analysis script (`analyze-bayesian.py` or `analyze-bandit.py`) after computation. Example output:
+Written by the web `/api/experiments/:id/analyze` endpoint (Bayesian or Bandit selected from the run's `method` field). Example output:
 
 ```json
 {

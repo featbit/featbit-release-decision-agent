@@ -23,7 +23,7 @@ Its job is to extract a real, measurable business outcome from a vague or tactic
 
 ## On Entry — Read Current State
 
-Use the `project-sync` skill's `get-project` command to load the current project state from the database. Check:
+Use the `project-sync` skill's `get-experiment` command to load the current project state from the database. Check:
 
 - `goal` and `intent` — are they already filled from a previous cycle? If so, confirm with the user whether to refine or start fresh.
 - `lastLearning` — was there a prior cycle? Use it as context for the new intent.
@@ -67,9 +67,9 @@ Confirm the goal belongs to this iteration — not a 6-month vision.
 
 Use the `project-sync` skill to sync state to the web database:
 
-- `update-state <project-id> --goal "[measurable business outcome]" --intent "[what the user is trying to improve or learn]"`
-- `set-stage <project-id> intent`
-- `add-activity <project-id> --type stage_update --title "Intent clarified"`
+- `update-state <experiment-id> --goal "[measurable business outcome]" --intent "[what the user is trying to improve or learn]"`
+- `set-stage <experiment-id> intent`
+- `add-activity <experiment-id> --type stage_update --title "Intent clarified"`
 
 ## Reference Files
 

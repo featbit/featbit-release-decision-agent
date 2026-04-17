@@ -57,8 +57,8 @@ featbit project list --json    # JSON output
 ### Get a project and its environments
 
 ```bash
-featbit project get <project-id>
-featbit project get <project-id> --json
+featbit project get <experiment-id>
+featbit project get <experiment-id> --json
 ```
 
 Returns project name, key, and all environment IDs. **Environment IDs are required for all flag commands.**

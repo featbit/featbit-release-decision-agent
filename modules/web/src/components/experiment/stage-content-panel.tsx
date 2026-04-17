@@ -90,12 +90,14 @@ export function StageContentPanel({
   return (
     <div className="h-full overflow-y-auto p-5 space-y-5">
       {/* Stage header */}
-      <div className="flex items-center gap-2">
-        <Badge className={`text-[10px] ${stage.color}`}>{stage.cf}</Badge>
-        <span className="text-sm font-semibold">{stage.label}</span>
-        <span className="text-xs text-muted-foreground ml-auto">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Badge className={`text-[10px] ${stage.color}`}>{stage.cf}</Badge>
+          <span className="text-sm font-semibold">{stage.label}</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
           {stage.description}
-        </span>
+        </p>
       </div>
 
       {/* Stage-specific content */}

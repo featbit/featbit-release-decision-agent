@@ -24,7 +24,7 @@ Its job is to ensure every hypothesis has exactly one primary metric, a small se
 
 ## On Entry — Read Current State
 
-Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+Before doing any work, read the project from the database using the `project-sync` skill's `get-experiment` command.
 
 Check these fields:
 

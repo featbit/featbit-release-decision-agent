@@ -23,7 +23,7 @@ CF-06 and CF-07 are handled together because they represent a continuous decisio
 
 ## On Entry — Read Current State
 
-Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+Before doing any work, read the project from the database using the `project-sync` skill's `get-experiment` command.
 
 Check these fields:
 

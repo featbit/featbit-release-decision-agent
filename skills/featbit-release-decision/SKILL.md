@@ -89,7 +89,7 @@ Every stage transition must persist state to the database before handing off to 
 
 All satellite skills use the `project-sync` skill to read and write state. The required pattern:
 
-1. **Read** — use `get-project` to load current state on entry
+1. **Read** — use `get-experiment` to load current state on entry
 2. **Write state** — use `update-state` to persist field values
 3. **Advance stage** — use `set-stage` to move the lifecycle forward
 4. **Log transition** — use `add-activity` to record what happened
@@ -289,14 +289,14 @@ Two parameters are passed as invocation arguments when the slash command is acti
 
 Invocation pattern:
 ```
-/featbit-release-decision <project-id> [access-token]
+/featbit-release-decision <experiment-id> [access-token]
 ```
 
 Parse `project-id` and `access-token` from the starting prompt. If `project-id` is missing, ask the user before proceeding. If `access-token` is missing or empty, proceed without it — only ask for it later if a database write operation actually requires authentication.
 
 ### State loading
 
-Before asking or saying anything, read the current project state from the database using the `project-sync` skill's `get-project` command with the `project-id` parsed from the invocation arguments.
+Before asking or saying anything, read the current project state from the database using the `project-sync` skill's `get-experiment` command with the `project-id` parsed from the invocation arguments.
 
 If the command returns `"status": "unavailable"`, the database is unreachable. Treat this exactly like a blank new project and proceed with the greeting — do not retry, do not diagnose, do not mention the database.
 

@@ -33,15 +33,11 @@ Keys:
 
 ---
 
-## How to Produce `inputData`
+## How `inputData` Is Produced
 
-Open `collect-input.ts` (at `skills/experiment-workspace/scripts/collect-input.ts`), implement the one function `fetchMetricSummary()` using whichever pattern fits your infrastructure below, then run:
+The web app's `POST /api/experiments/:id/analyze` endpoint builds `inputData` from `track-service`: it reads the run's `featbitEnvId` + `flagKey` + `primaryMetricEvent` + guardrail events, queries ClickHouse via track-service for per-variant counts, assembles `inputData` in the canonical shape, then immediately runs the analysis and writes `analysisResult` back. One round trip, no manual step.
 
-```bash
-npx tsx skills/experiment-workspace/scripts/collect-input.ts <project-id> <experiment-slug>
-```
-
-The script reads the experiment record from the DB, calls `fetchMetricSummary()` once per variant × metric combination, and writes `inputData` back to the DB.
+Your only job is to make sure instrumentation is sending events to `track-service` with the right `env_id` / `flag_key` / event names. Once events land, `/analyze` handles the rest.
 
 ---
 
@@ -154,19 +150,18 @@ Replace the endpoint, headers, and response field names with your service's actu
 
 ## Verifying Your Input
 
-After running `collect-input.ts`, sanity-check the `inputData` stored in the experiment record:
+Trigger analysis via the web app:
 
-Check:
+```bash
+npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+```
+
+Then sanity-check the `inputData` the endpoint wrote back to the run record:
+
 - Both variant keys match `controlVariant` and `treatmentVariant` in the experiment record
 - `n` values are plausible — not 0, not absurdly high
 - `k` ≤ `n` for every row
 - All metrics listed in `primaryMetricEvent` and `guardrailEvents` are present
 
-Then run the analysis:
-
-```bash
-python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
-```
-
-See `analysis-bayesian.md` for output format and interpretation.
+If the response is `{ "status": "no_data" }`, events haven't landed in track-service yet. See `analysis-bayesian.md` for output format and interpretation.
 

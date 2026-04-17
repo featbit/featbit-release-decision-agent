@@ -23,7 +23,7 @@ Its job is to produce a reusable learning at the end of every cycle — good, ba
 
 ## On Entry — Read Current State
 
-Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+Before doing any work, read the project from the database using the `project-sync` skill's `get-experiment` command.
 
 Check these fields:
 

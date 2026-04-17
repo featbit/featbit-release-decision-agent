@@ -12,9 +12,9 @@ which increases the effective power of the test without collecting more data.
 **Why useful**: Can reduce the required sample size by 20–50 % for metrics with high user-level variance (e.g. revenue).
 
 **What's needed**:
-- `collect-input.py` must expose a second time window (pre-experiment) per variant per metric
+- Track-service query must expose a second time window (pre-experiment) per variant per metric; web `/analyze` endpoint reads both windows and folds them into `inputData`
 - Input format extension: `{"n": N, "sum": S, "sum_squares": SS, "covariate_sum": CS, "covariate_sum_squares": CSS, "covariate_cross": CX}`
-- `analyze-bayesian.py`: add `regression_adjusted_variance()` that computes the CUPED-corrected mean and variance before passing to `bayesian_result()` / `frequentist_result()`
+- Add `regression_adjusted_variance()` in `src/lib/stats/analyze.ts` that computes the CUPED-corrected mean and variance before passing to the Bayesian / frequentist result function
 
 **Complexity**: Medium — math is straightforward; the main work is extending the data pipeline.
 
@@ -29,7 +29,7 @@ Example: "revenue per session" (not "revenue per user"), "errors per request".
 
 **What's needed**:
 - Input format extension: per-variant `{"num_sum": N_S, "num_sum_squares": N_SS, "den_sum": D_S, "den_sum_squares": D_SS, "num_den_sum": ND_S}` (for the delta method)
-- `analyze-bayesian.py`: add `ratio_moments()` that applies the delta method variance formula for ratios before handing off to existing analysis functions
+- Add `ratio_moments()` in `src/lib/stats/analyze.ts` that applies the delta method variance formula for ratios before handing off to existing analysis functions
 
 **Complexity**: Medium — delta method formula is well-known; data collection side needs care.
 
@@ -44,7 +44,7 @@ Example: "revenue per session" (not "revenue per user"), "errors per request".
 **Why useful**: Helps decide "should we keep running?" without inflating Type-I error (unlike peeking at p-values).
 
 **What's needed**:
-- A separate `power-check.py` script (or a `--power` flag in `analyze-bayesian.py`)
+- A `?power=1` query on the web `/analyze` endpoint that returns a power-check block alongside `analysisResult`
 - Inputs: current n, current effect estimate, target MDE, target power (default 0.8), target α (default 0.05)
 - Outputs: estimated additional n needed, projected end date given daily traffic rate
 

@@ -34,7 +34,7 @@ Do not activate if:
 
 ## On Entry — Read Current State
 
-Before doing any work, read the project from the database using the `project-sync` skill's `get-project` command.
+Before doing any work, read the project from the database using the `project-sync` skill's `get-experiment` command.
 
 Check these fields:
 
@@ -77,24 +77,20 @@ Each experiment is stored as a row in the `Experiment` table (Prisma schema). Ke
 | `status` | `draft` / `collecting` / `analyzing` / `decided` / `archived` — **NEVER use `"completed"`, `"finished"`, `"closed"`, or any other value not in this list.** `"completed"` is a `Project.sandboxStatus` value and does NOT apply to experiments. |
 | `decision` / `decisionSummary` / `decisionReason` | Final decision (summary = plain-language action, reason = technical rationale) |
 
-### Scripts (Hybrid: TypeScript for I/O, Python for algorithms)
+### Scripts
 
 ```
 skills/experiment-workspace/scripts/
-  db-client.ts           ← HTTP API wrapper for DB read/write (TypeScript)
-  db_client.py           ← HTTP API wrapper for DB read/write (Python)
-  collect-input.ts       ← data collector placeholder (TypeScript, implement fetchMetricSummary)
-  stats_utils.py         ← statistical utilities: GaussianPrior, bayesian_result, srm_check (Python, numpy/scipy)
-  analyze-bayesian.py    ← Bayesian A/B analysis (Python, reads/writes DB)
-  analyze-bandit.py      ← Thompson Sampling weight computation (Python, reads/writes DB)
+  analyze.ts             ← agent's entry point: triggers the web /analyze endpoint
 ```
 
-**TypeScript scripts** (data I/O): `npx tsx <script>.ts <project-id> <experiment-slug>`
-**Python scripts** (algorithms): `python <script>.py <project-id> <experiment-slug>`
+The real statistical work lives on the server: the web app's `POST /api/experiments/:id/analyze` endpoint queries `track-service` for the latest metrics and runs the Bayesian or Bandit algorithm (selected automatically from the run's `method` field), then writes both `inputData` and `analysisResult` back to the run record in one round-trip. `analyze.ts` is a thin wrapper that the agent calls so SKILL.md and references never need raw curl.
 
 **Two experiment methods** (set via `method` field, configurable in web UI):
-- **bayesian_ab (default)**: Balanced sampling — the data server caps each variant at MIN(count) so both arms have equal N, eliminating SRM noise. One-shot analysis → `analyze-bayesian.py`
-- **bandit**: Pass-through — asymmetric allocation is intentional (Thompson Sampling shifts traffic toward the winning arm). No balanced sampling applied. → `analyze-bandit.py` (requires FeatBit API integration for full automation)
+- **bayesian_ab (default)**: Balanced sampling — the data server caps each variant at MIN(count) so both arms have equal N, eliminating SRM noise. One-shot analysis.
+- **bandit**: Pass-through — asymmetric allocation is intentional (Thompson Sampling shifts traffic toward the winning arm). No balanced sampling applied.
+
+The web `/analyze` route picks the algorithm automatically from the run's `method` field.
 
 **Key principle: Flag traffic ≠ Experiment traffic.** Developers instrument once (`variation()` + `track()`), never per-experiment. The PM configures experiment scope (traffic%, offset, audience, method) post-hoc via the web UI. The data server applies these filters at query time — the flag itself is unaware of the experiment.
 
@@ -106,16 +102,9 @@ All experiment data lives in the shared PostgreSQL database, accessible via the 
 
 ### "First time setup"
 
-No file copying is needed. All scripts run from `skills/experiment-workspace/scripts/` using `npx tsx`. The only prerequisite is:
-
-1. The web app must be running (provides the HTTP API that scripts use for DB access)
-2. `collect-input.ts` must be customized with a `fetchMetricSummary()` implementation for your data source (see `references/data-source-guide.md`)
-3. Both analysis scripts (`analyze-bayesian.py`, `analyze-bandit.py`) work out of the box once `inputData` exists in the DB
-
-Python with numpy/scipy is required for the analysis scripts. Install once:
-```bash
-pip install numpy scipy
-```
+1. The web app must be running — it exposes both the state API (`/api/experiments/*`) and the analysis endpoint (`/api/experiments/:id/analyze`).
+2. `track-service` must be running and receiving `flag_evaluation` + metric events from your instrumentation. Analysis reads straight from ClickHouse via track-service — no local `inputData` population step is needed.
+3. No Python or numpy/scipy install required on the agent side — analysis runs server-side inside the web app.
 
 ---
 
@@ -165,34 +154,34 @@ pip install numpy scipy
    - If the user ran a pilot phase (separate experiment window) and has its `analysisResult`: read `μ_rel` and `se` from it and use those as the prior — but only if the pilot data will **not** be included in the new experiment's `inputData`
    - If no prior knowledge is available: set `priorProper: false` (flat prior, the safe default)
 8. Persist state to the database (see Persist State section below)
-9. Tell the user: the next step is to collect data (customize `collect-input.ts` if needed), then run the analysis
+9. Tell the user: once the flag is emitting `flag_evaluation` events and the metric event is firing via your instrumentation, track-service will accumulate data automatically; open the experiment's Full Analysis tab when ready to see results
 
 The agent does not need to touch any online dashboard. Persisting the experiment record to the database is the equivalent of "creating an experiment".
 
 ### "I want to check if we have enough data"
 
-1. Read the experiment from the database and check `inputData`
-   - If `inputData` is empty, data has not been collected yet — direct to `references/data-source-guide.md` or customize `collect-input.ts`
-2. If `inputData` exists, check the `n` (total users) per variant against `minimumSample`
-   - You can inspect this from the web UI or by reading the experiment record via the API
-3. If below minimum: do not proceed to analysis — wait and re-check later
-4. If above minimum: proceed to run the analysis
+1. Trigger a fresh analysis — this makes the web app query track-service for the latest metrics:
+   ```bash
+   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+   ```
+   The response contains either the analysis result, `{ "status": "no_data" }` (nothing in ClickHouse yet), or `{ "status": "no_data", "reason": "zero_users" }` (metric event present but no users).
+2. If `no_data`: instrumentation hasn't fired yet. Confirm with the user that `flag_evaluation` and the primary metric event are being sent with the correct `env_id` and `flag_key`.
+3. If data is returned, check the total `n` across variants against the run's `minimumSample`. Below minimum → wait and re-check later. Above minimum → proceed to interpret the analysis.
 
 ### "I want to run the analysis"
 
-1. Confirm `inputData` exists in the experiment record (read from the database)
-2. If missing: customize and run `collect-input.ts` or follow `references/data-source-guide.md` to populate it
-3. Run:
+1. Trigger the web app's analyze endpoint — it queries track-service for fresh metrics, runs the Bayesian algorithm, and writes both `inputData` and `analysisResult` back to the run record:
    ```bash
-   python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
+   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
-4. The script reads `inputData` from the DB, computes results, and writes `analysisResult` back to the DB
-5. Key outputs to check before handing off (read `analysisResult` from the experiment record):
+   Alternatively, opening the experiment's **Full Analysis** tab in the web UI auto-triggers the same call.
+2. Read the result back via `project-sync get-experiment <experiment-id>` and inspect the matching run's `analysisResult`.
+3. Key outputs to check before handing off:
    - **P(win)** ≥ 95% → strong signal; ≤ 5% → likely harmful; 20–80% → inconclusive
    - **risk[trt]** — if P(win) is near a boundary, this tells you how costly a wrong call is
    - **SRM check** — if χ² p-value < 0.01, stop and investigate traffic split before interpreting metrics
-6. Hand off to `evidence-analysis` with the experiment's `analysisResult` and definition fields
-7. Persist experiment status to the database (see Persist State section below)
+4. Hand off to `evidence-analysis` with the run's `analysisResult` and definition fields.
+5. Persist experiment status to the database (see Persist State section below).
 
 For the full list of metric types and usage patterns (proportion, continuous, inverse, multiple arms, informative prior), see `references/analysis-bayesian.md`.
 
@@ -208,13 +197,12 @@ See `references/analysis-bayesian.md` → "On Family-wise Error" for details.
 
 ### "I want to update the data and re-run"
 
-1. Re-run `collect-input.ts` to pull fresh counts — it overwrites `inputData` in the DB
-2. Re-run:
+1. Re-run analysis (or click **Refresh Latest Analysis** in the UI). The web app re-queries track-service and re-runs the algorithm; both `inputData` and `analysisResult` are overwritten idempotently:
    ```bash
-   python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
+   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
-3. `analysisResult` is overwritten with fresh numbers — both scripts are idempotent
-4. Persist updated experiment status to the database (see Persist State section below)
+2. Read the refreshed result via `get-experiment` and continue interpretation.
+3. Persist updated experiment status to the database (see Persist State section below).
 
 ### "I want to run a Bandit experiment"
 
@@ -226,12 +214,11 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 3. Note: bandit works best for proportion metrics (conversion rate, CTR)
 
 **Each reweighting cycle** (recommended every 6–24 hours):
-1. Collect fresh data → update `inputData` in DB
-2. Run:
+1. Trigger a fresh analysis via the web app (it picks bandit automatically from the run's `method` field):
    ```bash
-   python skills/experiment-workspace/scripts/analyze-bandit.py <project-id> <experiment-slug>
+   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
-3. Read `analysisResult` from the experiment record:
+2. Read `analysisResult` from the run record via `get-experiment`:
    - If `enough_units: false` → burn-in not complete, do not apply weights yet (need ≥ 100 users per arm)
    - If `srm_p_value < 0.01` → SRM detected, investigate traffic split before applying weights
    - Otherwise → apply `bandit_weights` to the FeatBit feature flag via API
@@ -241,9 +228,9 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 
 **After stopping — transition to final analysis**:
 1. Set winning arm to 100% in FeatBit
-2. Run final Bayesian analysis on full dataset:
+2. Switch the run's `method` field to `bayesian_ab` (via `project-sync upsert-experiment --method bayesian_ab`) and trigger a final analysis:
    ```bash
-   python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
+   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
 3. Hand off to `evidence-analysis` with the experiment record containing:
    - `analysisResult` (final Bayesian result — note: δ estimate may have wider uncertainty due to unequal traffic)
@@ -262,10 +249,10 @@ A/B and Bandit experiments measure short-term behavior. Transient effects — no
    - `check_at_days: [30, 60, 90]`
    - `launched_at: <launch date>`
 3. At each checkpoint (day 30, 60, 90):
-   - Collect fresh data for both groups → update `inputData` in the DB
-   - Run analysis with a time-stamped slug:
+   - Create a new run with a time-stamped slug (e.g. `<slug>-holdout-30d`) via `project-sync create-run`
+   - Trigger analysis on that run — the web app pulls fresh data from track-service and writes both `inputData` and `analysisResult`:
      ```bash
-     python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>-holdout-30d
+     npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <holdout-run-id>
      ```
 4. Compare P(win) and rel Δ across checkpoints — look for stability, decay, or growth
 5. When holdout analysis is complete, remove the holdout split from the feature flag
@@ -284,11 +271,11 @@ For full interpretation guidance (three patterns: holds / decays / improves), se
 
 - The experiment record in the database is the contract. Do not change `primaryMetricEvent`, `controlVariant`, or `treatmentVariant` after data collection starts — it would invalidate the data already collected.
 - `observationStart` must match when the flag was actually enabled. Do not backfill earlier — pre-flag data is not part of the experiment.
-- Verify `inputData` sanity before running analysis: `k` ≤ `n` for every row, variant keys match the experiment record, no zero `n` values.
-- Do not interpret results by eyeballing `inputData`. Always run `analyze-bayesian.py` and read `analysisResult`.
-- **NEVER compute analysis statistics inline and write the result directly to `analysisResult`.** The web UI renderer expects a specific JSON schema produced only by `analyze-bayesian.py` or `analyze-bandit.py`. If data is provided manually (e.g. the user tells you "300 users, 13 conversions"), first write it to `inputData` in the correct format (`{"metrics":{"<event>":{"<control>":{"n":300,"k":13},"<treatment>":{"n":290,"k":37}}}}`) using `upsert-experiment`, then run the analysis script. Inline computation produces a flat JSON that the UI cannot render.
+- After the web `/analyze` endpoint runs, verify the `inputData` it wrote is sane: `k` ≤ `n` for every row, variant keys match the experiment record, no zero `n` values.
+- Do not interpret results by eyeballing `inputData`. Always let the web `/analyze` endpoint compute `analysisResult` and read from there.
+- **NEVER compute analysis statistics inline and write the result directly to `analysisResult`.** The web UI renderer expects the exact JSON schema produced by the `/analyze` endpoint's server-side algorithms. If data is provided manually (e.g. the user tells you "300 users, 13 conversions"), don't inline it — that data is not in track-service, so `/analyze` can't use it and inline synthesis will produce JSON the UI cannot render. Instead, confirm with the user how to backfill the events into track-service, then run `/analyze`.
 - If the SRM check flags an imbalance (χ² p < 0.01), do not proceed to `evidence-analysis` — the data is unreliable.
-- "The script says 97% confidence" does not mean "ship it." That is `evidence-analysis`'s job.
+- "97% confidence in the result" does not mean "ship it." That is `evidence-analysis`'s job.
 - **Valid `status` values are: `draft`, `collecting`, `analyzing`, `decided`, `archived` — nothing else.** Do not use `"completed"`, `"finished"`, `"closed"`, or any invented terminal state. `"completed"` belongs to `Project.sandboxStatus`, not `Experiment.status`. Writing an invalid status will break the `ExperimentWorker` polling query.
 
 ### Persist State
@@ -344,9 +331,6 @@ When handing off to `evidence-analysis`, pass the experiment's `analysisResult` 
 - [references/analysis-bandit.md](references/analysis-bandit.md) — Bandit analysis: Thompson Sampling, `analysisResult` fields, FeatBit API integration, stopping condition
 - [references/analysis-holdout.md](references/analysis-holdout.md) — Holdout group: post-launch long-term validation, three effect patterns, checkpoint cadence
 - [references/data-source-guide.md](references/data-source-guide.md) — input contract and §FeatBit / §Database / §Custom patterns for producing `inputData`
-- [scripts/db-client.ts](scripts/db-client.ts) — HTTP API wrapper for DB read/write (TypeScript)
-- [scripts/db_client.py](scripts/db_client.py) — HTTP API wrapper for DB read/write (Python)
-- [scripts/collect-input.ts](scripts/collect-input.ts) — data collector placeholder (implement `fetchMetricSummary`)
-- [scripts/stats_utils.py](scripts/stats_utils.py) — statistical utilities: GaussianPrior, bayesian_result, srm_check (Python, numpy/scipy)
-- [scripts/analyze-bayesian.py](scripts/analyze-bayesian.py) — ready-to-run Bayesian A/B analysis script (Python)
-- [scripts/analyze-bandit.py](scripts/analyze-bandit.py) — ready-to-run Thompson Sampling weight computation script (Python)
+**Agent-facing script:**
+
+- [scripts/analyze.ts](scripts/analyze.ts) — trigger the web app's `/api/experiments/:id/analyze` endpoint for a run

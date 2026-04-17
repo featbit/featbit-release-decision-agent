@@ -1,6 +1,6 @@
 ---
 name: project-sync
-description: Sync release-decision project state to the web database. Provides the `sync.ts` CLI script that all other skills call to persist state changes (update fields, advance stage, log activities, manage experiment runs). Activate whenever a skill needs to write project state to the web DB. Triggers — "sync to web DB", "update project state", "push state", "set stage", "add activity", "create run", "start run", "pause run", "complete run", "record decision", "save learning", "get project".
+description: Sync release-decision experiment state to the web database. Provides the `sync.ts` CLI script that all other skills call to persist state changes (update fields, advance stage, log activities, manage experiment runs). Activate whenever a skill needs to write experiment state to the web DB. Triggers — "sync to web DB", "update experiment state", "push state", "set stage", "add activity", "create run", "start run", "analyze run", "decide run", "archive run", "record decision", "save learning", "get experiment".
 license: MIT
 metadata:
   author: FeatBit
@@ -65,12 +65,12 @@ These are the only valid values for each enum field. The script and server API *
 
 ## Commands
 
-### get-project
+### get-experiment
 
 Read full project state (includes experiment runs, activities, messages).
 
 ```bash
-npx tsx scripts/sync.ts get-project <project-id>
+npx tsx scripts/sync.ts get-experiment <experiment-id>
 ```
 
 ---
@@ -80,7 +80,7 @@ npx tsx scripts/sync.ts get-project <project-id>
 Push one or more decision-state fields to the web DB.
 
 ```bash
-npx tsx scripts/sync.ts update-state <project-id> \
+npx tsx scripts/sync.ts update-state <experiment-id> \
   --goal "..." \
   --intent "..." \
   --hypothesis "..." \
@@ -103,7 +103,7 @@ npx tsx scripts/sync.ts update-state <project-id> \
 Advance the project stage.
 
 ```bash
-npx tsx scripts/sync.ts set-stage <project-id> <stage>
+npx tsx scripts/sync.ts set-stage <experiment-id> <stage>
 ```
 
 **Valid stages:** `intent` | `hypothesis` | `implementing` | `measuring` | `learning`
@@ -115,7 +115,7 @@ npx tsx scripts/sync.ts set-stage <project-id> <stage>
 Log an activity event.
 
 ```bash
-npx tsx scripts/sync.ts add-activity <project-id> --type <type> --title "..." [--detail "..."]
+npx tsx scripts/sync.ts add-activity <experiment-id> --type <type> --title "..." [--detail "..."]
 ```
 
 `--type` and `--title` are required. Use `--detail` for longer technical notes.
@@ -127,7 +127,7 @@ npx tsx scripts/sync.ts add-activity <project-id> --type <type> --title "..." [-
 Create a new experiment run (status starts as `draft`).
 
 ```bash
-npx tsx scripts/sync.ts create-run <project-id> <slug> \
+npx tsx scripts/sync.ts create-run <experiment-id> <slug> \
   --hypothesis "Adding streamlined checkout will increase purchase_completed" \
   --method bayesian_ab \
   --primaryMetricEvent purchase_completed \
@@ -155,23 +155,23 @@ One command per status — **never pass a status string**; pick the command that
 
 | Command | Writes status |
 |---|---|
-| `start-run <project-id> <slug>` | `collecting` |
-| `analyze-run <project-id> <slug>` | `analyzing` |
-| `decide-run <project-id> <slug>` | `decided` |
-| `archive-run <project-id> <slug>` | `archived` |
+| `start-run <experiment-id> <slug>` | `collecting` |
+| `analyze-run <experiment-id> <slug>` | `analyzing` |
+| `decide-run <experiment-id> <slug>` | `decided` |
+| `archive-run <experiment-id> <slug>` | `archived` |
 
 ```bash
 # Begin collecting data for an existing draft run
-npx tsx scripts/sync.ts start-run <project-id> <slug>
+npx tsx scripts/sync.ts start-run <experiment-id> <slug>
 
 # Move to the analysis phase
-npx tsx scripts/sync.ts analyze-run <project-id> <slug>
+npx tsx scripts/sync.ts analyze-run <experiment-id> <slug>
 
 # Record that a decision has been reached
-npx tsx scripts/sync.ts decide-run <project-id> <slug>
+npx tsx scripts/sync.ts decide-run <experiment-id> <slug>
 
 # Archive a run that is no longer in play
-npx tsx scripts/sync.ts archive-run <project-id> <slug>
+npx tsx scripts/sync.ts archive-run <experiment-id> <slug>
 ```
 
 ---
@@ -181,7 +181,7 @@ npx tsx scripts/sync.ts archive-run <project-id> <slug>
 Save the raw metrics snapshot collected for this run.
 
 ```bash
-npx tsx scripts/sync.ts save-input <project-id> <slug> \
+npx tsx scripts/sync.ts save-input <experiment-id> <slug> \
   --inputData '{"metrics":{"control":{"n":1000,"conversions":87},"treatment":{"n":1020,"conversions":104}}}'
 ```
 
@@ -194,7 +194,7 @@ npx tsx scripts/sync.ts save-input <project-id> <slug> \
 Save the Bayesian analysis output for this run.
 
 ```bash
-npx tsx scripts/sync.ts save-result <project-id> <slug> \
+npx tsx scripts/sync.ts save-result <experiment-id> <slug> \
   --analysisResult '{"decision":"CONTINUE","probability":0.87,"rope":{"low":0.0,"high":0.01}}'
 ```
 
@@ -207,7 +207,7 @@ npx tsx scripts/sync.ts save-result <project-id> <slug> \
 Record the human/agent decision for this run.
 
 ```bash
-npx tsx scripts/sync.ts record-decision <project-id> <slug> \
+npx tsx scripts/sync.ts record-decision <experiment-id> <slug> \
   --decision CONTINUE \
   --decisionSummary "Roll out streamlined checkout to 100% of users" \
   --decisionReason "Treatment shows 87% probability of beating control; ROPE analysis clear"
@@ -224,7 +224,7 @@ npx tsx scripts/sync.ts record-decision <project-id> <slug> \
 Capture structured learnings at the end of a cycle.
 
 ```bash
-npx tsx scripts/sync.ts save-learning <project-id> <slug> \
+npx tsx scripts/sync.ts save-learning <experiment-id> <slug> \
   --whatChanged "Reduced checkout to 2 steps" \
   --whatHappened "Conversion increased by +2.3pp (p=0.87 Bayesian)" \
   --confirmedOrRefuted "confirmed" \
@@ -242,33 +242,33 @@ Every stage transition follows this write sequence:
 
 ```bash
 # 1. Push the fields produced in this stage
-npx tsx scripts/sync.ts update-state <project-id> --hypothesis "..."
+npx tsx scripts/sync.ts update-state <experiment-id> --hypothesis "..."
 
 # 2. Advance stage
-npx tsx scripts/sync.ts set-stage <project-id> <next-stage>
+npx tsx scripts/sync.ts set-stage <experiment-id> <next-stage>
 
 # 3. Log the transition
-npx tsx scripts/sync.ts add-activity <project-id> --type stage_update --title "Moved to <next-stage>"
+npx tsx scripts/sync.ts add-activity <experiment-id> --type stage_update --title "Moved to <next-stage>"
 ```
 
 When starting an experiment run:
 
 ```bash
 # 4a. Create the run (draft)
-npx tsx scripts/sync.ts create-run <project-id> <slug> --method bayesian_ab ...
+npx tsx scripts/sync.ts create-run <experiment-id> <slug> --method bayesian_ab ...
 
 # 4b. Activate it
-npx tsx scripts/sync.ts start-run <project-id> <slug>
+npx tsx scripts/sync.ts start-run <experiment-id> <slug>
 
-npx tsx scripts/sync.ts add-activity <project-id> --type run_started --title "Run <slug> started"
+npx tsx scripts/sync.ts add-activity <experiment-id> --type run_started --title "Run <slug> started"
 ```
 
 When recording a decision:
 
 ```bash
-npx tsx scripts/sync.ts record-decision <project-id> <slug> --decision CONTINUE --decisionSummary "..."
-npx tsx scripts/sync.ts complete-run <project-id> <slug>
-npx tsx scripts/sync.ts add-activity <project-id> --type decision_recorded --title "Decision: CONTINUE"
+npx tsx scripts/sync.ts record-decision <experiment-id> <slug> --decision CONTINUE --decisionSummary "..."
+npx tsx scripts/sync.ts complete-run <experiment-id> <slug>
+npx tsx scripts/sync.ts add-activity <experiment-id> --type decision_recorded --title "Decision: CONTINUE"
 ```
 
 ---

@@ -181,14 +181,13 @@ If your continuous metric is highly skewed, increase the floor to 500+.
 
 Reaching `minimum_sample_per_variant` only means the results are safe to read. It does not mean you should stop.
 
-After reaching the floor, re-run the analysis periodically:
+After reaching the floor, re-trigger analysis periodically via the web app:
 
 ```bash
-npx tsx skills/experiment-workspace/scripts/collect-input.ts <project-id> <slug>
-python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
+npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
 ```
 
-Then read `analysisResult` from the experiment record and check `risk[trt]` and `risk[ctrl]`. These are outputs computed by the script — there is no configuration field for them. The judgment of "low enough" is made by you or the agent running `evidence-analysis` by comparing the values to the reference ranges in the Decision Guide below.
+Then read `analysisResult` from the run record (e.g. via `project-sync get-experiment`) and check `risk[trt]` and `risk[ctrl]`. These are outputs computed server-side by the analyze endpoint — there is no configuration field for them. The judgment of "low enough" is made by you or the agent running `evidence-analysis` by comparing the values to the reference ranges in the Decision Guide below.
 
 How risk behaves as sample grows:
 
@@ -228,13 +227,13 @@ Input data: `n` users exposed, `k` who converted.
 }
 ```
 
-Run:
+Trigger analysis through the web app:
 
 ```bash
-python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
+npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
 ```
 
-Output table includes: `n`, `conv`, `rate`, `rel Δ`, `95% credible CI`, `P(win)`, `risk[ctrl]`, `risk[trt]`.
+The `analysisResult` returned (and stored on the run record) includes: `n`, `conv`, `rate`, `rel Δ`, `95% credible CI`, `P(win)`, `risk[ctrl]`, `risk[trt]`.
 
 ---
 
@@ -459,34 +458,33 @@ Fix the root cause, reset the observation window, and collect fresh data. Do not
 
 ## Where This Fits in the Release Decision Flow
 
-This script sits between data collection and the final decision:
+This doc sits between data collection and the final decision:
 
 ```
 measurement-design           ← defines the metric and instrumentation
     ↓
-experiment-workspace         ← creates experiment record, collects inputData
+experiment-workspace         ← creates the experiment + run records
     ↓
-analyze-bayesian.py          ← YOU ARE HERE: produces analysisResult
+POST /analyze (bayesian_ab)  ← YOU ARE HERE: writes inputData + analysisResult
     ↓
 evidence-analysis            ← reads analysisResult, frames CONTINUE / PAUSE / ROLLBACK
     ↓
 learning-capture             ← records what was learned
 ```
 
-The agent runs this script as the "run the analysis" step inside `experiment-workspace`. After `analysisResult` is written to the experiment record, the agent hands off to `evidence-analysis` so the decision can be tied back to the original hypothesis.
+The agent triggers analysis via `scripts/analyze.ts` inside `experiment-workspace`. After `analysisResult` is written to the run record, the agent hands off to `evidence-analysis` so the decision can be tied back to the original hypothesis.
 
 ---
 
 ## Re-running After New Data
 
-Both scripts are idempotent — re-run whenever you want fresh numbers:
+The `/analyze` endpoint is idempotent — re-hit it with `"forceFresh": true` whenever you want fresh numbers:
 
 ```bash
-npx tsx skills/experiment-workspace/scripts/collect-input.ts <project-id> <slug>
-python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <slug>
+npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
 ```
 
-`inputData` and `analysisResult` in the experiment record are both updated with fresh numbers.
+`inputData` and `analysisResult` on the run record are both refreshed.
 
 ---
 

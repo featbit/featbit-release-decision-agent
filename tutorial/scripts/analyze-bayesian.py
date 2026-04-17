@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
 """
-ROLE: READY-TO-RUN — copy to project and run as-is. Do not modify.
+ROLE: REFERENCE ALGORITHM — pipe-only. Not called directly by the agent.
 
-Bayesian A/B experiment analysis script.
+Bayesian A/B experiment analysis. Pure function of stdin → stdout:
+  read a JSON payload on stdin, write the computed analysisResult JSON on
+  stdout. No DB access, no HTTP calls, no file I/O.
+
+The equivalent server-side logic lives in the web app's
+`POST /api/experiments/:id/analyze` endpoint (see `src/lib/stats/analyze.ts`).
+That endpoint is what the agent uses in the normal flow — this script is kept
+as a readable reference of the same algorithm and is useful for offline
+experimentation (e.g. feeding hand-crafted counts through `--pipe`).
 
 Implements:
   • Analytical Gaussian Bayesian analysis (chance to win, 95% credible interval,
@@ -13,37 +21,28 @@ Implements:
   • Multiple treatment arms
 
 Usage:
-    python skills/experiment-workspace/scripts/analyze-bayesian.py <project-id> <experiment-slug>
-
-Reads:
-    Experiment record from the database via HTTP API (inputData, definition fields)
-
-Writes:
-    analysisResult back to the database via HTTP API
+    cat input.json | python skills/experiment-workspace/scripts/analyze-bayesian.py
 
 Requirements:
     pip install numpy scipy
 
 ──────────────────────────────────────────────────────────────────────────────
-INPUT FORMAT  (input.json → metrics → <metric-name>)
+INPUT SCHEMA  (on stdin)
 ──────────────────────────────────────────────────────────────────────────────
-Proportion metric (conversion rate, click-through rate …):
-    "<variant>": {"n": 1000, "k": 120}
+{
+  "slug": "...",
+  "metrics": { "<event>": { "<variant>": {n, k} or {n, sum, sum_squares}, ... } },
+  "control": "<variant>",
+  "treatments": ["<variant>", ...],
+  "observation_start": "YYYY-MM-DD",
+  "observation_end": "YYYY-MM-DD",
+  "prior_proper": false,
+  "prior_mean": 0.0,
+  "prior_stddev": 0.3,
+  "minimum_sample": 0
+}
 
-Continuous metric (revenue, duration, score …):
-    "<variant>": {"n": 1000, "sum": 5000.0, "sum_squares": 27500.0}
-
-Inverse metric — add  "inverse": true  at the metric level (same level as
-variant keys):
-    "error_rate": {
-        "inverse": true,
-        "control": {"n": 1000, "k": 18},
-        "treatment": {"n": 1020, "k": 15}
-    }
-
-Multiple treatment arms — add more variant keys matching definition.md.
-──────────────────────────────────────────────────────────────────────────────
-OUTPUT FORMAT  (analysis.json)
+OUTPUT SCHEMA  (on stdout)
 ──────────────────────────────────────────────────────────────────────────────
 {
   "type": "bayesian",
@@ -55,7 +54,6 @@ OUTPUT FORMAT  (analysis.json)
   "prior": "<label>",
   "srm": {"chi2_p_value": 0.31, "ok": true, "observed": {"a": 612, "b": 588}},
   "primary_metric": { ... metric section ... },
-  "guardrails": [ ... metric sections ... ],
   "sample_check": {"minimum_per_variant": 400, "ok": true, "variants": {...}}
 }
 ──────────────────────────────────────────────────────────────────────────────
@@ -65,7 +63,6 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from db_client import get_experiment, upsert_experiment
 from stats_utils import (
     ALPHA,
     GaussianPrior,
@@ -188,141 +185,10 @@ def compute_metric_section(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MAIN
+# MAIN  (stdin JSON → compute → stdout JSON)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def main(project_id: str, slug: str) -> None:
-    experiment = get_experiment(project_id, slug)
-
-    raw_input = experiment.get("inputData")
-    if not raw_input:
-        print("ERROR: inputData is empty in the experiment record.")
-        print("Collect input data first:")
-        print(f"  npx tsx skills/experiment-workspace/scripts/collect-input.ts {project_id} {slug}")
-        sys.exit(1)
-
-    raw          = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
-    metrics_data = raw.get("metrics", raw)
-
-    control, treatments = extract_variants(experiment)
-    guardrail_events    = extract_guardrails(experiment)
-    prior               = extract_prior(experiment)
-    primary_event       = experiment.get("primaryMetricEvent") or ""
-    min_sample          = int(experiment.get("minimumSample") or 0)
-
-    now       = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    start_raw = experiment.get("observationStart")
-    end_raw   = experiment.get("observationEnd")
-    start_lbl = start_raw[:10] if start_raw else "?"
-    end_lbl   = end_raw[:10] if end_raw else "open"
-
-    all_variants = [control] + treatments
-
-    # ── Prior label ──────────────────────────────────────────────────────────
-    prior_label = (
-        f"proper (mean={prior.mean}, stddev={prior.variance ** 0.5:.3g})"
-        if prior.proper else "flat/improper (data-only)"
-    )
-
-    # ── SRM check ──────────────────────────────────────────────────────────
-    srm_result = {"chi2_p_value": 0.0, "ok": True, "observed": {}}
-    if primary_event and primary_event in metrics_data:
-        pm = metrics_data[primary_event]
-        ns = [
-            pm.get(v, {}).get("n", 0)
-            for v in all_variants
-            if isinstance(pm.get(v), dict)
-        ]
-        if len(ns) >= 2 and sum(ns) > 0:
-            srm_p = srm_check(ns)
-            srm_result = {
-                "chi2_p_value": round(srm_p, 4),
-                "ok": srm_p >= 0.01,
-                "observed": {v: n for v, n in zip(all_variants, ns)},
-            }
-
-    # ── Primary metric ───────────────────────────────────────────────────────
-    primary_section = None
-    if primary_event and primary_event in metrics_data:
-        primary_section = compute_metric_section(
-            primary_event, metrics_data[primary_event],
-            control, treatments, is_guardrail=False, prior=prior,
-        )
-
-    # ── Guardrails ───────────────────────────────────────────────────────────
-    guardrails = []
-    for g in guardrail_events:
-        if g in metrics_data:
-            section = compute_metric_section(
-                g, metrics_data[g],
-                control, treatments, is_guardrail=True, prior=prior,
-            )
-            if section:
-                guardrails.append(section)
-
-    # ── Sample size check ───────────────────────────────────────────────────
-    primary_md = metrics_data.get(primary_event, {}) if primary_event else {}
-    variant_ns = {}
-    for v in all_variants:
-        variant_ns[v] = primary_md.get(v, {}).get("n", 0) if primary_md else 0
-    min_observed = min(variant_ns.values()) if variant_ns else 0
-    sample_ok    = (min_observed >= min_sample) if min_sample > 0 else True
-
-    # ── Assemble output ──────────────────────────────────────────────────────
-    output: dict = {
-        "type": "bayesian",
-        "experiment": slug,
-        "computed_at": now,
-        "window": {"start": start_lbl, "end": end_lbl},
-        "control": control,
-        "treatments": treatments,
-        "prior": prior_label,
-        "srm": srm_result,
-    }
-    if primary_section:
-        output["primary_metric"] = primary_section
-    if guardrails:
-        output["guardrails"] = guardrails
-    output["sample_check"] = {
-        "minimum_per_variant": min_sample,
-        "ok": sample_ok,
-        "variants": variant_ns,
-    }
-
-    # ── Write to DB ──────────────────────────────────────────────────────────
-    upsert_experiment(project_id, slug, {
-        "analysisResult": json.dumps(output),
-        "status": "analyzing",
-    })
-    print(f"Written analysisResult to DB for experiment: {slug}")
-    if not sample_ok:
-        print("WARNING: sample size below minimum — treat results as indicative only.")
-    if not srm_result["ok"]:
-        print("WARNING: SRM detected — traffic split is uneven. Investigate before interpreting.")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PIPE MODE  (stdin JSON → compute → stdout JSON)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def main_pipe() -> None:
-    """
-    Read a JSON object from stdin, run analysis, write JSON result to stdout.
-
-    Expected input schema:
-    {
-      "slug": "...",
-      "metrics": { "<event>": { "<variant>": {n, k} or {n, sum, sum_squares}, ... } },
-      "control": "<variant>",
-      "treatments": ["<variant>", ...],
-      "observation_start": "YYYY-MM-DD",
-      "observation_end": "YYYY-MM-DD",
-      "prior_proper": false,
-      "prior_mean": 0.0,
-      "prior_stddev": 0.3,
-      "minimum_sample": 0
-    }
-    """
+def main() -> None:
     raw = json.loads(sys.stdin.read())
 
     slug         = raw.get("slug", "unknown")
@@ -409,12 +275,4 @@ def main_pipe() -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 2 and sys.argv[1] == "--pipe":
-        main_pipe()
-    elif len(sys.argv) == 3:
-        main(sys.argv[1], sys.argv[2])
-    else:
-        print("Usage:")
-        print("  python analyze-bayesian.py <project-id> <experiment-slug>")
-        print("  python analyze-bayesian.py --pipe   (read JSON from stdin, write JSON to stdout)")
-        sys.exit(1)
+    main()

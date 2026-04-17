@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """
-ROLE: READY-TO-RUN — copy to project and run as-is. Do not modify.
+ROLE: REFERENCE ALGORITHM — pipe-only. Not called directly by the agent.
 
-Thompson Sampling bandit weight computation script.
+Thompson Sampling bandit weight computation. Pure function of stdin → stdout:
+  read a JSON payload on stdin, write the computed analysisResult JSON on
+  stdout. No DB access, no HTTP calls, no file I/O.
 
-Reads the current experiment data and outputs recommended traffic weights
-for each variant based on their posterior probability of being best.
+The equivalent server-side logic lives in the web app's
+`POST /api/experiments/:id/analyze` endpoint (see `src/lib/stats/bandit.ts`).
+That endpoint is what the agent uses in the normal flow — this script is
+kept as a readable reference of the same algorithm.
 
 Algorithm:
   1. Build a Gaussian posterior for each arm from current data (same CLT
@@ -23,13 +27,7 @@ Burn-in guard:
   ~100 samples), and acting on it would introduce harmful early skew.
 
 Usage:
-    python skills/experiment-workspace/scripts/analyze-bandit.py <project-id> <experiment-slug>
-
-Reads:
-    Experiment record from the database via HTTP API (inputData, definition fields)
-
-Writes:
-    analysisResult back to the database via HTTP API
+    cat input.json | python skills/experiment-workspace/scripts/analyze-bandit.py
 
 Requirements:
     pip install numpy scipy
@@ -41,7 +39,6 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from db_client import get_experiment, upsert_experiment
 from stats_utils import (
     GaussianPrior,
     extract_prior,
@@ -195,27 +192,41 @@ def compute_bandit_weights(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MAIN
+# MAIN  (stdin JSON → compute → stdout JSON)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def main(project_id: str, slug: str) -> None:
-    experiment = get_experiment(project_id, slug)
+def main() -> None:
+    """
+    Input schema (on stdin):
+    {
+      "slug": "...",
+      "metrics": { "<primary-event>": { "<arm>": {n, k} or {n, sum, sum_squares}, ..., "inverse"?: bool } },
+      "control": "<variant>",
+      "treatments": ["<variant>", ...],
+      "primary_metric_event": "<event>",
+      "prior_proper": false,
+      "prior_mean": 0.0,
+      "prior_stddev": 0.3
+    }
+    """
+    raw = json.loads(sys.stdin.read())
 
-    raw_input = experiment.get("inputData")
-    if not raw_input:
-        print("ERROR: inputData is empty in the experiment record.")
-        sys.exit(1)
+    slug          = raw.get("slug", "unknown")
+    metrics_data  = raw.get("metrics", {})
+    control       = raw.get("control", "")
+    treatments    = raw.get("treatments", [])
+    primary_event = raw.get("primary_metric_event", "")
 
-    raw          = json.loads(raw_input) if isinstance(raw_input, str) else raw_input
-    metrics_data = raw.get("metrics", raw)
+    prior = GaussianPrior(
+        mean=float(raw.get("prior_mean", 0.0)),
+        variance=float(raw.get("prior_stddev", 0.3)) ** 2,
+        proper=bool(raw.get("prior_proper", False)),
+    )
 
-    control, treatments = extract_variants(experiment)
-    prior               = extract_prior(experiment)
-    primary_event       = experiment.get("primaryMetricEvent") or ""
-    all_arms            = [control] + treatments
+    all_arms = [control] + treatments
 
     if not primary_event or primary_event not in metrics_data:
-        print(f"ERROR: primaryMetricEvent '{primary_event}' not found in inputData")
+        print(f"ERROR: primary_metric_event '{primary_event}' not found in metrics", file=sys.stderr)
         sys.exit(1)
 
     pm      = metrics_data[primary_event]
@@ -226,7 +237,7 @@ def main(project_id: str, slug: str) -> None:
     for arm in all_arms:
         vdata = pm.get(arm, {})
         if not isinstance(vdata, dict) or not vdata:
-            print(f"ERROR: no data for arm '{arm}' in metric '{primary_event}'")
+            print(f"ERROR: no data for arm '{arm}' in metric '{primary_event}'", file=sys.stderr)
             sys.exit(1)
         mean, var, n = metric_moments(vdata)
         arm_stats.append((mean, var, n))
@@ -234,11 +245,6 @@ def main(project_id: str, slug: str) -> None:
     # ── SRM check ────────────────────────────────────────────────────────────
     observed_n = [n for _, _, n in arm_stats]
     srm_p = srm_check(observed_n)
-    if srm_p < 0.01:
-        print(
-            f"WARNING: SRM detected (p={srm_p:.4f}) — traffic split is uneven.\n"
-            "Bandit weights are computed but may be unreliable. Investigate before applying."
-        )
 
     # ── Compute weights ───────────────────────────────────────────────────────
     result = compute_bandit_weights(
@@ -249,7 +255,7 @@ def main(project_id: str, slug: str) -> None:
         top_two=True,
     )
 
-    # ── Write to DB ──────────────────────────────────────────────────────────
+    # ── Assemble output ──────────────────────────────────────────────────────
     output = {
         "type": "bandit",
         "experiment":   slug,
@@ -259,26 +265,8 @@ def main(project_id: str, slug: str) -> None:
         **result,
     }
 
-    upsert_experiment(project_id, slug, {
-        "analysisResult": json.dumps(output),
-        "status": "analyzing",
-    })
-    print(f"Written analysisResult to DB for experiment: {slug}")
-
-    # ── Human-readable summary ────────────────────────────────────────────────
-    if result["enough_units"]:
-        print(f"\nBest-arm probabilities:")
-        for arm, prob in result["best_arm_probabilities"].items():
-            print(f"  {arm}: {prob:.1%}")
-        print(f"\nRecommended traffic weights:")
-        for arm, weight in result["bandit_weights"].items():
-            print(f"  {arm}: {weight:.1%}")
-    else:
-        print(f"\n{result['update_message']}")
+    json.dump(output, sys.stdout, indent=2)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python analyze-bandit.py <project-id> <experiment-slug>")
-        sys.exit(1)
-    main(sys.argv[1], sys.argv[2])
+    main()

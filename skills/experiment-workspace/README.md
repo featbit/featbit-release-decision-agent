@@ -15,13 +15,12 @@ The framework's core logic and data contracts. These define what an experiment *
 | File | Purpose |
 |------|---------|
 | `SKILL.md` | Agent instructions — the skill's reasoning and decision logic |
-| `scripts/analyze-bayesian.py` | Bayesian analysis engine — reads `inputData` from DB, writes `analysisResult` to DB |
-| `scripts/analyze-bandit.py` | Thompson Sampling bandit — reads `inputData`, writes bandit `analysisResult` to DB |
-| `scripts/stats_utils.py` | Python statistical utilities — posteriors, SRM check, risk, bandit weights |
-| `scripts/db_client.py` | Python HTTP API wrapper — `get_experiment()`, `upsert_experiment()` |
-| `scripts/db-client.ts` | TypeScript HTTP API wrapper — `getExperiment()`, `upsertExperiment()` |
-| `references/experiment-folder-spec.md` | Data contract — defines the exact shape of the experiment record, `inputData`, `analysisResult` |
-| `references/analysis-bayesian.md` | Documentation for `analyze-bayesian.ts` — explains the algorithm and output format |
+| `scripts/analyze.ts` | Thin wrapper around the web app's `POST /api/experiments/:id/analyze` endpoint |
+| `references/experiment-folder-spec.md` | Data contract — defines the shape of the experiment record, `inputData`, `analysisResult` |
+| `references/analysis-bayesian.md` | Documentation for the Bayesian algorithm and output format |
+| `references/analysis-bandit.md` | Documentation for the Thompson Sampling algorithm |
+
+The statistical algorithms themselves (Bayesian A/B, Thompson Sampling, SRM check, GaussianPrior) live on the server in the web app (`src/lib/stats/`). Data collection from instrumentation goes through `track-service`. The agent never runs the statistical code locally — it triggers `analyze.ts`, which calls the server, which does the math and writes results back to the DB.
 
 ### Tier 2 — Practice defaults 📋 Replace or extend for your stack
 
@@ -29,12 +28,9 @@ These files implement a default approach. If the default works for you, use it a
 
 | File | Default | What to replace it with |
 |------|---------|------------------------|
-| `references/data-source-guide.md` | FeatBit API, PostgreSQL, custom HTTP | Your own data source patterns — add a `§YourTool` section, or replace entirely |
-| `scripts/collect-input.ts` | TypeScript script scaffolding for `fetchMetricSummary()` | Any tool that produces `inputData` in the correct format (CLI, MCP, SQL export, etc.) |
+| `references/data-source-guide.md` | track-service (FeatBit events) | Your own data source patterns — add a `§YourTool` section, or replace entirely |
 
-> If you replace `collect-input.ts` with a different mechanism (e.g. an MCP tool or a shell script), remove it from `scripts/` and update the "I want to update the data" action in `SKILL.md`.
-
-> If you add a new statistical method (e.g. frequentist), add a new `scripts/analyze-frequentist.ts` and `references/analysis-frequentist.md`, then update `SKILL.md` to route to the right script based on context.
+> If you add a new statistical method (e.g. frequentist), implement it server-side under `src/lib/stats/` in the web app, wire it into `/api/experiments/:id/analyze`, then add a new `references/analysis-frequentist.md` and update `SKILL.md` to route to the right method based on context.
 
 ### Tier 3 — User-defined ✏️ Stored in the database
 
@@ -43,8 +39,8 @@ These are not files — they are fields in the experiment's database record. The
 | DB Field | Purpose | Who writes it |
 |----------|---------|---------------|
 | Experiment record (slug, variants, metrics, observation window, etc.) | Your experiment's parameters | Agent creates via API; you validate |
-| `inputData` | Raw metric data — exposed counts and conversion counts per variant | `collect-input.ts` (or your data collection mechanism) writes this via API |
-| `analysisResult` | Analysis results | `analyze-bayesian.ts` / `analyze-bandit.ts` writes this via API |
+| `inputData` | Raw metric data — exposed counts and conversion counts per variant | Written by the web `/analyze` endpoint after querying `track-service` |
+| `analysisResult` | Analysis results | Written by the web `/analyze` endpoint (Bayesian or Bandit per the run's `method`) |
 
 ---
 
