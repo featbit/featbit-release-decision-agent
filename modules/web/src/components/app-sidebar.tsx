@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getExperiments } from "@/lib/data";
 import { FolderKanban, FlaskConical, Plus } from "lucide-react";
+import { UserMenu } from "@/components/auth/user-menu";
 
 export async function AppSidebar() {
   const experiments = await getExperiments();
@@ -61,9 +62,7 @@ export async function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="px-2 py-1 text-xs text-muted-foreground">
-          FeatBit Release Decision Agent
-        </div>
+        <UserMenu />
       </SidebarFooter>
     </Sidebar>
   );

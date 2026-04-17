@@ -80,6 +80,9 @@ services:
         # so this URL must be reachable from the user's machine — NOT from
         # inside the docker network. http://agent-sandbox:3000 would not work.
         NEXT_PUBLIC_SANDBOX_URL: ${NEXT_PUBLIC_SANDBOX_URL:-http://localhost:3100}
+        # FeatBit backend that handles authentication (login, OAuth, SSO).
+        # Same constraint: must be browser-reachable.
+        NEXT_PUBLIC_FEATBIT_API_URL: ${NEXT_PUBLIC_FEATBIT_API_URL:-https://app-api.featbit.co}
     image: featbit/web:local
     container_name: web
     restart: unless-stopped
