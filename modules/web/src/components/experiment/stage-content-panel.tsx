@@ -17,6 +17,7 @@ import {
   ExternalLink,
   ShieldAlert,
   ShieldCheck,
+  Target,
 } from "lucide-react";
 import type { Experiment, ExperimentRun } from "@/generated/prisma";
 import { FlagIntegrationHeader } from "./flag-config";
@@ -461,15 +462,17 @@ function MeasuringContent({
         </div>
         <div className="space-y-2">
           <div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">
-              Primary Metric (North Star)
-            </span>
+            <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground uppercase">
+              <Target className="size-3" />
+              <span>Primary Metric (North Star)</span>
+            </div>
             <MetricLines value={experiment.primaryMetric} />
           </div>
           <div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">
-              Guardrails
-            </span>
+            <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground uppercase">
+              <ShieldCheck className="size-3" />
+              <span>Guardrails</span>
+            </div>
             <MetricLines value={experiment.guardrails} />
           </div>
         </div>
