@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExperiment, createExperimentRun, updateExperimentRun } from "@/lib/data";
 
-const VALID_RUN_STATUSES = new Set(["draft", "running", "paused", "completed", "archived"]);
+const VALID_RUN_STATUSES = new Set(["draft", "collecting", "analyzing", "decided", "archived"]);
 const VALID_METHODS = new Set(["bayesian_ab", "frequentist", "bandit"]);
 const VALID_DECISIONS = new Set(["CONTINUE", "PAUSE", "ROLLBACK", "INCONCLUSIVE"]);
 const VALID_METRIC_TYPES = new Set(["binary", "continuous"]);

@@ -32,7 +32,7 @@ export async function GET(
     },
     include: {
       experimentRuns: {
-        where: { status: { in: ["draft", "running", "collecting"] } },
+        where: { status: { in: ["draft", "collecting", "analyzing"] } },
       },
     },
   });

@@ -8,13 +8,11 @@ import {
   Filter,
   Flag,
   Info,
-  Lightbulb,
   Loader2,
   MessageCircle,
   RefreshCw,
   ShieldCheck,
   Target,
-  TrendingUp,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -90,9 +88,11 @@ function StatusBadge({ status }: { status: string }) {
   const color =
     status === "decided"
       ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-      : status === "running"
+      : status === "collecting"
         ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-        : "";
+        : status === "analyzing"
+          ? "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
+          : "";
   return (
     <Badge variant="outline" className={`text-[10px] ${color}`}>
       {status}
@@ -116,11 +116,10 @@ function DecisionBadge({ decision }: { decision: string | null }) {
 
 /* ── Simple inline tab bar ── */
 
-type DrawerTab = "summary" | "analysis" | "traffic";
+type DrawerTab = "summary" | "traffic";
 
 const TAB_LABELS: { id: DrawerTab; label: string }[] = [
-  { id: "summary", label: "Summary" },
-  { id: "analysis", label: "Full Analysis" },
+  { id: "summary", label: "Analyze & Decision" },
   { id: "traffic", label: "Audience & Traffic" },
 ];
 
@@ -153,17 +152,6 @@ function TabBar({
 
 /* ── Helpers ── */
 
-function parseGuardrailDescriptions(
-  raw: string | null | undefined
-): Record<string, string> {
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
 function parseGuardrailEvents(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try {
@@ -184,23 +172,25 @@ function fmtDate(d: Date | string): string {
 function SummaryTab({
   exp,
   onAnalyze,
+  analysisPanel,
 }: {
   exp: ExperimentRun;
   onAnalyze?: () => void;
+  analysisPanel?: React.ReactNode;
 }) {
-  const guardrailDescs = parseGuardrailDescriptions(exp.guardrailDescriptions);
-  const guardrailEvents = parseGuardrailEvents(exp.guardrailEvents);
   const hasDecision = Boolean(exp.decision);
 
   return (
     <div className="px-4 pb-6 space-y-4">
-      {/* No-decision hint */}
-      {!hasDecision && onAnalyze && (
+      {/* Chat-first decision helper */}
+      {onAnalyze && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2.5 bg-muted/20">
           <div className="flex items-start gap-2 min-w-0">
             <MessageCircle className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
             <p className="text-xs text-muted-foreground leading-relaxed">
-              暂无决策结论。理解当前数据，并查看结果，可在右侧 chat agent 沟通。
+              {hasDecision
+                ? "当前已有决策。点击后会让 chat 结合当前分析结果，给出复核结论与建议。"
+                : "点击后会让 chat 基于当前分析数据，产出可执行的决策解释（继续/暂停/回滚候选/不确定）。"}
             </p>
           </div>
           <Button
@@ -210,7 +200,7 @@ function SummaryTab({
             onClick={onAnalyze}
           >
             <Bot className="size-3" />
-            Analyze
+            Analyze & Decision in Chat
           </Button>
         </div>
       )}
@@ -239,19 +229,6 @@ function SummaryTab({
         </div>
       )}
 
-      {/* Hypothesis */}
-      {exp.hypothesis && (
-        <div>
-          <SectionLabel
-            icon={<Lightbulb className="size-3" />}
-            label="Hypothesis"
-          />
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {exp.hypothesis}
-          </p>
-        </div>
-      )}
-
       {/* Method reason */}
       {exp.methodReason && (
         <div>
@@ -262,42 +239,6 @@ function SummaryTab({
           <p className="text-xs leading-relaxed text-muted-foreground">
             {exp.methodReason}
           </p>
-        </div>
-      )}
-
-      {/* Primary metric */}
-      <div>
-        <SectionLabel
-          icon={<TrendingUp className="size-3" />}
-          label="Metric"
-        />
-        <p className="text-xs font-mono">{exp.primaryMetricEvent || "—"}</p>
-        {exp.metricDescription && (
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {exp.metricDescription}
-          </p>
-        )}
-      </div>
-
-      {/* Guardrails */}
-      {guardrailEvents.length > 0 && (
-        <div>
-          <SectionLabel
-            icon={<ShieldCheck className="size-3" />}
-            label="Guardrails"
-          />
-          <ul className="space-y-0.5">
-            {guardrailEvents.map((evt) => (
-              <li key={evt} className="text-xs">
-                <span className="font-mono">{evt}</span>
-                {guardrailDescs[evt] && (
-                  <span className="text-[10px] text-muted-foreground ml-1">
-                    — {guardrailDescs[evt]}
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
         </div>
       )}
 
@@ -364,6 +305,13 @@ function SummaryTab({
           </span>
         )}
       </div>
+
+      {analysisPanel && (
+        <div className="pt-1">
+          <SectionLabel icon={<Beaker className="size-3" />} label="Full Analysis" />
+          {analysisPanel}
+        </div>
+      )}
     </div>
   );
 }
@@ -382,9 +330,9 @@ function RefreshAnalysisButton({
   if (confirming) {
     return (
       <div className="rounded-md border border-dashed px-3 py-2.5 space-y-2 bg-muted/20">
-        <p className="text-xs font-medium">Refresh Latest Analysis?</p>
+        <p className="text-xs font-medium">Analyze Latest Data?</p>
         <p className="text-xs text-muted-foreground">
-          This may take a few seconds to tens of seconds — please be patient.
+          This will pull fresh metrics and recompute the latest analysis.
         </p>
         <div className="flex gap-2 pt-1">
           <Button
@@ -392,7 +340,7 @@ function RefreshAnalysisButton({
             className="h-7 text-[11px] px-2.5"
             onClick={() => { setConfirming(false); onConfirm(); }}
           >
-            Start Refresh
+            Start Analyze
           </Button>
           <Button
             variant="outline"
@@ -416,7 +364,7 @@ function RefreshAnalysisButton({
       disabled={loading}
     >
       <RefreshCw className={`size-3 ${loading ? "animate-spin" : ""}`} />
-      Refresh Latest Analysis
+      Analyze Latest Data
     </Button>
   );
 }
@@ -426,11 +374,13 @@ function AnalysisTab({
   experimentId,
   flagKey,
   featbitEnvId,
+  embedded = false,
 }: {
   exp: ExperimentRun;
   experimentId: string;
   flagKey: string | null;
   featbitEnvId: string | null;
+  embedded?: boolean;
 }) {
   // Pre-check what the backend requires. Rendering a config gap here beats
   // auto-firing a POST that always 400s before the experiment is set up.
@@ -519,7 +469,7 @@ function AnalysisTab({
 
   if (missingFields.length > 0 && !analysisResult) {
     return (
-      <div className="px-4 pb-6 pt-4 space-y-2">
+      <div className={cn("pb-6 pt-4 space-y-2", embedded ? "" : "px-4")}>
         <p className="text-xs font-medium">Analysis not ready</p>
         <p className="text-xs text-muted-foreground">
           Set up {missingFields.join(", ")} before running analysis.
@@ -534,7 +484,7 @@ function AnalysisTab({
 
   if (loading) {
     return (
-      <div className="px-4 pb-6 pt-8 flex flex-col items-center gap-3">
+      <div className={cn("pb-6 pt-8 flex flex-col items-center gap-3", embedded ? "" : "px-4")}>
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
         <p className="text-xs text-muted-foreground">Running Bayesian analysis…</p>
         {isFreshRefresh && (
@@ -554,7 +504,7 @@ function AnalysisTab({
 
   if (error) {
     return (
-      <div className="px-4 pb-6 pt-2 space-y-2">
+      <div className={cn("pb-6 pt-2 space-y-2", embedded ? "" : "px-4")}>
         <p className="text-xs text-destructive">{error}</p>
         <button
           className="text-xs text-blue-600 dark:text-blue-400 underline"
@@ -568,7 +518,7 @@ function AnalysisTab({
 
   if (noData) {
     return (
-      <div className="px-4 pb-6 pt-4 space-y-2">
+      <div className={cn("pb-6 pt-4 space-y-2", embedded ? "" : "px-4")}>
         <p className="text-xs font-medium">Waiting for data</p>
         <p className="text-xs text-muted-foreground">
           No events have arrived yet for this experiment. Once your instrumentation
@@ -588,7 +538,7 @@ function AnalysisTab({
 
   if (!analysisResult) {
     return (
-      <div className="px-4 pb-6 pt-2 space-y-2">
+      <div className={cn("pb-6 pt-2 space-y-2", embedded ? "" : "px-4")}>
         <RefreshAnalysisButton loading={loading} onConfirm={() => runAnalysis(true)} />
         <p className="text-xs text-muted-foreground/60">No analysis available yet.</p>
       </div>
@@ -596,7 +546,7 @@ function AnalysisTab({
   }
 
   return (
-    <div className="px-4 pb-6 overflow-x-auto">
+    <div className={cn("pb-6 overflow-x-auto", embedded ? "" : "px-4")}>
       <div className="mb-2">
         <RefreshAnalysisButton loading={loading} onConfirm={() => runAnalysis(true)} />
       </div>
@@ -671,9 +621,10 @@ export function ExperimentRunTable({
   }
 
   function handleAnalyze(exp: ExperimentRun) {
-    const message = `请分析实验 "${exp.slug}" 的当前数据，并给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK_CANDIDATE / INCONCLUSIVE）。请说明理由。`;
-    triggerChat?.(message);
-    setSelectedId(null);
+    if (!triggerChat) return;
+
+    const message = `请基于当前实验 run "${exp.slug}" 的现有分析结果，给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK_CANDIDATE / INCONCLUSIVE），并说明：1) 主指标信号 2) guardrail 风险 3) 下一步行动。`;
+    triggerChat(message);
   }
 
   return (
@@ -814,14 +765,15 @@ export function ExperimentRunTable({
                     onAnalyze={
                       triggerChat ? () => handleAnalyze(selected) : undefined
                     }
-                  />
-                )}
-                {activeTab === "analysis" && (
-                  <AnalysisTab
-                    exp={selected}
-                    experimentId={experimentId}
-                    flagKey={flagKey}
-                    featbitEnvId={featbitEnvId}
+                    analysisPanel={
+                      <AnalysisTab
+                        exp={selected}
+                        experimentId={experimentId}
+                        flagKey={flagKey}
+                        featbitEnvId={featbitEnvId}
+                        embedded
+                      />
+                    }
                   />
                 )}
                 {activeTab === "traffic" && (

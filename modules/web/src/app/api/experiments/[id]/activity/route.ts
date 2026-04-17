@@ -5,9 +5,10 @@ const VALID_ACTIVITY_TYPES = new Set([
   "stage_update",
   "field_update",
   "run_created",
-  "run_started",
-  "run_paused",
-  "run_completed",
+  "run_collecting",
+  "run_analyzing",
+  "run_decided",
+  "run_archived",
   "decision_recorded",
   "learning_captured",
 ]);

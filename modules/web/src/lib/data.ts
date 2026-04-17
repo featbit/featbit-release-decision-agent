@@ -103,7 +103,7 @@ export async function addMessage(
 
 export async function getRunningExperimentRuns() {
   return prisma.experimentRun.findMany({
-    where: { status: { in: ["draft", "running", "collecting"] } },
+    where: { status: { in: ["draft", "collecting", "analyzing"] } },
     include: {
       experiment: {
         select: {

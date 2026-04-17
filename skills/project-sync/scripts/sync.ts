@@ -7,26 +7,28 @@
  *
  * COMMANDS
  * ─────────────────────────────────────────────────────────────────────────────
- *  get-project     <projectId>
- *  update-state    <projectId> --<field> "<value>" ...
- *  set-stage       <projectId> <stage>
- *  add-activity    <projectId> --type <type> --title "<title>" [--detail "..."]
+ *  get-experiment  <experimentId>
+ *  update-state    <experimentId> --<field> "<value>" ...
+ *  set-stage       <experimentId> <stage>
+ *  add-activity    <experimentId> --type <type> --title "<title>" [--detail "..."]
  *
- *  create-run      <projectId> <slug> [--field value ...]
- *  start-run       <projectId> <slug>
- *  pause-run       <projectId> <slug>
- *  complete-run    <projectId> <slug>
- *  save-input      <projectId> <slug> --inputData '<json>'
- *  save-result     <projectId> <slug> --analysisResult '<json>'
- *  record-decision <projectId> <slug> --decision <DECISION> --decisionSummary "..." [--decisionReason "..."]
- *  save-learning   <projectId> <slug> --whatChanged "..." --whatHappened "..." [--confirmedOrRefuted "..." --whyItHappened "..." --nextHypothesis "..."]
+ *  create-run      <experimentId> <slug> [--field value ...]     (writes status=draft)
+ *  start-run       <experimentId> <slug>                          (writes status=collecting)
+ *  analyze-run     <experimentId> <slug>                          (writes status=analyzing)
+ *  decide-run      <experimentId> <slug>                          (writes status=decided)
+ *  archive-run     <experimentId> <slug>                          (writes status=archived)
+ *  save-input      <experimentId> <slug> --inputData '<json>'
+ *  save-result     <experimentId> <slug> --analysisResult '<json>'
+ *  record-decision <experimentId> <slug> --decision <DECISION> --decisionSummary "..." [--decisionReason "..."]
+ *  save-learning   <experimentId> <slug> --whatChanged "..." --whatHappened "..." [--confirmedOrRefuted "..." --whyItHappened "..." --nextHypothesis "..."]
  *
  * CANONICAL ENUMS (enforced by this script)
  * ─────────────────────────────────────────────────────────────────────────────
  *  stage:             intent | hypothesis | implementing | measuring | learning
- *  activity type:     stage_update | field_update | run_created | run_started |
- *                     run_paused | run_completed | decision_recorded | learning_captured
- *  run status:        draft | running | paused | completed | archived
+ *  activity type:     stage_update | field_update | run_created | run_collecting |
+ *                     run_analyzing | run_decided | run_archived |
+ *                     decision_recorded | learning_captured
+ *  run status:        draft | collecting | analyzing | decided | archived
  *  method:            bayesian_ab | frequentist | bandit
  *  decision:          CONTINUE | PAUSE | ROLLBACK | INCONCLUSIVE
  *  primaryMetricType: binary | continuous
@@ -59,14 +61,19 @@ const VALID_ACTIVITY_TYPES = new Set([
   "stage_update",
   "field_update",
   "run_created",
-  "run_started",
-  "run_paused",
-  "run_completed",
+  "run_collecting",
+  "run_analyzing",
+  "run_decided",
+  "run_archived",
   "decision_recorded",
   "learning_captured",
 ]);
 
-const VALID_RUN_STATUSES = new Set(["draft", "running", "paused", "completed", "archived"]);
+// Run statuses are NOT exposed as a string parameter anywhere — each status
+// has its own dedicated helper + CLI command (see setRunCollecting etc.).
+// That way the agent can't misspell a status or use a value from the old
+// enum (`running`, `paused`, `completed`). Kept here only for documentation.
+// Canonical values: draft | collecting | analyzing | decided | archived
 
 const VALID_METHODS = new Set(["bayesian_ab", "frequentist", "bandit"]);
 
@@ -153,24 +160,24 @@ async function api(
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-async function getProject(projectId: string) {
-  const project = await api("GET", `/api/experiments/${projectId}`, undefined, {
+async function getExperiment(experimentId: string) {
+  const experiment = await api("GET", `/api/experiments/${experimentId}`, undefined, {
     exitOnError: false,
   });
-  if (project === null) {
+  if (experiment === null) {
     console.log(
       JSON.stringify(
-        { status: "unavailable", projectId, message: "Database unreachable — treat as blank project" },
+        { status: "unavailable", experimentId, message: "Database unreachable — treat as blank experiment" },
         null,
         2
       )
     );
     return;
   }
-  console.log(JSON.stringify(project, null, 2));
+  console.log(JSON.stringify(experiment, null, 2));
 }
 
-async function updateState(projectId: string, flags: Record<string, string>) {
+async function updateState(experimentId: string, flags: Record<string, string>) {
   if (Object.keys(flags).length === 0) {
     console.error("No state fields provided. Use --goal, --intent, --hypothesis, etc.");
     console.error(`Allowed fields: ${[...ALLOWED_STATE_FIELDS].join(", ")}`);
@@ -191,24 +198,24 @@ async function updateState(projectId: string, flags: Record<string, string>) {
     console.error(`None of the provided fields are valid. Allowed: ${[...ALLOWED_STATE_FIELDS].join(", ")}`);
     process.exit(1);
   }
-  const result = await api("PUT", `/api/experiments/${projectId}/state`, body);
+  const result = await api("PUT", `/api/experiments/${experimentId}/state`, body);
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function setStage(projectId: string, stage: string) {
+async function setStage(experimentId: string, stage: string) {
   requireEnum(stage, VALID_STAGES, "stage");
-  const result = await api("PUT", `/api/experiments/${projectId}/stage`, { stage });
+  const result = await api("PUT", `/api/experiments/${experimentId}/stage`, { stage });
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function addActivity(projectId: string, flags: Record<string, string>) {
+async function addActivity(experimentId: string, flags: Record<string, string>) {
   const { type, title, detail } = flags;
   if (!type || !title) {
     console.error("--type and --title are required.");
     process.exit(1);
   }
   requireEnum(type, VALID_ACTIVITY_TYPES, "activity type");
-  const result = await api("POST", `/api/experiments/${projectId}/activity`, { type, title, detail });
+  const result = await api("POST", `/api/experiments/${experimentId}/activity`, { type, title, detail });
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -245,19 +252,39 @@ function buildRunBody(flags: Record<string, string>): Record<string, unknown> {
   return body;
 }
 
-async function createRun(projectId: string, slug: string, flags: Record<string, string>) {
+async function createRun(experimentId: string, slug: string, flags: Record<string, string>) {
   const body = { slug, status: "draft", ...buildRunBody(flags) };
-  const result = await api("POST", `/api/experiments/${projectId}/experiment-run`, body);
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, body);
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function setRunStatus(projectId: string, slug: string, status: string) {
-  requireEnum(status, VALID_RUN_STATUSES, "run status");
-  const result = await api("POST", `/api/experiments/${projectId}/experiment-run`, { slug, status });
+// ── Run status transitions (one helper per status, no string param) ──────────
+//
+// Each helper writes a single hardcoded status value. The agent cannot pass
+// a wrong or out-of-enum status, because no status string crosses the CLI
+// boundary — the command name IS the status.
+
+async function setRunCollecting(experimentId: string, slug: string) {
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, { slug, status: "collecting" });
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function saveInput(projectId: string, slug: string, flags: Record<string, string>) {
+async function setRunAnalyzing(experimentId: string, slug: string) {
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, { slug, status: "analyzing" });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function setRunDecided(experimentId: string, slug: string) {
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, { slug, status: "decided" });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function setRunArchived(experimentId: string, slug: string) {
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, { slug, status: "archived" });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function saveInput(experimentId: string, slug: string, flags: Record<string, string>) {
   if (!flags.inputData) {
     console.error("--inputData is required (JSON string of collected metrics).");
     process.exit(1);
@@ -267,14 +294,14 @@ async function saveInput(projectId: string, slug: string, flags: Record<string, 
     console.error("--inputData must be a valid JSON string.");
     process.exit(1);
   }
-  const result = await api("POST", `/api/experiments/${projectId}/experiment-run`, {
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, {
     slug,
     inputData: flags.inputData,
   });
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function saveResult(projectId: string, slug: string, flags: Record<string, string>) {
+async function saveResult(experimentId: string, slug: string, flags: Record<string, string>) {
   if (!flags.analysisResult) {
     console.error("--analysisResult is required (JSON string from Bayesian analysis).");
     process.exit(1);
@@ -283,14 +310,14 @@ async function saveResult(projectId: string, slug: string, flags: Record<string,
     console.error("--analysisResult must be a valid JSON string.");
     process.exit(1);
   }
-  const result = await api("POST", `/api/experiments/${projectId}/experiment-run`, {
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, {
     slug,
     analysisResult: flags.analysisResult,
   });
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function recordDecision(projectId: string, slug: string, flags: Record<string, string>) {
+async function recordDecision(experimentId: string, slug: string, flags: Record<string, string>) {
   if (!flags.decision) {
     console.error("--decision is required.");
     console.error(`Valid values: ${[...VALID_DECISIONS].join(" | ")}`);
@@ -307,11 +334,11 @@ async function recordDecision(projectId: string, slug: string, flags: Record<str
     decisionSummary: flags.decisionSummary,
   };
   if (flags.decisionReason) body.decisionReason = flags.decisionReason;
-  const result = await api("POST", `/api/experiments/${projectId}/experiment-run`, body);
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, body);
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function saveLearning(projectId: string, slug: string, flags: Record<string, string>) {
+async function saveLearning(experimentId: string, slug: string, flags: Record<string, string>) {
   const LEARNING_FIELDS = ["whatChanged", "whatHappened", "confirmedOrRefuted", "whyItHappened", "nextHypothesis"];
   const body: Record<string, unknown> = { slug };
   for (const field of LEARNING_FIELDS) {
@@ -321,7 +348,7 @@ async function saveLearning(projectId: string, slug: string, flags: Record<strin
     console.error(`At least one learning field is required: ${LEARNING_FIELDS.join(", ")}`);
     process.exit(1);
   }
-  const result = await api("POST", `/api/experiments/${projectId}/experiment-run`, body);
+  const result = await api("POST", `/api/experiments/${experimentId}/experiment-run`, body);
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -331,93 +358,100 @@ async function main() {
   const [command, ...rest] = process.argv.slice(2);
 
   switch (command) {
-    case "get-project": {
-      const [projectId] = rest;
-      if (!projectId) { console.error("Usage: sync.ts get-project <project-id>"); process.exit(1); }
-      await getProject(projectId);
+    case "get-experiment": {
+      const [experimentId] = rest;
+      if (!experimentId) { console.error("Usage: sync.ts get-experiment <experiment-id>"); process.exit(1); }
+      await getExperiment(experimentId);
       break;
     }
     case "update-state": {
-      const [projectId, ...flagArgs] = rest;
-      if (!projectId) { console.error("Usage: sync.ts update-state <project-id> --goal '...'"); process.exit(1); }
-      await updateState(projectId, parseArgs(flagArgs));
+      const [experimentId, ...flagArgs] = rest;
+      if (!experimentId) { console.error("Usage: sync.ts update-state <experiment-id> --goal '...'"); process.exit(1); }
+      await updateState(experimentId, parseArgs(flagArgs));
       break;
     }
     case "set-stage": {
-      const [projectId, stage] = rest;
-      if (!projectId || !stage) { console.error(`Usage: sync.ts set-stage <project-id> <stage>\nValid: ${[...VALID_STAGES].join(" | ")}`); process.exit(1); }
-      await setStage(projectId, stage);
+      const [experimentId, stage] = rest;
+      if (!experimentId || !stage) { console.error(`Usage: sync.ts set-stage <experiment-id> <stage>\nValid: ${[...VALID_STAGES].join(" | ")}`); process.exit(1); }
+      await setStage(experimentId, stage);
       break;
     }
     case "add-activity": {
-      const [projectId, ...flagArgs] = rest;
-      if (!projectId) { console.error("Usage: sync.ts add-activity <project-id> --type <type> --title '...'"); process.exit(1); }
-      await addActivity(projectId, parseArgs(flagArgs));
+      const [experimentId, ...flagArgs] = rest;
+      if (!experimentId) { console.error("Usage: sync.ts add-activity <experiment-id> --type <type> --title '...'"); process.exit(1); }
+      await addActivity(experimentId, parseArgs(flagArgs));
       break;
     }
     case "create-run": {
-      const [projectId, slug, ...flagArgs] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts create-run <project-id> <slug> [--field value ...]"); process.exit(1); }
-      await createRun(projectId, slug, parseArgs(flagArgs));
+      const [experimentId, slug, ...flagArgs] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts create-run <experiment-id> <slug> [--field value ...]"); process.exit(1); }
+      await createRun(experimentId, slug, parseArgs(flagArgs));
       break;
     }
     case "start-run": {
-      const [projectId, slug] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts start-run <project-id> <slug>"); process.exit(1); }
-      await setRunStatus(projectId, slug, "running");
+      const [experimentId, slug] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts start-run <experiment-id> <slug>"); process.exit(1); }
+      await setRunCollecting(experimentId, slug);
       break;
     }
-    case "pause-run": {
-      const [projectId, slug] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts pause-run <project-id> <slug>"); process.exit(1); }
-      await setRunStatus(projectId, slug, "paused");
+    case "analyze-run": {
+      const [experimentId, slug] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts analyze-run <experiment-id> <slug>"); process.exit(1); }
+      await setRunAnalyzing(experimentId, slug);
       break;
     }
-    case "complete-run": {
-      const [projectId, slug] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts complete-run <project-id> <slug>"); process.exit(1); }
-      await setRunStatus(projectId, slug, "completed");
+    case "decide-run": {
+      const [experimentId, slug] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts decide-run <experiment-id> <slug>"); process.exit(1); }
+      await setRunDecided(experimentId, slug);
+      break;
+    }
+    case "archive-run": {
+      const [experimentId, slug] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts archive-run <experiment-id> <slug>"); process.exit(1); }
+      await setRunArchived(experimentId, slug);
       break;
     }
     case "save-input": {
-      const [projectId, slug, ...flagArgs] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts save-input <project-id> <slug> --inputData '<json>'"); process.exit(1); }
-      await saveInput(projectId, slug, parseArgs(flagArgs));
+      const [experimentId, slug, ...flagArgs] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts save-input <experiment-id> <slug> --inputData '<json>'"); process.exit(1); }
+      await saveInput(experimentId, slug, parseArgs(flagArgs));
       break;
     }
     case "save-result": {
-      const [projectId, slug, ...flagArgs] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts save-result <project-id> <slug> --analysisResult '<json>'"); process.exit(1); }
-      await saveResult(projectId, slug, parseArgs(flagArgs));
+      const [experimentId, slug, ...flagArgs] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts save-result <experiment-id> <slug> --analysisResult '<json>'"); process.exit(1); }
+      await saveResult(experimentId, slug, parseArgs(flagArgs));
       break;
     }
     case "record-decision": {
-      const [projectId, slug, ...flagArgs] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts record-decision <project-id> <slug> --decision CONTINUE --decisionSummary '...'"); process.exit(1); }
-      await recordDecision(projectId, slug, parseArgs(flagArgs));
+      const [experimentId, slug, ...flagArgs] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts record-decision <experiment-id> <slug> --decision CONTINUE --decisionSummary '...'"); process.exit(1); }
+      await recordDecision(experimentId, slug, parseArgs(flagArgs));
       break;
     }
     case "save-learning": {
-      const [projectId, slug, ...flagArgs] = rest;
-      if (!projectId || !slug) { console.error("Usage: sync.ts save-learning <project-id> <slug> --whatChanged '...' --whatHappened '...'"); process.exit(1); }
-      await saveLearning(projectId, slug, parseArgs(flagArgs));
+      const [experimentId, slug, ...flagArgs] = rest;
+      if (!experimentId || !slug) { console.error("Usage: sync.ts save-learning <experiment-id> <slug> --whatChanged '...' --whatHappened '...'"); process.exit(1); }
+      await saveLearning(experimentId, slug, parseArgs(flagArgs));
       break;
     }
     default: {
       console.error(`Unknown command: ${command ?? "(none)"}`);
       console.error("Commands:");
-      console.error("  get-project     <projectId>");
-      console.error("  update-state    <projectId> --<field> '<value>' ...");
-      console.error("  set-stage       <projectId> <stage>");
-      console.error("  add-activity    <projectId> --type <type> --title '<title>'");
-      console.error("  create-run      <projectId> <slug> [--field value ...]");
-      console.error("  start-run       <projectId> <slug>");
-      console.error("  pause-run       <projectId> <slug>");
-      console.error("  complete-run    <projectId> <slug>");
-      console.error("  save-input      <projectId> <slug> --inputData '<json>'");
-      console.error("  save-result     <projectId> <slug> --analysisResult '<json>'");
-      console.error("  record-decision <projectId> <slug> --decision <DECISION> --decisionSummary '<text>'");
-      console.error("  save-learning   <projectId> <slug> --whatChanged '<text>' ...");
+      console.error("  get-experiment  <experimentId>");
+      console.error("  update-state    <experimentId> --<field> '<value>' ...");
+      console.error("  set-stage       <experimentId> <stage>");
+      console.error("  add-activity    <experimentId> --type <type> --title '<title>'");
+      console.error("  create-run      <experimentId> <slug> [--field value ...]");
+      console.error("  start-run       <experimentId> <slug>   (status=collecting)");
+      console.error("  analyze-run     <experimentId> <slug>   (status=analyzing)");
+      console.error("  decide-run      <experimentId> <slug>   (status=decided)");
+      console.error("  archive-run     <experimentId> <slug>   (status=archived)");
+      console.error("  save-input      <experimentId> <slug> --inputData '<json>'");
+      console.error("  save-result     <experimentId> <slug> --analysisResult '<json>'");
+      console.error("  record-decision <experimentId> <slug> --decision <DECISION> --decisionSummary '<text>'");
+      console.error("  save-learning   <experimentId> <slug> --whatChanged '<text>' ...");
       process.exit(1);
     }
   }

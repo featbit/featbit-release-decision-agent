@@ -677,9 +677,11 @@ function StatusBadge({ status }: { status: string }) {
   const color =
     status === "decided"
       ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-      : status === "running"
+      : status === "collecting"
         ? "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-        : "";
+        : status === "analyzing"
+          ? "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
+          : "";
   return (
     <Badge variant="outline" className={`text-[10px] ${color}`}>
       {status}

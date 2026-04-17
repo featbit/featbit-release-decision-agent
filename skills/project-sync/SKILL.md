@@ -41,8 +41,8 @@ These are the only valid values for each enum field. The script and server API *
 | Field | Valid Values |
 |---|---|
 | `stage` | `intent` \| `hypothesis` \| `implementing` \| `measuring` \| `learning` |
-| `activity type` | `stage_update` \| `field_update` \| `run_created` \| `run_started` \| `run_paused` \| `run_completed` \| `decision_recorded` \| `learning_captured` |
-| `run status` | `draft` \| `running` \| `paused` \| `completed` \| `archived` |
+| `activity type` | `stage_update` \| `field_update` \| `run_created` \| `run_collecting` \| `run_analyzing` \| `run_decided` \| `run_archived` \| `decision_recorded` \| `learning_captured` |
+| `run status` | `draft` \| `collecting` \| `analyzing` \| `decided` \| `archived` — **NEVER use `running`, `paused`, `completed` or any other value.** Each status has its own dedicated CLI command — the command name *is* the status. |
 | `method` | `bayesian_ab` \| `frequentist` \| `bandit` |
 | `decision` | `CONTINUE` \| `PAUSE` \| `ROLLBACK` \| `INCONCLUSIVE` |
 | `primaryMetricType` | `binary` \| `continuous` |
@@ -149,32 +149,29 @@ npx tsx scripts/sync.ts create-run <project-id> <slug> \
 
 ---
 
-### start-run
+### Run status transitions
 
-Set run status to `running`.
+One command per status — **never pass a status string**; pick the command that matches the target state. There is intentionally no generic `set-run-status` command.
+
+| Command | Writes status |
+|---|---|
+| `start-run <project-id> <slug>` | `collecting` |
+| `analyze-run <project-id> <slug>` | `analyzing` |
+| `decide-run <project-id> <slug>` | `decided` |
+| `archive-run <project-id> <slug>` | `archived` |
 
 ```bash
+# Begin collecting data for an existing draft run
 npx tsx scripts/sync.ts start-run <project-id> <slug>
-```
 
----
+# Move to the analysis phase
+npx tsx scripts/sync.ts analyze-run <project-id> <slug>
 
-### pause-run
+# Record that a decision has been reached
+npx tsx scripts/sync.ts decide-run <project-id> <slug>
 
-Set run status to `paused`.
-
-```bash
-npx tsx scripts/sync.ts pause-run <project-id> <slug>
-```
-
----
-
-### complete-run
-
-Set run status to `completed`.
-
-```bash
-npx tsx scripts/sync.ts complete-run <project-id> <slug>
+# Archive a run that is no longer in play
+npx tsx scripts/sync.ts archive-run <project-id> <slug>
 ```
 
 ---
