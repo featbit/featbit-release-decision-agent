@@ -61,7 +61,12 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
             Experiments
           </Link>
           <span className="text-muted-foreground/40">|</span>
-          <h1 className="text-sm font-semibold truncate">{experiment.name}</h1>
+          <h1 className="text-sm font-semibold truncate" title={experiment.description ?? undefined}>
+            {experiment.name}
+            {experiment.description && (
+              <span className="font-normal text-muted-foreground ml-2">— {experiment.description}</span>
+            )}
+          </h1>
           <div className="ml-auto flex items-center gap-2">
             <ActivityPopover activities={experiment.activities} />
             <ExperimentActions

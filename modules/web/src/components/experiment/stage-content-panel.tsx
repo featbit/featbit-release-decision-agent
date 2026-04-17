@@ -494,7 +494,13 @@ function MeasuringContent({
             </p>
           </div>
         ) : (
-          <ExperimentRunTable experimentRuns={sorted} experimentId={experiment.id} isSequential={isSequential} />
+          <ExperimentRunTable
+            experimentRuns={sorted}
+            experimentId={experiment.id}
+            flagKey={experiment.flagKey}
+            featbitEnvId={experiment.featbitEnvId}
+            isSequential={isSequential}
+          />
         )}
       </section>
     </>

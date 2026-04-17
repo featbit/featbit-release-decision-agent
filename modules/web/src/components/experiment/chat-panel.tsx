@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   useSandboxChat,
   type ChatMessage,
@@ -11,6 +13,53 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Send, Square, Bot, User, AlertCircle, WifiOff, Loader2, CheckCircle2 } from "lucide-react";
 import type { Message } from "@/generated/prisma";
+
+/**
+ * Compact markdown renderer for assistant bubbles. Inherits bubble typography
+ * and adds sensible defaults for headings, code, lists, and tables.
+ */
+function AssistantMarkdown({ children }: { children: string }) {
+  return (
+    <div className="text-sm leading-relaxed space-y-2 [&_p]:my-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-medium [&_strong]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_hr]:my-3 [&_hr]:border-border">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: (props) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 dark:text-blue-400" />
+          ),
+          code: ({ className, children, ...props }) => {
+            const isBlock = className?.includes("language-");
+            return isBlock ? (
+              <code className={cn(className, "block")} {...props}>
+                {children}
+              </code>
+            ) : (
+              <code className="rounded bg-foreground/10 px-1 py-0.5 text-xs font-mono" {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: (props) => (
+            <pre className="rounded-md bg-foreground/5 border border-border p-2 overflow-x-auto text-xs font-mono" {...props} />
+          ),
+          table: (props) => (
+            <div className="overflow-x-auto my-2">
+              <table className="text-xs border-collapse" {...props} />
+            </div>
+          ),
+          th: (props) => (
+            <th className="border border-border px-2 py-1 font-medium bg-foreground/5 text-left" {...props} />
+          ),
+          td: (props) => (
+            <td className="border border-border px-2 py-1" {...props} />
+          ),
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 /** Map persisted DB messages to the hook's ChatMessage shape */
 function toChat(msg: Message): ChatMessage {
@@ -50,6 +99,17 @@ export function ChatPanel({
 
   // liveMessages already contains the DB history + any new messages
   const displayMessages = liveMessages;
+
+  // Auto-grow the textarea: 1 row default, expand with content up to 5 rows,
+  // scroll inside after that. Runs after input changes and after reset.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    const maxHeight = lineHeight * 5 + 16; // 5 rows + vertical padding
+    el.style.height = Math.min(el.scrollHeight, maxHeight) + "px";
+  }, [input]);
 
   // Auto-scroll on new messages or streaming content
   const lastContent = displayMessages[displayMessages.length - 1]?.content;
@@ -132,15 +192,31 @@ export function ChatPanel({
               )}
               <div
                 className={cn(
-                  "max-w-[80%] rounded-lg px-3 py-2 whitespace-pre-wrap",
+                  "max-w-[80%] rounded-lg px-3 py-2",
                   msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-primary text-primary-foreground whitespace-pre-wrap"
                     : msg.role === "system"
-                      ? "bg-muted text-muted-foreground text-xs italic"
+                      ? "bg-muted text-muted-foreground text-xs italic whitespace-pre-wrap"
                       : "bg-muted"
                 )}
               >
-                {msg.content}
+                {msg.role === "assistant" && msg.thinking && (
+                  <details
+                    open={!msg.content}
+                    className="mb-2 text-xs text-muted-foreground group"
+                  >
+                    <summary className="cursor-pointer select-none hover:text-foreground list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+                      <span className="group-open:rotate-90 transition-transform inline-block">▸</span>
+                      {msg.content ? "Show thinking" : (activity ?? "Thinking…")}
+                    </summary>
+                    <div className="mt-1.5 pl-3 border-l-2 border-border/60 whitespace-pre-wrap opacity-80 font-normal">
+                      {msg.thinking}
+                    </div>
+                  </details>
+                )}
+                {msg.role === "assistant"
+                  ? msg.content && <AssistantMarkdown>{msg.content}</AssistantMarkdown>
+                  : msg.content}
               </div>
               {msg.role === "user" && (
                 <div className="flex shrink-0 items-start pt-0.5">
@@ -195,7 +271,7 @@ export function ChatPanel({
             onKeyDown={handleKeyDown}
             placeholder="Describe your goal, ask for advice, or tell the agent what to do next…"
             rows={1}
-            className="flex-1 resize-none rounded-lg border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+            className="flex-1 resize-none overflow-y-auto rounded-lg border border-input bg-transparent px-3 py-2 text-sm leading-5 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
             disabled={isStreaming}
           />
           {isStreaming ? (

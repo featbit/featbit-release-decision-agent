@@ -66,6 +66,20 @@ export async function runAgentStream(
 
     let messageCount = 0;
     for await (const message of agentQuery) {
+      // The SDK sometimes surfaces protocol-level errors (e.g. "No
+      // conversation found with session ID") as a `result` event with
+      // is_error=true instead of throwing. If that arrives before any
+      // user-visible data, treat it like a thrown exception so the outer
+      // retry logic can flip resume↔create.
+      if (
+        !hasStreamedData &&
+        message.type === "result" &&
+        (message as { is_error?: boolean }).is_error === true
+      ) {
+        const errs = (message as { errors?: string[] }).errors ?? [];
+        throw new Error(errs[0] ?? "Agent returned error result before streaming");
+      }
+
       if (!hasStreamedData) hasStreamedData = true;
       messageCount++;
       if (abortController.signal.aborted) break;
@@ -98,8 +112,18 @@ export async function runAgentStream(
       console.log(
         `[agent] ${startResume ? "Resume" : "Create"} failed, retrying as ${flipResume ? "resume" : "create"}`
       );
+
+      // If falling back from resume→create for a non-bootstrap user prompt,
+      // prepend the skill slash command so the fresh session loads project
+      // state before answering the user. Otherwise the agent wakes up cold.
+      let retryPrompt = effectivePrompt.prompt;
+      if (!flipResume && !effectivePrompt.isBootstrap) {
+        const bootstrap = buildEffectivePrompt({ ...body, prompt: "" });
+        retryPrompt = `${bootstrap.prompt}\n\n${effectivePrompt.prompt}`;
+      }
+
       try {
-        await doStream(effectivePrompt.prompt, flipResume);
+        await doStream(retryPrompt, flipResume);
       } catch (retryErr: unknown) {
         console.error("[agent] Retry also failed:", retryErr);
         if (!abortController.signal.aborted) {

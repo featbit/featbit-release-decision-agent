@@ -8,6 +8,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  /** Streamed reasoning tokens — ephemeral, not persisted to DB. */
+  thinking?: string;
   createdAt: Date;
 }
 
@@ -103,6 +105,29 @@ export function useSandboxChat({
           id: `stream-${nextId()}`,
           role: "assistant" as const,
           content: text,
+          createdAt: new Date(),
+        },
+      ];
+    });
+  }, []);
+
+  /** Append to the thinking field of the current streaming assistant message. */
+  const appendAssistantThinking = useCallback((text: string) => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === "assistant" && last.id.startsWith("stream-")) {
+        return [
+          ...prev.slice(0, -1),
+          { ...last, thinking: (last.thinking ?? "") + text },
+        ];
+      }
+      return [
+        ...prev,
+        {
+          id: `stream-${nextId()}`,
+          role: "assistant" as const,
+          content: "",
+          thinking: text,
           createdAt: new Date(),
         },
       ];
@@ -244,11 +269,13 @@ export function useSandboxChat({
             return;
           }
 
-          // Text tokens — stream into the assistant bubble.
+          // Token deltas — stream into the assistant bubble.
           if (inner.type !== "content_block_delta") return;
           const delta = inner.delta as Record<string, unknown> | undefined;
           if (delta?.type === "text_delta" && typeof delta.text === "string") {
             appendAssistantDelta(delta.text);
+          } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+            appendAssistantThinking(delta.thinking);
           }
         } else if (event === "result") {
           // Final result — agent finished. Surface terminal errors if any.
@@ -264,7 +291,7 @@ export function useSandboxChat({
         // (text already streamed via stream_event; metadata not user-visible).
       }
     },
-    [experimentId, sandboxUrl, maxTurns, cwd, appendAssistantDelta]
+    [experimentId, sandboxUrl, maxTurns, cwd, appendAssistantDelta, appendAssistantThinking]
   );
 
   const abort = useCallback(() => {

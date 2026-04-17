@@ -115,16 +115,18 @@ export async function POST(
     );
   }
 
-  // Check that at least some data exists
+  // Check that at least some data exists. `status: "no_data"` is a normal
+  // state (experiment just started / instrumentation not firing yet), not
+  // an error — the client renders it as an info card, not a red message.
   const primaryData = metrics[run.primaryMetricEvent] as Record<string, Record<string, number>> | undefined;
-  if (!primaryData) {
-    return NextResponse.json({ error: "No primary metric data found", inputData: null });
+  if (!primaryData || Object.keys(primaryData).length === 0) {
+    return NextResponse.json({ status: "no_data", reason: "no_primary_metric_rows" });
   }
   const totalUsers = Object.values(primaryData)
     .filter((v) => typeof v === "object" && v !== null && "n" in v)
     .reduce((sum, v) => sum + ((v as Record<string, number>).n ?? 0), 0);
   if (totalUsers === 0) {
-    return NextResponse.json({ error: "No users collected yet", inputData: null });
+    return NextResponse.json({ status: "no_data", reason: "zero_users" });
   }
 
   // For bandit with multi-arm: track-service already returns all variants in one query

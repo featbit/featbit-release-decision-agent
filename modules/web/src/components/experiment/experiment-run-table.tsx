@@ -421,12 +421,30 @@ function RefreshAnalysisButton({
   );
 }
 
-function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: string }) {
+function AnalysisTab({
+  exp,
+  experimentId,
+  flagKey,
+  featbitEnvId,
+}: {
+  exp: ExperimentRun;
+  experimentId: string;
+  flagKey: string | null;
+  featbitEnvId: string | null;
+}) {
+  // Pre-check what the backend requires. Rendering a config gap here beats
+  // auto-firing a POST that always 400s before the experiment is set up.
+  const missingFields: string[] = [];
+  if (!flagKey) missingFields.push("flag key");
+  if (!featbitEnvId) missingFields.push("FeatBit env ID");
+  if (!exp.primaryMetricEvent) missingFields.push("primary metric event");
+
   const [analysisResult, setAnalysisResult] = useState<string | null>(
     exp.analysisResult ?? null
   );
   const [loading, setLoading] = useState(false);
   const [isFreshRefresh, setIsFreshRefresh] = useState(false);
+  const [noData, setNoData] = useState(false);
   const [countdown, setCountdown] = useState(AUTO_REFRESH_INTERVAL);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -456,6 +474,7 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
     setIsFreshRefresh(forceFresh);
     setError(null);
     setWarning(null);
+    setNoData(false);
     try {
       const resp = await fetch(`/api/experiments/${experimentId}/analyze`, {
         method: "POST",
@@ -465,6 +484,11 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
       const data = await resp.json();
       if (!resp.ok) {
         setError(data.error ?? "Analysis failed");
+        return;
+      }
+      // "no_data" is an expected empty state, not an error.
+      if (data.status === "no_data") {
+        setNoData(true);
         return;
       }
       if (data.analysisResult) {
@@ -482,13 +506,31 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
     }
   }, [experimentId, exp.id]);
 
-  // Auto-trigger analysis on mount only when no result exists yet
+  // Auto-trigger analysis on mount only when no result exists yet AND the
+  // experiment has the fields the analyze endpoint requires. Otherwise the
+  // POST will just 400 — render a setup card instead.
   useEffect(() => {
     if (hasAutoTriggered.current) return;
     if (exp.analysisResult) return;
+    if (missingFields.length > 0) return;
     hasAutoTriggered.current = true;
     runAnalysis(true);
-  }, [runAnalysis, exp.analysisResult]);
+  }, [runAnalysis, exp.analysisResult, missingFields.length]);
+
+  if (missingFields.length > 0 && !analysisResult) {
+    return (
+      <div className="px-4 pb-6 pt-4 space-y-2">
+        <p className="text-xs font-medium">Analysis not ready</p>
+        <p className="text-xs text-muted-foreground">
+          Set up {missingFields.join(", ")} before running analysis.
+        </p>
+        <p className="text-[11px] text-muted-foreground/70">
+          Ask the agent in the chat panel to configure these, or edit the
+          experiment in the <code>Exposing</code> stage.
+        </p>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -519,6 +561,26 @@ function AnalysisTab({ exp, experimentId }: { exp: ExperimentRun; experimentId: 
           onClick={() => runAnalysis(true)}
         >
           Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (noData) {
+    return (
+      <div className="px-4 pb-6 pt-4 space-y-2">
+        <p className="text-xs font-medium">Waiting for data</p>
+        <p className="text-xs text-muted-foreground">
+          No events have arrived yet for this experiment. Once your instrumentation
+          starts sending <code>flag_evaluation</code> and metric events for
+          <code> env={featbitEnvId ?? "…"}</code> / <code>flag={flagKey ?? "…"}</code>,
+          results will show up here automatically.
+        </p>
+        <button
+          className="text-xs text-blue-600 dark:text-blue-400 underline"
+          onClick={() => runAnalysis(true)}
+        >
+          Check again
         </button>
       </div>
     );
@@ -585,10 +647,14 @@ function TrafficTab({
 export function ExperimentRunTable({
   experimentRuns,
   experimentId,
+  flagKey,
+  featbitEnvId,
   isSequential,
 }: {
   experimentRuns: ExperimentRun[];
   experimentId: string;
+  flagKey: string | null;
+  featbitEnvId: string | null;
   isSequential: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -750,7 +816,14 @@ export function ExperimentRunTable({
                     }
                   />
                 )}
-                {activeTab === "analysis" && <AnalysisTab exp={selected} experimentId={experimentId} />}
+                {activeTab === "analysis" && (
+                  <AnalysisTab
+                    exp={selected}
+                    experimentId={experimentId}
+                    flagKey={flagKey}
+                    featbitEnvId={featbitEnvId}
+                  />
+                )}
                 {activeTab === "traffic" && (
                   <TrafficTab exp={selected} experimentId={experimentId} />
                 )}

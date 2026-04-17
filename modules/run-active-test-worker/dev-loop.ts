@@ -1,24 +1,61 @@
 /**
  * Simple local loop for docker-compose — every TICK_MS sends 0–MAX_EVENTS
- * random TrackPayloads to WORKER_URL/api/track.
+ * random TrackPayloads per configured experiment to WORKER_URL/api/track.
  *
- * No Cloudflare, no wrangler, just a plain fetch() in a setInterval.
+ * Each entry in EXPERIMENTS is a self-contained (env, flag, metric, variants)
+ * bundle. On each tick we generate events for every entry in parallel.
  */
 
 const WORKER_URL = process.env.WORKER_URL ?? "http://track-service:8080";
-const ENV_ID     = process.env.ENV_ID     ?? "rat-env-v1";
-const TICK_MS    = parseInt(process.env.TICK_MS        ?? "5000", 10);
-const MAX_EVENTS = parseInt(process.env.MAX_EVENTS     ?? "8",    10);
+const TICK_MS    = parseInt(process.env.TICK_MS    ?? "5000", 10);
+const MAX_EVENTS = parseInt(process.env.MAX_EVENTS ?? "8",    10);
 
-const FLAG_KEY            = "run-active-test";
-const EXPERIMENT_ID       = "a0000000-0000-0000-0000-000000000001";
-const CONTROL             = "control";
-const TREATMENT           = "treatment";
-const PRIMARY_METRIC      = "checkout-completed";
-const GUARDRAILS          = ["page-load-error", "rage-click", "session-bounce"];
-const CONTROL_CONV_RATE   = 0.15;
-const TREATMENT_CONV_RATE = 0.20;
-const GUARDRAIL_FIRE_RATE = 0.05;
+interface ExperimentConfig {
+  envId:              string;
+  flagKey:            string;
+  experimentId:       string;
+  variants:           { name: string; trafficWeight: number; convRate: number }[];
+  primaryMetric:      string;
+  guardrails:         string[];
+  guardrailFireRate:  number;
+  userKeyPrefix:      string;
+  userKeySpace:       number;
+}
+
+const EXPERIMENTS: ExperimentConfig[] = [
+  // Classic run-active-test demo (kept from the original loop)
+  {
+    envId:              process.env.ENV_ID ?? "rat-env-v1",
+    flagKey:            "run-active-test",
+    experimentId:       "a0000000-0000-0000-0000-000000000001",
+    variants: [
+      { name: "control",   trafficWeight: 0.5, convRate: 0.15 },
+      { name: "treatment", trafficWeight: 0.5, convRate: 0.20 },
+    ],
+    primaryMetric:      "checkout-completed",
+    guardrails:         ["page-load-error", "rage-click", "session-bounce"],
+    guardrailFireRate:  0.05,
+    userKeyPrefix:      "rat-user",
+    userKeySpace:       100_000,
+  },
+  // Hero title experiment on featbit.co
+  {
+    envId:              "test-env-0001",
+    flagKey:            "hero-title-experiment",
+    experimentId:       "b0000000-0000-0000-0000-000000000002",
+    variants: [
+      { name: "original_title",        trafficWeight: 0.5, convRate: 0.12 },
+      { name: "experimentation_title", trafficWeight: 0.5, convRate: 0.15 },
+    ],
+    primaryMetric:      "pricing_page_click",
+    // page_view fires very often (near-universal); other_cta_click is rare.
+    // Fire rates live on each guardrail below, via inline index.
+    guardrails:         ["page_view", "other_cta_click"],
+    guardrailFireRate:  0.5, // averaged across the two; sampled below
+    userKeyPrefix:      "hero-user",
+    userKeySpace:       50_000,
+  },
+];
 
 interface TrackPayload {
   user: { keyId: string };
@@ -30,63 +67,87 @@ function randInt(max: number): number {
   return Math.floor(Math.random() * (max + 1));
 }
 
-function buildPayload(): TrackPayload {
+/** Pick a variant respecting trafficWeight (weights should sum to ~1). */
+function pickVariant(cfg: ExperimentConfig): ExperimentConfig["variants"][number] {
+  const r = Math.random();
+  let cum = 0;
+  for (const v of cfg.variants) {
+    cum += v.trafficWeight;
+    if (r < cum) return v;
+  }
+  return cfg.variants[cfg.variants.length - 1];
+}
+
+function buildPayload(cfg: ExperimentConfig): TrackPayload {
   const now     = Math.floor(Date.now() / 1000);
-  const variant = Math.random() < 0.5 ? CONTROL : TREATMENT;
-  const userKey = `rat-user-${Math.floor(Math.random() * 100_000).toString().padStart(6, "0")}`;
+  const variant = pickVariant(cfg);
+  const userKey = `${cfg.userKeyPrefix}-${Math.floor(Math.random() * cfg.userKeySpace).toString().padStart(6, "0")}`;
 
   const p: TrackPayload = {
     user: { keyId: userKey },
-    variations: [{ flagKey: FLAG_KEY, variant, timestamp: now, experimentId: EXPERIMENT_ID }],
+    variations: [{
+      flagKey:      cfg.flagKey,
+      variant:      variant.name,
+      timestamp:    now,
+      experimentId: cfg.experimentId,
+    }],
     metrics: [],
   };
 
-  const rate = variant === TREATMENT ? TREATMENT_CONV_RATE : CONTROL_CONV_RATE;
-  if (Math.random() < rate) {
-    p.metrics!.push({ eventName: PRIMARY_METRIC, timestamp: now });
+  if (Math.random() < variant.convRate) {
+    p.metrics!.push({ eventName: cfg.primaryMetric, timestamp: now });
   }
-  if (Math.random() < GUARDRAIL_FIRE_RATE) {
-    p.metrics!.push({ eventName: GUARDRAILS[randInt(GUARDRAILS.length - 1)], timestamp: now });
+  // page_view fires almost every session; other guardrails fire sparsely.
+  for (const g of cfg.guardrails) {
+    const fire = g === "page_view" ? 0.8 : cfg.guardrailFireRate;
+    if (Math.random() < fire) {
+      p.metrics!.push({ eventName: g, timestamp: now });
+    }
   }
   if (p.metrics!.length === 0) delete p.metrics;
   return p;
 }
 
-let totalEvents = 0;
-let totalTicks  = 0;
+const totals = new Map<string, number>();
+let totalTicks = 0;
 
-async function tick(): Promise<void> {
+async function sendFor(cfg: ExperimentConfig): Promise<void> {
   const n = randInt(MAX_EVENTS);
-  totalTicks++;
   if (n === 0) return;
 
-  const payloads = Array.from({ length: n }, buildPayload);
+  const payloads = Array.from({ length: n }, () => buildPayload(cfg));
   try {
     const res = await fetch(`${WORKER_URL}/api/track`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", Authorization: ENV_ID },
+      headers: { "Content-Type": "application/json", Authorization: cfg.envId },
       body:    JSON.stringify(payloads),
     });
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
-    totalEvents += n;
+    totals.set(cfg.envId, (totals.get(cfg.envId) ?? 0) + n);
   } catch (e) {
-    console.error(`[rat] tick failed: ${(e as Error).message}`);
+    console.error(`[rat] ${cfg.envId} tick failed: ${(e as Error).message}`);
   }
 }
 
-// Heartbeat every 60s
+async function tick(): Promise<void> {
+  totalTicks++;
+  await Promise.all(EXPERIMENTS.map(sendFor));
+}
+
 setInterval(() => {
-  console.log(`[rat] alive  ticks=${totalTicks}  totalEvents=${totalEvents}`);
+  const summary = [...totals.entries()].map(([env, n]) => `${env}=${n}`).join(" ");
+  console.log(`[rat] alive  ticks=${totalTicks}  ${summary}`);
 }, 60_000);
 
-// Graceful shutdown
 function shutdown() {
-  console.log(`[rat] stopped  ticks=${totalTicks}  totalEvents=${totalEvents}`);
+  const summary = [...totals.entries()].map(([env, n]) => `${env}=${n}`).join(" ");
+  console.log(`[rat] stopped  ticks=${totalTicks}  ${summary}`);
   process.exit(0);
 }
 process.on("SIGINT",  shutdown);
 process.on("SIGTERM", shutdown);
 
-// Main loop
-console.log(`[rat] started  tick=${TICK_MS}ms  maxEvents=${MAX_EVENTS}  url=${WORKER_URL}`);
+console.log(
+  `[rat] started  tick=${TICK_MS}ms  maxEvents=${MAX_EVENTS}  experiments=${EXPERIMENTS.map(e => e.envId + "/" + e.flagKey).join(",")}`
+);
 setInterval(tick, TICK_MS);

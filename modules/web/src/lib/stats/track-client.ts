@@ -77,7 +77,10 @@ export async function queryMetric(
     }
 
     const data = (await resp.json()) as TrackQueryResponse;
-    if (!data.variants || data.variants.length === 0) return null;
+    // Success with zero rows is NOT the same as a query failure.
+    // Return an empty object so callers can distinguish "no data yet" from
+    // "track-service unreachable" (which returns null via the catch below).
+    if (!data.variants || data.variants.length === 0) return {};
 
     // Convert TrackVariantStats[] → { variant: { n, k } | { n, sum, sum_squares } }
     const result: Record<string, Record<string, number>> = {};
