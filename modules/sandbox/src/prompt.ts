@@ -1,39 +1,44 @@
 import type { QueryRequestBody } from "./types.js";
-import { isKnownSession, projectIdToSessionId } from "./session-id.js";
 
 /**
- * The slash command sent at the start of every *new* session.
+ * The slash command sent at the start of every new session.
  * The SDK resolves `/featbit-release-decision` to the SKILL.md registered
  * under `~/.claude/skills/featbit-release-decision/`.
- * `$1` = project ID, `$2` = access token.
+ * `$1` = experiment ID, `$2` = access token.
  */
 const INITIAL_SLASH_COMMAND = `/featbit-release-decision $1 $2`;
 
+export interface EffectivePrompt {
+  /** The prompt string to send to the SDK. */
+  prompt: string;
+  /** True if this is a fresh bootstrap (empty user prompt → slash command). */
+  isBootstrap: boolean;
+}
+
 /**
- * Build the prompt string actually sent to the SDK.
+ * Decide what prompt actually goes to the SDK.
  *
- * - **New session** (projectId not yet seen): send the slash command with
- *   project ID and access token as arguments.
- * - **Resumed session** (projectId already seen): return the user prompt as-is.
+ * - Empty user prompt → treat as bootstrap: send the skill slash command.
+ * - Non-empty user prompt → pass through as a continuation.
+ *
+ * Session create-vs-resume is decided at call time by `agent.ts`, not here.
+ * This function has no side-effects and reads no persisted state.
  */
-export function buildEffectivePrompt(body: QueryRequestBody, resuming?: boolean): string {
+export function buildEffectivePrompt(body: QueryRequestBody): EffectivePrompt {
   const userPrompt = body.prompt?.trim() ?? "";
-  const projectId =
-    body.projectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
-  const sessionUuid = projectIdToSessionId(projectId);
 
-  // Explicit override or derive from persisted session state
-  const isResuming = resuming ?? isKnownSession(sessionUuid);
-
-  // Already-known session → pass prompt through
-  if (isResuming) {
-    return userPrompt;
+  if (userPrompt) {
+    return { prompt: userPrompt, isBootstrap: false };
   }
 
+  const experimentId =
+    body.experimentId ?? body.projectId ?? process.env.FEATBIT_PROJECT_ID ?? "default";
   const accessToken =
     body.accessToken ?? process.env.FEATBIT_ACCESS_TOKEN ?? "";
 
-  return INITIAL_SLASH_COMMAND
-    .replace("$1", projectId)
+  const prompt = INITIAL_SLASH_COMMAND
+    .replace("$1", experimentId)
     .replace("$2", accessToken);
+
+  return { prompt, isBootstrap: true };
 }

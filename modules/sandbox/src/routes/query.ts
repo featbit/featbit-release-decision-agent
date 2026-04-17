@@ -38,21 +38,9 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  // For new sessions, prepend the initial skill command;
-  // for resumed sessions, pass the user prompt as-is.
+  // Resolve the prompt + bootstrap flag. No session-state lookup happens here —
+  // create-vs-resume is decided by agent.ts based on intent, with retry on failure.
   const effectivePrompt = buildEffectivePrompt(body);
-  if (effectivePrompt.trim() === "") {
-    // Resumed session with no prompt — the client just wants to confirm
-    // the session is alive (e.g. auto-init on mount). Return a lightweight
-    // SSE ack instead of 400 to keep the UI happy.
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.write(`event: system\ndata: ${JSON.stringify({ type: "session_resumed", projectId: body.projectId ?? "default" })}\n\n`);
-    res.write(`event: done\ndata: {}\n\n`);
-    res.end();
-    return;
-  }
 
   const serverId = randomUUID();
   const abortController = new AbortController();

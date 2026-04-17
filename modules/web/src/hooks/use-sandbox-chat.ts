@@ -33,6 +33,12 @@ interface UseSandboxChatReturn {
   isStreaming: boolean;
   error: string | null;
   connectionStatus: ConnectionStatus;
+  /**
+   * Short label describing what the agent is doing right now
+   * ("Thinking…", "Running Bash…", etc.). Null when idle or when the
+   * agent is streaming plain text into the message bubble.
+   */
+  activity: string | null;
   /** Send a message (empty string triggers session init) */
   sendMessage: (content: string) => void;
   /** Abort the current stream */
@@ -58,6 +64,7 @@ export function useSandboxChat({
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("checking");
+  const [activity, setActivity] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isInitialized = useRef(false);
   const streamAccRef = useRef(""); // accumulate assistant text during stream
@@ -208,38 +215,53 @@ export function useSandboxChat({
         } finally {
           abortRef.current = null;
           setIsStreaming(false);
+          setActivity(null);
         }
       })();
 
       function handleSseEvent(event: string, data: unknown) {
         const d = data as Record<string, unknown>;
 
-        if (event === "agent.message") {
-          // Extract text from content blocks
-          const content = d.content as Array<{ type: string; text?: string }> | undefined;
-          if (!content) return;
-          for (const block of content) {
-            if (block.type === "text" && block.text) {
-              appendAssistantDelta(block.text);
+        if (event === "stream_event") {
+          // Partial SDK message — progressive token streaming.
+          const inner = d.event as Record<string, unknown> | undefined;
+          if (!inner) return;
+
+          // Track what the agent is currently doing, so the UI can show
+          // "Thinking…" / "Running Bash…" instead of a silent spinner.
+          if (inner.type === "content_block_start") {
+            const block = inner.content_block as Record<string, unknown> | undefined;
+            const blockType = block?.type as string | undefined;
+            if (blockType === "thinking") {
+              setActivity("Thinking…");
+            } else if (blockType === "tool_use") {
+              const name = (block?.name as string | undefined) ?? "tool";
+              setActivity(`Running ${name}…`);
+            } else if (blockType === "text") {
+              // Actual user-facing text is starting — let the bubble take over
+              setActivity(null);
             }
+            return;
           }
-        } else if (event === "session.status_idle") {
-          // Agent finished — stream will close naturally
-        } else if (event === "session.status_terminated") {
-          const errMsg =
-            ((d.error as Record<string, unknown> | undefined)?.message as string | undefined) ??
-            "Session terminated";
-          setError(errMsg);
-        } else if (event === "session.error") {
-          const errMsg =
-            ((d.error as Record<string, unknown> | undefined)?.message as string | undefined) ??
-            "Session error";
-          setError(errMsg);
+
+          // Text tokens — stream into the assistant bubble.
+          if (inner.type !== "content_block_delta") return;
+          const delta = inner.delta as Record<string, unknown> | undefined;
+          if (delta?.type === "text_delta" && typeof delta.text === "string") {
+            appendAssistantDelta(delta.text);
+          }
+        } else if (event === "result") {
+          // Final result — agent finished. Surface terminal errors if any.
+          if (d.is_error === true) {
+            const errs = (d.errors as string[] | undefined) ?? [];
+            setError(errs[0] ?? "Agent error");
+          }
         } else if (event === "error") {
           const msg = (d as { message?: string }).message ?? "Unknown error";
           setError(msg);
         }
-        // agent.tool_use, agent.tool_result — ignored for chat display
+        // `message`, `system`, `tool_progress`, `done` — ignored for chat display
+        // (text already streamed via stream_event; metadata not user-visible).
       }
     },
     [experimentId, sandboxUrl, maxTurns, cwd, appendAssistantDelta]
@@ -251,5 +273,5 @@ export function useSandboxChat({
     setIsStreaming(false);
   }, []);
 
-  return { messages, isStreaming, error, connectionStatus, sendMessage, abort };
+  return { messages, isStreaming, error, connectionStatus, activity, sendMessage, abort };
 }

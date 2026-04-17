@@ -21,7 +21,12 @@ export interface SseEvent {
 export interface QueryRequestBody {
   /** User prompt text. Optional for a brand-new project session bootstrap. */
   prompt?: string;
-  /** Project ID – used to derive a deterministic session UUID and for skill context */
+  /**
+   * Experiment ID – used to derive a deterministic session UUID and for skill context.
+   * Preferred name; `projectId` is accepted as a legacy alias.
+   */
+  experimentId?: string;
+  /** @deprecated Use `experimentId`. Kept for backward compatibility. */
   projectId?: string;
   /** Access token for the initial skill invocation (new session only) */
   accessToken?: string;

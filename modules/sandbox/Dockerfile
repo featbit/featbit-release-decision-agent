@@ -13,10 +13,10 @@ RUN corepack enable pnpm && mkdir -p ${PNPM_HOME} && pnpm add -g @anthropic-ai/c
 RUN mkdir -p /root/.claude && \
     echo '{"hasCompletedOnboarding":true}' > /root/.claude.json
 
-# Install skills from the featbit release-decision-agent repo.
-# They are placed into /root/.claude/skills/ at build time so they are always
-# available inside the container without any manual setup.
-RUN npx --yes skills add featbit/featbit-release-decision-agent --all -g -a claude-code -y
+# Global skills directory — populated at runtime via a bind mount from the
+# repo's /skills folder (see docker-compose.yml). The repo is private, so the
+# old `npx skills add featbit/...` clone no longer works.
+RUN mkdir -p /root/.claude/skills
 
 WORKDIR /app
 

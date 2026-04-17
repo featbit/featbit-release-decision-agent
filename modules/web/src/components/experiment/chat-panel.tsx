@@ -39,7 +39,7 @@ export function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initRef = useRef(false);
 
-  const { messages: liveMessages, isStreaming, error, connectionStatus, sendMessage, abort } =
+  const { messages: liveMessages, isStreaming, error, connectionStatus, activity, sendMessage, abort } =
     useSandboxChat({
       experimentId,
       initialMessages: initialMessages.map(toChat),
@@ -163,12 +163,15 @@ export function ChatPanel({
                   <Bot className="size-4" />
                 </div>
               </div>
-              <div className="bg-muted rounded-lg px-3 py-2">
+              <div className="bg-muted rounded-lg px-3 py-2 flex items-center gap-2">
                 <span className="inline-flex gap-1">
                   <span className="animate-bounce [animation-delay:0ms]">·</span>
                   <span className="animate-bounce [animation-delay:150ms]">·</span>
                   <span className="animate-bounce [animation-delay:300ms]">·</span>
                 </span>
+                {activity && (
+                  <span className="text-xs text-muted-foreground">{activity}</span>
+                )}
               </div>
             </div>
           )}
