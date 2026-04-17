@@ -53,26 +53,26 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # =======
-# agent/sandbox/ (ts)
+# modules/sandbox/ (ts)
 # =======
-agent/sandbox/dist/
-agent/sandbox/node_modules/
-agent/sandbox/.pnp
-agent/sandbox/.pnp.*
-agent/sandbox/.yarn/*
-!agent/sandbox/.yarn/patches
-!agent/sandbox/.yarn/plugins
-!agent/sandbox/.yarn/releases
-!agent/sandbox/.yarn/versions
-agent/sandbox/coverage/
-agent/sandbox/.next/
-agent/sandbox/out/
-agent/sandbox/build/
-agent/sandbox/.vercel/
-agent/sandbox/next-env.d.ts
-agent/sandbox/*.tsbuildinfo
-agent/sandbox/.env
-!agent/sandbox/.env.example
+modules/sandbox/dist/
+modules/sandbox/node_modules/
+modules/sandbox/.pnp
+modules/sandbox/.pnp.*
+modules/sandbox/.yarn/*
+!modules/sandbox/.yarn/patches
+!modules/sandbox/.yarn/plugins
+!modules/sandbox/.yarn/releases
+!modules/sandbox/.yarn/versions
+modules/sandbox/coverage/
+modules/sandbox/.next/
+modules/sandbox/out/
+modules/sandbox/build/
+modules/sandbox/.vercel/
+modules/sandbox/next-env.d.ts
+modules/sandbox/*.tsbuildinfo
+modules/sandbox/.env
+!modules/sandbox/.env.example
 
 # =======
 # agent/sandbox0/ (ts)

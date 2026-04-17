@@ -384,10 +384,7 @@ function RefreshAnalysisButton({
       <div className="rounded-md border border-dashed px-3 py-2.5 space-y-2 bg-muted/20">
         <p className="text-xs font-medium">Refresh Latest Analysis?</p>
         <p className="text-xs text-muted-foreground">
-          This will roll up the latest event data and re-run the analysis from
-          scratch. It may take a minute or more to complete. The page
-          auto-refreshes every {AUTO_REFRESH_INTERVAL}s — you can come back
-          later and results will appear automatically.
+          This may take a few seconds to tens of seconds — please be patient.
         </p>
         <div className="flex gap-2 pt-1">
           <Button

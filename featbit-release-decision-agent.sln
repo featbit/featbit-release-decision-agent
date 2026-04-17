@@ -1,0 +1,32 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "modules", "modules", "{CA253913-39DE-BFD0-C9A3-4B7EC6FBDF17}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "track-service", "track-service", "{9CC9CC23-5978-7C5A-979F-FA08A828578A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TrackService", "modules\track-service\TrackService.csproj", "{9DE42403-7064-F70A-165A-23386CAED52B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9DE42403-7064-F70A-165A-23386CAED52B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9DE42403-7064-F70A-165A-23386CAED52B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9DE42403-7064-F70A-165A-23386CAED52B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9DE42403-7064-F70A-165A-23386CAED52B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{9CC9CC23-5978-7C5A-979F-FA08A828578A} = {CA253913-39DE-BFD0-C9A3-4B7EC6FBDF17}
+		{9DE42403-7064-F70A-165A-23386CAED52B} = {9CC9CC23-5978-7C5A-979F-FA08A828578A}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BF5B6476-92B4-46EB-B36F-F222C7DF9FCA}
+	EndGlobalSection
+EndGlobal
