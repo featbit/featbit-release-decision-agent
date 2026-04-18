@@ -11,6 +11,7 @@ import { ResizablePanels } from "@/components/experiment/resizable-panels";
 import { ActivityPopover } from "@/components/experiment/activity-popover";
 import { ExperimentActions } from "@/components/experiment/experiment-actions";
 import { ChatTriggerContext } from "@/components/experiment/chat-trigger-context";
+import { UserMenu } from "@/components/auth/user-menu";
 import type {
   Experiment,
   ExperimentRun,
@@ -73,6 +74,9 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
               experimentId={experiment.id}
               experimentName={experiment.name}
             />
+            <div className="ml-1 pl-2 border-l">
+              <UserMenu compact />
+            </div>
           </div>
         </div>
       </header>
