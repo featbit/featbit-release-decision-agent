@@ -2,6 +2,7 @@ import { getStage } from "@/lib/stages";
 import { EditDecisionStateDialog } from "./decision-state-edit";
 import { MetricEditDialog } from "./metric-edit";
 import { Badge } from "@/components/ui/badge";
+import { ExperimentActions } from "./experiment-actions";
 import {
   Lightbulb,
   FlaskConical,
@@ -18,6 +19,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Target,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import type { Experiment, ExperimentRun } from "@/generated/prisma";
 import { FlagIntegrationHeader } from "./flag-config";
@@ -53,6 +55,7 @@ const STAGE_CONFIG: Record<
   hypothesis: {
     icon: <Lightbulb className="size-3.5" />,
     fields: [
+      { key: "description", label: "Description" },
       { key: "goal", label: "Goal" },
       { key: "intent", label: "Intent" },
       { key: "hypothesis", label: "Hypothesis" },
@@ -85,6 +88,10 @@ export function StageContentPanel({
   experiment: ExperimentWithRelations;
   activeTab: string;
 }) {
+  if (activeTab === "settings") {
+    return <SettingsContent experiment={experiment} />;
+  }
+
   const stage = getStage(activeTab);
 
   return (
@@ -118,6 +125,69 @@ export function StageContentPanel({
       ) : (
         <FieldsSection experiment={experiment} stageKey={activeTab} />
       )}
+    </div>
+  );
+}
+
+/* ── Settings pseudo-stage ── */
+function SettingsContent({
+  experiment,
+}: {
+  experiment: ExperimentWithRelations;
+}) {
+  return (
+    <div className="h-full overflow-y-auto p-5 space-y-5">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <SettingsIcon className="size-4" />
+          <span className="text-sm font-semibold">Settings</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Administrative actions for this experiment.
+        </p>
+      </div>
+
+      <section className="space-y-2">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Metadata
+        </div>
+        <div className="rounded-md border bg-muted/10 px-3 py-3 space-y-2 text-xs">
+          <div>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Name</span>
+            <p className="leading-relaxed">{experiment.name}</p>
+          </div>
+          <div>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Description</span>
+            <p className="leading-relaxed whitespace-pre-line">
+              {experiment.description || (
+                <span className="italic text-muted-foreground/50">Not set (edit in Hypothesis stage)</span>
+              )}
+            </p>
+          </div>
+          <div>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">Experiment ID</span>
+            <p className="font-mono text-[11px] text-muted-foreground">{experiment.id}</p>
+          </div>
+          {experiment.featbitEnvId && (
+            <div>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase">FeatBit Env ID</span>
+              <p className="font-mono text-[11px] text-muted-foreground">{experiment.featbitEnvId}</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          Danger zone
+        </div>
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 space-y-3">
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Deleting an experiment permanently removes its runs, activity, and chat history. This cannot be undone.
+          </p>
+          <ExperimentActions experimentId={experiment.id} experimentName={experiment.name} />
+        </div>
+      </section>
     </div>
   );
 }

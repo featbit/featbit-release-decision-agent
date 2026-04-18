@@ -1,17 +1,32 @@
-import type { Organization, Profile, Workspace } from "./types";
+import type {
+  Organization,
+  Profile,
+  ProjectEnv,
+  Workspace,
+} from "./types";
 
-export const STORAGE_KEYS = {
+const STATIC_KEYS = {
   token: "token",
   profile: "auth",
-  workspace: "current-workspace",
-  organization: "current-organization",
   loginRedirectUrl: "login-redirect-url",
   isSsoFirstLogin: "is-sso-first-login",
   ssoWorkspaceKey: "sso-workspace-key",
 } as const;
 
+const SCOPED_KEY_BASE = {
+  workspace: "current-workspace",
+  organization: "current-organization",
+  projectEnv: "current-project",
+} as const;
+
+export const ENV_COOKIE_NAME = "fb_env_id";
+
 function isBrowser() {
   return typeof window !== "undefined";
+}
+
+function scopedKey(base: string, userId: string | null | undefined) {
+  return userId ? `${base}_${userId}` : base;
 }
 
 function read<T>(key: string): T | null {
@@ -35,57 +50,105 @@ function write(key: string, value: unknown) {
   window.localStorage.setItem(key, serialized);
 }
 
+function getProfileRaw(): Profile | null {
+  return read<Profile>(STATIC_KEYS.profile);
+}
+
+function currentUserId(): string | null {
+  return getProfileRaw()?.id ?? null;
+}
+
+function setEnvCookie(envId: string | null) {
+  if (!isBrowser()) return;
+  const base = `${ENV_COOKIE_NAME}=${envId ?? ""}; Path=/; SameSite=Lax`;
+  if (envId) {
+    document.cookie = `${base}; Max-Age=31536000`;
+  } else {
+    document.cookie = `${base}; Max-Age=0`;
+  }
+}
+
 export const authStorage = {
   getToken(): string | null {
     if (!isBrowser()) return null;
-    return window.localStorage.getItem(STORAGE_KEYS.token);
+    return window.localStorage.getItem(STATIC_KEYS.token);
   },
   setToken(token: string) {
-    write(STORAGE_KEYS.token, token);
+    write(STATIC_KEYS.token, token);
   },
+
   getProfile(): Profile | null {
-    return read<Profile>(STORAGE_KEYS.profile);
+    return getProfileRaw();
   },
   setProfile(profile: Profile) {
-    write(STORAGE_KEYS.profile, profile);
+    write(STATIC_KEYS.profile, profile);
   },
+
   getWorkspace(): Workspace | null {
-    return read<Workspace>(STORAGE_KEYS.workspace);
+    return read<Workspace>(scopedKey(SCOPED_KEY_BASE.workspace, currentUserId()));
   },
   setWorkspace(workspace: Workspace) {
-    write(STORAGE_KEYS.workspace, workspace);
+    write(scopedKey(SCOPED_KEY_BASE.workspace, currentUserId()), workspace);
   },
+
   getOrganization(): Organization | null {
-    return read<Organization>(STORAGE_KEYS.organization);
+    return read<Organization>(
+      scopedKey(SCOPED_KEY_BASE.organization, currentUserId()),
+    );
   },
   setOrganization(org: Organization) {
-    write(STORAGE_KEYS.organization, org);
+    write(scopedKey(SCOPED_KEY_BASE.organization, currentUserId()), org);
   },
+
+  getProjectEnv(): ProjectEnv | null {
+    return read<ProjectEnv>(
+      scopedKey(SCOPED_KEY_BASE.projectEnv, currentUserId()),
+    );
+  },
+  setProjectEnv(projectEnv: ProjectEnv | null) {
+    const key = scopedKey(SCOPED_KEY_BASE.projectEnv, currentUserId());
+    if (!projectEnv) {
+      if (isBrowser()) window.localStorage.removeItem(key);
+      setEnvCookie(null);
+      return;
+    }
+    write(key, projectEnv);
+    setEnvCookie(projectEnv.envId);
+  },
+
   getLoginRedirectUrl(): string | null {
     if (!isBrowser()) return null;
-    return window.localStorage.getItem(STORAGE_KEYS.loginRedirectUrl);
+    return window.localStorage.getItem(STATIC_KEYS.loginRedirectUrl);
   },
   setLoginRedirectUrl(url: string) {
-    write(STORAGE_KEYS.loginRedirectUrl, url);
+    write(STATIC_KEYS.loginRedirectUrl, url);
   },
   clearLoginRedirectUrl() {
     if (!isBrowser()) return;
-    window.localStorage.removeItem(STORAGE_KEYS.loginRedirectUrl);
+    window.localStorage.removeItem(STATIC_KEYS.loginRedirectUrl);
   },
+
   setSsoFirstLogin(flag: boolean) {
-    write(STORAGE_KEYS.isSsoFirstLogin, flag);
+    write(STATIC_KEYS.isSsoFirstLogin, flag);
   },
   setSsoWorkspaceKey(key: string) {
-    write(STORAGE_KEYS.ssoWorkspaceKey, key);
+    write(STATIC_KEYS.ssoWorkspaceKey, key);
   },
   getSsoWorkspaceKey(): string | null {
     if (!isBrowser()) return null;
-    return window.localStorage.getItem(STORAGE_KEYS.ssoWorkspaceKey);
+    return window.localStorage.getItem(STATIC_KEYS.ssoWorkspaceKey);
   },
+
   clearAll() {
     if (!isBrowser()) return;
-    Object.values(STORAGE_KEYS).forEach((k) =>
+    const userId = currentUserId();
+    Object.values(STATIC_KEYS).forEach((k) =>
       window.localStorage.removeItem(k),
     );
+    Object.values(SCOPED_KEY_BASE).forEach((base) => {
+      window.localStorage.removeItem(scopedKey(base, userId));
+      window.localStorage.removeItem(base);
+    });
+    setEnvCookie(null);
   },
 };

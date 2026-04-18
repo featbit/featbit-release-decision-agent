@@ -1,6 +1,6 @@
 import { FEATBIT_API_V1 } from "./config";
 import { authStorage } from "./storage";
-import type { ApiEnvelope } from "./types";
+import type { ApiEnvelope, LoginToken } from "./types";
 
 export class FeatBitApiError extends Error {
   readonly status: number;
@@ -19,6 +19,10 @@ interface RequestOptions extends Omit<RequestInit, "body"> {
   query?: Record<string, string | number | boolean | undefined | null>;
   skipAuth?: boolean;
   raw?: boolean;
+  /** Internal — set when this request is already a retry after refresh. Prevents loops. */
+  _isRetry?: boolean;
+  /** Internal — include credentials (for refresh endpoint). */
+  _withCredentials?: boolean;
 }
 
 function buildUrl(
@@ -54,21 +58,97 @@ function buildHeaders(skipAuth?: boolean): HeadersInit {
   return headers;
 }
 
+// ── Session-expired event bus ────────────────────────────────────────────────
+// Emitted after a request fails with 401 AND the refresh attempt also failed.
+// UI layers (AuthGuard etc.) listen to decide whether to prompt re-auth.
+
+export const SESSION_EXPIRED_EVENT = "featbit:session-expired";
+
+function emitSessionExpired() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+}
+
+// ── Silent refresh (singleflight) ────────────────────────────────────────────
+// Only one refresh is in-flight at a time; concurrent 401s wait on the same promise.
+
+let refreshInflight: Promise<boolean> | null = null;
+
+async function doRefresh(): Promise<boolean> {
+  const url = buildUrl("/identity/refresh-token");
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      credentials: "include",
+    });
+    if (!res.ok) return false;
+    const text = await res.text();
+    if (!text) return false;
+    let parsed: ApiEnvelope<LoginToken> | LoginToken;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return false;
+    }
+    const data =
+      "success" in parsed && parsed.success
+        ? (parsed.data as LoginToken | undefined)
+        : (parsed as LoginToken);
+    if (!data?.token) return false;
+    authStorage.setToken(data.token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function refreshAccessToken(): Promise<boolean> {
+  if (refreshInflight) return refreshInflight;
+  refreshInflight = doRefresh().finally(() => {
+    refreshInflight = null;
+  });
+  return refreshInflight;
+}
+
+// ── Main request function ────────────────────────────────────────────────────
+
 export async function apiRequest<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { body, query, skipAuth, raw, headers, ...rest } = options;
+  const {
+    body,
+    query,
+    skipAuth,
+    raw,
+    headers,
+    _isRetry,
+    _withCredentials,
+    ...rest
+  } = options;
   const url = buildUrl(path, query);
   const init: RequestInit = {
     ...rest,
     headers: { ...buildHeaders(skipAuth), ...(headers || {}) },
   };
+  if (_withCredentials) {
+    init.credentials = "include";
+  }
   if (body !== undefined) {
     init.body = typeof body === "string" ? body : JSON.stringify(body);
   }
 
   const response = await fetch(url, init);
+
+  // 401 on an authenticated request → try refresh once, then retry.
+  if (response.status === 401 && !skipAuth && !_isRetry) {
+    const ok = await refreshAccessToken();
+    if (ok) {
+      return apiRequest<T>(path, { ...options, _isRetry: true });
+    }
+    emitSessionExpired();
+  }
 
   const text = await response.text();
   let parsed: unknown = undefined;

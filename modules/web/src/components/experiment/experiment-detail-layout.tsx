@@ -9,9 +9,8 @@ import { StageContentPanel } from "@/components/experiment/stage-content-panel";
 import { ChatPanel } from "@/components/experiment/chat-panel";
 import { ResizablePanels } from "@/components/experiment/resizable-panels";
 import { ActivityPopover } from "@/components/experiment/activity-popover";
-import { ExperimentActions } from "@/components/experiment/experiment-actions";
 import { ChatTriggerContext } from "@/components/experiment/chat-trigger-context";
-import { UserMenu } from "@/components/auth/user-menu";
+import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 import type {
   Experiment,
   ExperimentRun,
@@ -62,21 +61,12 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
             Experiments
           </Link>
           <span className="text-muted-foreground/40">|</span>
-          <h1 className="text-sm font-semibold truncate" title={experiment.description ?? undefined}>
+          <h1 className="text-sm font-semibold truncate">
             {experiment.name}
-            {experiment.description && (
-              <span className="font-normal text-muted-foreground ml-2">— {experiment.description}</span>
-            )}
           </h1>
           <div className="ml-auto flex items-center gap-2">
+            <WorkspaceSwitcher readOnly />
             <ActivityPopover activities={experiment.activities} />
-            <ExperimentActions
-              experimentId={experiment.id}
-              experimentName={experiment.name}
-            />
-            <div className="ml-1 pl-2 border-l">
-              <UserMenu compact />
-            </div>
           </div>
         </div>
       </header>

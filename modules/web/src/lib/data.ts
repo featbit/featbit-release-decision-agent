@@ -1,7 +1,21 @@
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
+
+const ENV_COOKIE_NAME = "fb_env_id";
+
+export async function getCurrentEnvId(): Promise<string | null> {
+  try {
+    const store = await cookies();
+    return store.get(ENV_COOKIE_NAME)?.value || null;
+  } catch {
+    return null;
+  }
+}
 
 export async function getExperiments() {
+  const envId = await getCurrentEnvId();
   return prisma.experiment.findMany({
+    where: envId ? { featbitEnvId: envId } : { featbitEnvId: { not: null } },
     orderBy: { updatedAt: "desc" },
   });
 }
@@ -21,7 +35,10 @@ export async function createExperiment(data: {
   name: string;
   description?: string;
 }) {
-  const experiment = await prisma.experiment.create({ data });
+  const envId = await getCurrentEnvId();
+  const experiment = await prisma.experiment.create({
+    data: { ...data, featbitEnvId: envId ?? undefined },
+  });
   await prisma.activity.create({
     data: {
       experimentId: experiment.id,
@@ -63,8 +80,8 @@ export async function createExperimentRun(
   experimentId: string,
   data: { slug: string; [key: string]: unknown }
 ) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.experimentRun.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: { experimentId, ...data } as any,
   });
 }

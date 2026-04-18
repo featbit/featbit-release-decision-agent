@@ -46,6 +46,30 @@ export interface Organization {
   initialized: boolean;
 }
 
+export interface Environment {
+  id: string;
+  projectId: string;
+  name: string;
+  key: string;
+  description?: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  key: string;
+  environments: Environment[];
+}
+
+export interface ProjectEnv {
+  projectId: string;
+  projectName: string;
+  projectKey: string;
+  envId: string;
+  envKey: string;
+  envName: string;
+}
+
 export interface ApiEnvelope<T> {
   success: boolean;
   errors?: string[];

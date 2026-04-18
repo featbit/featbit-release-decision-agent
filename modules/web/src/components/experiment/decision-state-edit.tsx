@@ -22,6 +22,12 @@ const ALL_FIELDS: {
   rows: number;
 }[] = [
   {
+    key: "description",
+    label: "Description",
+    placeholder: "A short summary of this experiment for teammates and future-you.",
+    rows: 2,
+  },
+  {
     key: "goal",
     label: "Goal",
     placeholder: "What business outcome are you trying to achieve?",

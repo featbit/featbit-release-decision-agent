@@ -98,6 +98,7 @@ export async function updateMetricsAction(formData: FormData) {
 
 export async function updateDecisionStateAction(formData: FormData) {
   const experimentId = formData.get("experimentId") as string;
+  const description = formData.get("description") as string | null;
   const goal = formData.get("goal") as string | null;
   const intent = formData.get("intent") as string | null;
   const hypothesis = formData.get("hypothesis") as string | null;
@@ -106,15 +107,17 @@ export async function updateDecisionStateAction(formData: FormData) {
   const primaryMetric = formData.get("primaryMetric") as string | null;
   const guardrails = formData.get("guardrails") as string | null;
 
-  await updateExperiment(experimentId, {
-    goal: goal?.trim() || null,
-    intent: intent?.trim() || null,
-    hypothesis: hypothesis?.trim() || null,
-    change: change?.trim() || null,
-    constraints: constraints?.trim() || null,
-    primaryMetric: primaryMetric?.trim() || null,
-    guardrails: guardrails?.trim() || null,
-  });
+  const data: Record<string, string | null> = {};
+  if (formData.has("description")) data.description = description?.trim() || null;
+  if (formData.has("goal")) data.goal = goal?.trim() || null;
+  if (formData.has("intent")) data.intent = intent?.trim() || null;
+  if (formData.has("hypothesis")) data.hypothesis = hypothesis?.trim() || null;
+  if (formData.has("change")) data.change = change?.trim() || null;
+  if (formData.has("constraints")) data.constraints = constraints?.trim() || null;
+  if (formData.has("primaryMetric")) data.primaryMetric = primaryMetric?.trim() || null;
+  if (formData.has("guardrails")) data.guardrails = guardrails?.trim() || null;
+
+  await updateExperiment(experimentId, data);
 
   await addActivity(experimentId, {
     type: "note",
