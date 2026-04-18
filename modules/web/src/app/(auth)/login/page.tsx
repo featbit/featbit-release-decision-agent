@@ -173,14 +173,11 @@ function LoginPageInner() {
     <Card className="w-full max-w-md py-6">
       <CardHeader>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-foreground font-bold text-sm">
-            F
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="FeatBit" className="size-9" />
           <div className="flex flex-col">
-            <CardTitle>Sign in to Release Decision</CardTitle>
-            <CardDescription>
-              Uses your FeatBit account.
-            </CardDescription>
+            <CardTitle>Sign in to FeatBit Experimentation</CardTitle>
+            <CardDescription>Uses your FeatBit account.</CardDescription>
           </div>
         </div>
       </CardHeader>

@@ -33,8 +33,11 @@ interface PersistedAuth {
   projectEnv: ProjectEnv | null;
 }
 
+export type SessionStatus = "unknown" | "checking" | "valid" | "invalid";
+
 interface AuthContextValue extends PersistedAuth {
   isReady: boolean;
+  sessionStatus: SessionStatus;
   organizations: Organization[];
   projects: Project[];
   currentProject: Project | null;
@@ -166,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const state = useSyncExternalStore(subscribe, getSnapshot, () => emptyState);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("unknown");
   const isReady = typeof window !== "undefined";
 
   const currentProject = useMemo(
@@ -196,8 +200,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!state.isAuthenticated) {
       cancelScheduledRefresh();
+      setSessionStatus("invalid");
       return;
     }
+
+    // First-time validation per tab: confirm the stored token still works.
+    if (sessionStatus === "unknown" || sessionStatus === "checking") {
+      setSessionStatus("checking");
+      userService
+        .getProfile()
+        .then((profile) => {
+          if (profile) authStorage.setProfile(profile);
+          setSessionStatus("valid");
+        })
+        .catch(() => {
+          setSessionStatus("invalid");
+        });
+      return;
+    }
+
+    if (sessionStatus !== "valid") return;
+
     if (organizations.length === 0) {
       userService
         .getOrganizations(false)
@@ -209,13 +232,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void refreshProjects();
     }
     scheduleNextRefresh();
-  }, [state.isAuthenticated, state.token, organizations.length, projects.length, refreshProjects]);
+  }, [
+    state.isAuthenticated,
+    state.token,
+    sessionStatus,
+    organizations.length,
+    projects.length,
+    refreshProjects,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = () => {
       cancelScheduledRefresh();
       authStorage.clearAll();
+      setSessionStatus("invalid");
       notifyAuthChange();
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, handler);
@@ -250,6 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await refreshProjects();
       notifyAuthChange();
       scheduleNextRefresh();
+      setSessionStatus("valid");
       return profile;
     },
     [refreshProjects],
@@ -293,6 +325,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...state,
       isReady,
+      sessionStatus,
       organizations,
       projects,
       currentProject,
@@ -305,6 +338,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [
       state,
       isReady,
+      sessionStatus,
       organizations,
       projects,
       currentProject,

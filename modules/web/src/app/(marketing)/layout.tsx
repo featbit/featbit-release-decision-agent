@@ -6,12 +6,16 @@ function NavBar() {
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-foreground font-bold text-sm shadow-sm group-hover:opacity-90 transition-opacity">
-            F
-          </div>
+          <Image
+            src="/logo.svg"
+            alt="FeatBit"
+            width={32}
+            height={32}
+            className="size-8 shrink-0 group-hover:opacity-90 transition-opacity"
+          />
           <span className="font-semibold text-foreground">FeatBit</span>
           <span className="hidden sm:block text-muted-foreground text-sm font-normal">
-            Release Decision
+            Experimentation
           </span>
         </Link>
 
@@ -56,9 +60,13 @@ function Footer() {
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-brand text-brand-foreground font-bold text-xs">
-                F
-              </div>
+              <Image
+                src="/logo.svg"
+                alt="FeatBit"
+                width={28}
+                height={28}
+                className="size-7 shrink-0"
+              />
               <span className="font-semibold text-sm">FeatBit</span>
             </Link>
             <p className="text-xs text-muted-foreground leading-relaxed">

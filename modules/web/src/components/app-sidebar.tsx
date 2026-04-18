@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import {
   Sidebar,
   SidebarContent,
@@ -12,7 +13,13 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { getExperiments } from "@/lib/data";
-import { FolderKanban, FlaskConical, Plus } from "lucide-react";
+import {
+  FolderKanban,
+  Plus,
+  Flag,
+  Database,
+  ExternalLink,
+} from "lucide-react";
 import { UserMenu } from "@/components/auth/user-menu";
 
 export async function AppSidebar() {
@@ -21,10 +28,24 @@ export async function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1">
-          <FlaskConical className="size-5" />
-          <span className="font-semibold text-sm">Release Decision</span>
-        </div>
+        <Link
+          href="/experiments"
+          className="flex items-center gap-2 px-2 py-1 group"
+        >
+          <Image
+            src="/logo.svg"
+            alt="FeatBit Experimentation"
+            width={36}
+            height={36}
+            className="size-9 shrink-0"
+          />
+          <div className="flex flex-col leading-tight min-w-0">
+            <span className="font-semibold text-sm truncate">FeatBit</span>
+            <span className="text-[10px] text-muted-foreground truncate">
+              Experimentation
+            </span>
+          </div>
+        </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -46,6 +67,44 @@ export async function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Control</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={
+                    <a
+                      href="https://app.featbit.co"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  }
+                >
+                  <Flag className="size-4" />
+                  <span>Feature Flags</span>
+                  <ExternalLink className="size-3 ml-auto opacity-50" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Data</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/data-warehouse" />}>
+                  <Database className="size-4" />
+                  <span>Data Warehouse</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         <SidebarGroup>
           <SidebarGroupLabel>Recent</SidebarGroupLabel>
           <SidebarGroupContent>
