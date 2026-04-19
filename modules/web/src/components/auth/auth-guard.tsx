@@ -47,7 +47,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <ConnectingSplash message="Redirecting to sign-in…" />;
   }
   if (sessionStatus === "checking" || sessionStatus === "unknown") {
-    return <ConnectingSplash message="Connecting to your workspace…" />;
+    return <ConnectingSplash message="Moving into your target space..." />;
   }
 
   return <>{children}</>;

@@ -1,3 +1,8 @@
+---
+name: Tool Adapter: FeatBit CLI
+description: FeatBit CLI (.NET 10): config management, flag list/create/toggle/archive/set-rollout/evaluate commands, and SDK integration via featbit-skills.
+---
+
 # Tool Adapter: FeatBit CLI
 
 **Vendor:** FeatBit  

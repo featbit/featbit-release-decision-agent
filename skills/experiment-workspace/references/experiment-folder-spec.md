@@ -1,3 +1,8 @@
+---
+name: Experiment Data Spec
+description: DB schema reference for ExperimentRun fields, inputData format, analysisResult JSON examples, and field format standards.
+---
+
 # Experiment Data Spec
 
 Every experiment is a row in the `Experiment` table (Prisma schema), accessed via HTTP API.

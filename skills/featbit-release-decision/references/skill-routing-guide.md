@@ -1,3 +1,8 @@
+---
+name: Skill Routing Guide
+description: CF-01 through CF-08 routing table mapping control lenses to satellite skills, with entry conditions and handoff rules.
+---
+
 # Skill Routing Guide
 
 Maps each CF trigger to its implementation skill. Read this when routing to a downstream skill.

@@ -74,12 +74,47 @@ The learning must always end with a directional suggestion for what to test next
 
 ### Persist State
 
-After completing work, use the `project-sync` skill to persist state to the database:
+Use `Skill("project-sync", ...)` to sync state. All five writes are required:
 
-1. `update-state` — save `--lastLearning "..." --lastAction "Learning captured"`
-2. `set-stage` — set to `learning`
-3. `upsert-experiment` — save `--whatChanged "..." --whatHappened "..." --confirmedOrRefuted "..." --whyItHappened "..." --nextHypothesis "..."`
-4. `add-activity` — record what happened, e.g. `--type learning --title "Learning captured"`
+```python
+assert Skill("project-sync", f'update-state {experiment_id} --lastLearning "{summary}" --lastAction "Learning captured"').ok
+assert Skill("project-sync", f"set-stage {experiment_id} learning").ok
+assert Skill("project-sync", f'save-learning {experiment_id} {slug} --whatChanged "{what_changed}" --whatHappened "{what_happened}" --confirmedOrRefuted "{confirmed_or_refuted}" --whyItHappened "{why}" --nextHypothesis "{next_hypothesis}"').ok
+assert Skill("project-sync", f"archive-run {experiment_id} {slug}").ok
+assert Skill("project-sync", f'add-activity {experiment_id} --type learning_captured --title "Learning captured"').ok
+```
+
+## Execution Procedure
+
+```python
+def capture_learning(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    active_run = pick_active_run(state)   # run in decided status
+    if active_run is None or active_run.decision is None:
+        Skill("evidence-analysis", project_id)
+        return
+    template = read("references/iteration-synthesis-template.md")
+    # 5-part synthesis loop — ask about missing parts one at a time
+    learning = build_learning(active_run, state, template, user_message)
+    # INCONCLUSIVE cycles still require whyItHappened + nextHypothesis:
+    # "we learned this measurement approach was inadequate" is valid and complete
+    assert Skill("project-sync", f'update-state {project_id} --lastLearning "{learning.summary}" --lastAction "Learning captured"').ok
+    assert Skill("project-sync", f"set-stage {project_id} learning").ok
+    assert Skill("project-sync", f'save-learning {project_id} {active_run.slug} --whatChanged "{learning.what_changed}" --whatHappened "{learning.what_happened}" --confirmedOrRefuted "{learning.confirmed_or_refuted}" --whyItHappened "{learning.why}" --nextHypothesis "{learning.next_hypothesis}"').ok
+    assert Skill("project-sync", f"archive-run {project_id} {active_run.slug}").ok
+    assert Skill("project-sync", f'add-activity {project_id} --type learning_captured --title "Learning captured"').ok
+    Skill("intent-shaping", project_id)
+```
+
+## Signal Inference
+
+| Check | Rule |
+|---|---|
+| No run with `decision` set | Redirect to `evidence-analysis` |
+| INCONCLUSIVE result | Still complete all 5 learning components — uncertainty is a valid learning |
+| Component (4) missing (`whyItHappened`) | Push back — causal interpretation required even if honest uncertainty |
+| Component (5) missing (`nextHypothesis`) | Push back — loop does not close without a forward-facing suggestion |
+| `lastLearning` already contains this cycle | Review rather than recreate — ask user if updating or closing a different run |
 
 ## Reference Files
 

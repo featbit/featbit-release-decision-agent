@@ -87,7 +87,7 @@ Use this path only if the current user actually owns flag operations. Otherwise,
 
 1. Identify the targeting rule: user property, segment, or custom attribute
 2. Confirm this audience is the right proxy for the hypothesis audience
-3. Set audience filters on the experiment record via the web UI or by using `upsert-experiment` with `--audienceFilters '<JSON>'` (e.g. `'[{"property":"plan","op":"in","values":["premium","enterprise"]}]'`). The data server applies these filters when querying experiment data
+3. Set audience filters on the experiment record via the FeatBit web UI (Targeting → Attribute conditions). The `audienceFilters` field exists in the DB schema but has no CLI command yet — use the web UI. See `note.important.txt` at the repo root for the deferred action plan. The data server applies these filters when querying experiment data
 4. If implementation is owned by another team, describe the targeting logic in the handoff spec instead of assuming direct FeatBit access
 5. Set targeting rules in the FeatBit web UI before enabling the flag — see [references/tool-featbit-webui.md](references/tool-featbit-webui.md) for targeting rule setup
 6. After rules are set, proceed to rollout using the CLI (see "I want to start rolling this out" above)
@@ -109,8 +109,8 @@ Use this path only if the current user can change application code. If not, crea
 4. Choose the analysis method: `bayesian_ab` (default, balanced sampling — equal N per variant) or `bandit` (pass-through — asymmetric allocation intentional). Set this in the experiment record's `method` field via the web UI. The data server applies the appropriate sampling strategy automatically
 5. If experiments are concurrent but on independent features or surfaces with no shared metrics, that is an **orthogonal** design — each experiment gets its own flag and project. This is knowledge-only guidance; it is not an operation performed within a single project
 6. Run sample-size calculations on the reduced traffic pool for concurrent designs — underpowered experiments are worse than sequential with a wait
-6. Document the chosen strategy in the handoff spec and in the exposure activity log
-7. Read: [references/multi-experiment-traffic.md](references/multi-experiment-traffic.md) for detailed patterns and anti-patterns
+7. Document the chosen strategy in the handoff spec and in the exposure activity log
+8. Read: [references/multi-experiment-traffic.md](references/multi-experiment-traffic.md) for detailed patterns and anti-patterns
 
 ## Operating Rules
 
@@ -123,11 +123,52 @@ Use this path only if the current user can change application code. If not, crea
 
 ### Persist State
 
-After completing work, use the `project-sync` skill to persist state to the database:
+Use `Skill("project-sync", ...)` to sync state. All three writes are required:
 
-1. `update-state` — save `--constraints "<flag contract and rollout criteria>"` and `--lastAction "<what was done>"`
-2. `set-stage` — set to `implementing` (flag contract defined, not yet live) or `exposing` (traffic is live)
-3. `add-activity` — record what happened, e.g. `--type stage_update --title "Flag contract ready"`
+```python
+assert Skill("project-sync", f'update-state {experiment_id} --constraints "{flag_contract_and_rollout}" --lastAction "{what_was_done}"').ok
+assert Skill("project-sync", f"set-stage {experiment_id} implementing").ok
+# Note: only two valid stages apply here: "implementing" (flag contract defined, not yet live)
+# Stage stays at "implementing" throughout; there is no "exposing" stage value.
+assert Skill("project-sync", f'add-activity {experiment_id} --type stage_update --title "Flag contract ready"').ok
+```
+
+## Execution Procedure
+
+```python
+def control_exposure(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.hypothesis in ("", None):
+        Skill("hypothesis-design", project_id); return
+    role = infer_role(user_message, state)
+    # role = "spec_owner" (default) or "operator"
+    if role == "spec_owner":
+        # produce implementation handoff spec
+        handoff = build_handoff(state, read("references/pm-dev-handoff.md"))
+        say(handoff)
+    else:
+        # operator path: create flag / set rollout / target audience / add to code
+        intent = classify_intent(user_message)
+        # pre-exposure checklist (both CF-03 and CF-04 must pass):
+        # CF-03: flag contract defined? control and candidate variants named?
+        # CF-04: initial rollout % set? protected audiences defined? expansion criteria defined? rollback triggers defined?
+        assert cf03_and_cf04_pass(state, intent), "define flag contract and rollout plan before enabling"
+        execute_operator_intent(intent, state)
+    assert Skill("project-sync", f'update-state {project_id} --constraints "{constraints}" --lastAction "{action}"').ok
+    assert Skill("project-sync", f"set-stage {project_id} implementing").ok
+    assert Skill("project-sync", f'add-activity {project_id} --type stage_update --title "Flag contract ready"').ok
+```
+
+## Signal Inference
+
+| Check | Rule |
+|---|---|
+| User cannot touch code or flag system | Default to spec_owner / handoff path |
+| `hypothesis` empty | Redirect to `hypothesis-design` before any flag work |
+| `constraints` already has flag contract | Build on existing rather than overwriting |
+| User asks about `audienceFilters` | Deferred: field exists in Prisma but no CLI command yet — use FeatBit web UI. See `note.important.txt` at repo root |
+| Multiple experiments planned | Classify as sequential / mutual-exclusion / orthogonal; require explicit traffic isolation strategy |
+| Stage already `implementing` | Resume from current rollout state; do not restart |
 
 ## Reference Files
 

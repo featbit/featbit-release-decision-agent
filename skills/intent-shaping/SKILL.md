@@ -65,11 +65,49 @@ Confirm the goal belongs to this iteration — not a 6-month vision.
 
 ### Persist State
 
-Use the `project-sync` skill to sync state to the web database:
+Use `Skill("project-sync", ...)` to sync state to the web database. All three writes are required:
 
-- `update-state <experiment-id> --goal "[measurable business outcome]" --intent "[what the user is trying to improve or learn]"`
-- `set-stage <experiment-id> intent`
-- `add-activity <experiment-id> --type stage_update --title "Intent clarified"`
+```python
+assert Skill("project-sync", f'update-state {experiment_id} --goal "..." --intent "..." --lastAction "Intent clarified"').ok
+assert Skill("project-sync", f"set-stage {experiment_id} intent").ok
+assert Skill("project-sync", f'add-activity {experiment_id} --type stage_update --title "Intent clarified"').ok
+```
+
+**Terminology note:** `goal` and `intent` overlap intentionally. `goal` = the measurable business outcome. `intent` = what the user said they wanted to improve or learn (may still be broad). Both are written at this stage.
+
+## Execution Procedure
+
+```python
+def shape_intent(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if not is_blank_intent(state) and not user_wants_reset(user_message):
+        # goal and intent already set — hand off rather than overwrite
+        Skill("hypothesis-design", project_id)
+        return
+    patterns = read("references/goal-extraction-patterns.md")
+    # extraction loop: ask one question at a time until goal is measurable
+    # tactic-first → ask "if that tactic works, what changes for whom?"
+    # vague-improvement → ask "what specific behavior or metric should change?"
+    # scope check → confirm this is an iteration goal, not a 6-month vision
+    goal = extract_goal(user_message, patterns)
+    intent = user_message  # preserve the original phrasing
+    assert Skill("project-sync", f'update-state {project_id} --goal "{goal}" --intent "{intent}" --lastAction "Intent clarified"').ok
+    assert Skill("project-sync", f"set-stage {project_id} intent").ok
+    assert Skill("project-sync", f'add-activity {project_id} --type stage_update --title "Intent clarified"').ok
+    Skill("hypothesis-design", project_id)
+```
+
+## Signal Inference
+
+| Entry shape | How to handle |
+|---|---|
+| Tactic-first ("add a better CTA") | Ask what outcome that tactic is meant to produce |
+| Vague-improvement ("more engagement") | Ask which specific behavior or metric should change, and for whom |
+| Resumed cycle with `lastLearning` | Use the prior learning as framing for the new intent question |
+| `goal` already measurable | Skip extraction; hand off to `hypothesis-design` immediately |
+| Scope too broad (6-month vision) | Ask which part of the vision applies to the next 2–4 week iteration |
+
+Measurability check: a goal is measurable when you can say "we'll know it worked when [specific metric] [moves in direction] by [any amount]".
 
 ## Reference Files
 

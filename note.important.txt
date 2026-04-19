@@ -1,0 +1,26 @@
+# Important Notes — Deferred Work
+
+## audienceFilters (ExperimentRun.audience_filters)
+
+Field exists in Prisma schema (`ExperimentRun.audienceFilters String? @map("audience_filters")`)
+and is referenced by `skills/reversible-exposure-control/SKILL.md:90` to set audience
+targeting on an experiment run.
+
+Current gap:
+- `skills/project-sync/scripts/sync.ts` does NOT expose any command to write
+  `audienceFilters`. `update-state` rejects it (not in ALLOWED_STATE_FIELDS).
+  `create-run` / `buildRunBody` pass it through generically, but only at run
+  creation — there is no update-run-field command for audienceFilters.
+- Feature-flag-level audience targeting is FeatBit's own domain (set in FeatBit
+  Web UI / CLI), NOT this project's responsibility.
+
+Action when the feature is needed later:
+1. Decide whether audienceFilters is a per-run field (already in Prisma) or
+   should be promoted to Experiment-level.
+2. Add a dedicated command (e.g., `update-run <experiment-id> <slug> --audienceFilters '<JSON>'`)
+   or extend `update-state` if promoted to Experiment.
+3. Update `skills/reversible-exposure-control/SKILL.md` — replace the
+   deferred sentence (currently points to Web UI as workaround) with a proper
+   sync.ts call site.
+
+Recorded: 2026-04-18

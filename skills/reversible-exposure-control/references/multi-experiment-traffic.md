@@ -1,3 +1,8 @@
+---
+name: Multi-Experiment Traffic Patterns
+description: Sequential, mutual-exclusion, and orthogonal traffic allocation patterns for running multiple experiments on the same flag or surface.
+---
+
 # Multi-Experiment Traffic Patterns
 
 When multiple experiments run on the same product surface, flag, or user pool, the traffic allocation strategy determines whether results are valid. Choose the pattern based on timing and independence.

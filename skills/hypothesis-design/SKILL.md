@@ -57,7 +57,7 @@ Work with the user to fill all five components. Ask about missing parts one at a
 
 Ask: "Under what conditions would we conclude this hypothesis was wrong?" If the answer is "none", it is not falsifiable.
 
-### Sharpen the metric claim (optional)
+### Sharpen the metric claim
 
 The hypothesis does not need a specific number at this stage. It needs a direction. Quantitative targets belong in the evaluation plan, not the hypothesis.
 
@@ -69,11 +69,43 @@ The hypothesis does not need a specific number at this stage. It needs a directi
 
 ### Persist State
 
-Use the `project-sync` skill to sync state to the web database:
+Use `Skill("project-sync", ...)` to sync state to the web database. All three writes are required:
 
-- `update-state <experiment-id> --hypothesis "We believe [change] will [move metric] for [audience] because [reason]" --change "[specific change]" --variants "[control / treatment]" --primaryMetric "[metric name]"`
-- `set-stage <experiment-id> hypothesis`
-- `add-activity <experiment-id> --type stage_update --title "Hypothesis formed"`
+```python
+assert Skill("project-sync", f'update-state {experiment_id} --hypothesis "We believe [change] will [move metric] for [audience] because [reason]" --change "[specific change]" --variants "[control (annotation)|treatment (annotation)]" --primaryMetric "[metric name] — [rationale]" --lastAction "Hypothesis formed"').ok
+assert Skill("project-sync", f"set-stage {experiment_id} hypothesis").ok
+assert Skill("project-sync", f'add-activity {experiment_id} --type stage_update --title "Hypothesis formed"').ok
+```
+
+## Execution Procedure
+
+```python
+def design_hypothesis(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.goal in ("", None):
+        Skill("intent-shaping", project_id)
+        return
+    template = read("references/hypothesis-template.md")
+    # fill all 5 components: change, metric, direction, audience, causal reason
+    # ask about missing parts one at a time
+    # falsifiability check: "under what conditions would we conclude this was wrong?"
+    hypothesis = build_hypothesis(state.goal, template, user_message)
+    assert Skill("project-sync", f'update-state {project_id} --hypothesis "{hypothesis.text}" --change "{hypothesis.change}" --variants "{hypothesis.control} (control)|{hypothesis.treatment} (treatment)" --primaryMetric "{hypothesis.metric} — {hypothesis.metric_rationale}" --lastAction "Hypothesis formed"').ok
+    assert Skill("project-sync", f"set-stage {project_id} hypothesis").ok
+    assert Skill("project-sync", f'add-activity {project_id} --type stage_update --title "Hypothesis formed"').ok
+    Skill("reversible-exposure-control", project_id)
+```
+
+## Signal Inference
+
+| Check | Rule |
+|---|---|
+| `goal` empty | Redirect to `intent-shaping` before doing any hypothesis work |
+| `hypothesis` already exists | Verify with user: refine or keep? Do not overwrite without confirmation |
+| Component missing: change | Ask "What specifically will be built or changed?" |
+| Component missing: causal reason | Ask "Why do you expect that change to move the metric?" |
+| Falsifiability fails | Ask "Under what conditions would you conclude the hypothesis was wrong?" |
+| Metric implied but unnamed | Name it explicitly — do not allow "some engagement metric" to pass |
 
 ## Reference Files
 

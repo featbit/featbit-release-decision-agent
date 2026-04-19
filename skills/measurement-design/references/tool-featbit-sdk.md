@@ -1,3 +1,8 @@
+---
+name: Tool Adapter: FeatBit SDK
+description: FeatBit SDK track() usage, experiment event association via sendToExperiment, and instrumentation integration patterns.
+---
+
 # Tool Adapter: FeatBit SDK
 
 **Vendor:** FeatBit  

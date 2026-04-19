@@ -1,3 +1,8 @@
+---
+name: Iteration Synthesis Template
+description: Five-part learning template (whatChanged, whatHappened, confirmed/refuted, why, nextHypothesis) with confirmed, refuted, and inconclusive examples.
+---
+
 # Iteration Synthesis Template
 
 ## TOC

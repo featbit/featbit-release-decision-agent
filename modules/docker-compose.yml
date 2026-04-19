@@ -69,6 +69,31 @@ services:
       # Claude Code SDK loads user-level skills from ~/.claude/skills/.
       - ../skills:/root/.claude/skills:ro
 
+  # Project-level AI agent — onboarding + shared project memory over SSE.
+  # Codex binary needs seccomp:unconfined for Linux landlock sandbox.
+  project-agent:
+    build:
+      context: ..
+      dockerfile: modules/project-agent/Dockerfile
+    image: featbit/project-agent:local
+    container_name: project-agent
+    restart: unless-stopped
+    ports:
+      - "3031:3031"
+    environment:
+      PORT: 3031
+      MEMORY_API_BASE: "http://web:3000"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CODEX_HOME: /app/codex-config
+      NODE_ENV: production
+    volumes:
+      - ./project-agent/codex-config:/app/codex-config
+    security_opt:
+      - seccomp:unconfined
+    depends_on:
+      web:
+        condition: service_healthy
+
   # Next.js web app — the experiment dashboard / management UI.
   # Connects to Azure PostgreSQL remotely (no local PG needed).
   web:

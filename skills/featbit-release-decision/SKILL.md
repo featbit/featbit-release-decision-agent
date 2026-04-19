@@ -93,7 +93,7 @@ All satellite skills use the `project-sync` skill to read and write state. The r
 2. **Write state** — use `update-state` to persist field values
 3. **Advance stage** — use `set-stage` to move the lifecycle forward
 4. **Log transition** — use `add-activity` to record what happened
-5. **Experiment data** — use `upsert-experiment` when experiment records change
+5. **Experiment data** — use run-level commands (`create-run`, `start-run`, `analyze-run`, `decide-run`, `archive-run`, `save-input`, `save-result`, `record-decision`, `save-learning`) when experiment run records change
 
 See the `project-sync` skill for full command reference. Set `SYNC_API_URL` if the web app is not at `http://localhost:3000`.
 
@@ -259,6 +259,8 @@ Concrete methods, tools, and executable procedures live in these implementation 
 | `measurement-design` | CF-05 | Primary metric, guardrails, and event instrumentation |
 | `evidence-analysis` | CF-06, CF-07 | Evidence sufficiency check and decision framing |
 | `learning-capture` | CF-08 | Structured learning synthesis and next-cycle seeding |
+| `experiment-workspace` | CF-05, CF-06 | Experiment record management, data collection, analysis execution |
+| `project-sync` | _(utility)_ | Persist state to web DB — called by all satellite skills |
 
 The purpose of this `release-decision` skill is to decide **which domain should be activated now**, not to be the implementation manual for all of them.
 
@@ -333,6 +335,46 @@ Example opening question for a non-empty project:
 > Please describe the experiment or feature change you'd like to work on, and I'll guide you through the process.
 
 Identify which control lenses are relevant based on the project state and the user's response. Ask only what you cannot infer. One question at a time.
+
+---
+
+## Execution Procedure
+
+```python
+def on_session_start(argv, user_message):
+    project_id, access_token = parse_args(argv)
+    assert project_id, "project-id is required — ask the user if missing"
+    if access_token:
+        set_env("ACCESS_TOKEN", access_token)
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.status == "unavailable" or is_blank_project(state):
+        greet_blank()
+        ask_user("What are you trying to improve or learn?")
+        return
+    recap = summarize_nonempty(state)   # at most two short sentences
+    say(recap)
+    ask_user("What would you like to work on next?")
+
+def on_user_turn(project_id, state, message):
+    lens = infer_cf_lens(state, message)   # see Signal Inference below
+    if lens is None:
+        return  # answer the question directly; no satellite dispatch
+    satellite, args = dispatch[lens](project_id, state, message)
+    return Skill(satellite, args)
+```
+
+## Signal Inference
+
+| CF lens | Satellite | Activate when |
+|---|---|---|
+| CF-01 | `intent-shaping` | `goal` is empty or vague; user leads with a tactic; user says "I want to improve X" |
+| CF-02 | `hypothesis-design` | `goal` exists but `hypothesis` is empty or non-falsifiable |
+| CF-03 / CF-04 | `reversible-exposure-control` | Change exists but no flag contract; user mentions "feature flag", "rollout", "canary", "who sees this first" |
+| CF-05 | `measurement-design` | `hypothesis` exists but `primaryMetric` is empty; user asks "how do I measure this" |
+| CF-05 / CF-06 | `experiment-workspace` | Instrumentation confirmed; user wants to start/run/close an experiment |
+| CF-06 / CF-07 | `evidence-analysis` | Data is being collected; user asks "analyze results", "is it enough", "continue or rollback" |
+| CF-08 | `learning-capture` | A decision exists; user says "what did we learn", "close this", "next iteration" |
+| _(any)_ | `project-sync` | Always — satellite skills invoke this internally; hub does not call it directly |
 
 ---
 

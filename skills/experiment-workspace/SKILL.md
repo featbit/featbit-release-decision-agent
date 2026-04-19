@@ -112,7 +112,7 @@ All experiment data lives in the shared PostgreSQL database, accessible via the 
 
 1. Confirm the hypothesis slug — derive from the flag key, e.g. `chat-cta-v2`
 2. Ensure the web app is running (scripts need the HTTP API)
-3. Persist the experiment to the database using the `project-sync` skill's `upsert-experiment` command (see Persist State section below)
+3. Persist the experiment to the database using the `project-sync` skill's `create-run` then `start-run` commands (see Persist State section below)
 4. Copy `hypothesis:` verbatim from the project state read on entry
 5. Confirm the `observation_window.start` date — this is today if the flag was just enabled
 6. Set `minimum_sample_per_variant` using the following fallback chain. Do not expose the formula to the user at any step.
@@ -228,7 +228,7 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 
 **After stopping — transition to final analysis**:
 1. Set winning arm to 100% in FeatBit
-2. Switch the run's `method` field to `bayesian_ab` (via `project-sync upsert-experiment --method bayesian_ab`) and trigger a final analysis:
+2. Switch the run's `method` field to `bayesian_ab` (via the web UI experiment settings) and trigger a final analysis:
    ```bash
    npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
@@ -283,31 +283,29 @@ For full interpretation guidance (three patterns: holds / decays / improves), se
 After completing work, use the `project-sync` skill to persist state to the database. The specific commands depend on the action performed:
 
 **Starting an experiment:**
-1. `upsert-experiment` — save all definition fields:
-   - `--status draft`
-   - `--hypothesis "..."` — verbatim from project state
-   - `--primaryMetricEvent "..."`
-   - `--guardrailEvents "..."` — JSON array as string, e.g. `'["chat_opened"]'`
-   - `--controlVariant "..."` and `--treatmentVariant "..."`
-   - `--minimumSample <N>`
-   - `--observationStart "YYYY-MM-DD"`
-   - `--priorProper false` (or `true` if informative prior was chosen)
-   - `--priorMean <float>` and `--priorStddev <float>` (only when `priorProper true`)
-   - `--trafficPercent <1-100>` (default 100; bucket width — how much hash space this experiment occupies)
-   - `--trafficOffset <0-99>` (default 0; bucket start — offset + percent ≤ 100 for non-overlapping splits)
-   - `--layerId "<layer>"` (only for concurrent mutual-exclusion experiments; null for sequential)
-   - `--audienceFilters '<JSON>'` (audience targeting rules, e.g. `'[{"property":"plan","op":"in","values":["premium"]}]'`; null = all users)
-   - `--method bayesian_ab` (or `bandit`; controls balanced sampling vs pass-through)
-2. `update-state` — save `--lastAction "Created experiment <slug>"`
-3. `set-stage` — set to `measuring`
-4. `add-activity` — e.g. `--type stage_update --title "Experiment <slug> created"`
 
-**Running / re-running analysis:**
-1. `upsert-experiment` — save `--status analyzing --inputData "<JSON>" --analysisResult "<JSON>"` (scripts do this automatically)
+Extraction rule: `primaryMetricEvent` = left token of `primaryMetric` split on ` — `.  
+Example: `"purchase_completed — north star metric …"` → `primaryMetricEvent = "purchase_completed"`.
+
+```python
+assert Skill("project-sync", f'create-run {experiment_id} {slug} --hypothesis "{hypothesis}" --method bayesian_ab --primaryMetricEvent "{primary_metric_event}" --primaryMetricType binary --primaryMetricAgg once --controlVariant "{control}" --treatmentVariant "{treatment}" --guardrailEvents "{guardrail_csv}" --minimumSample {n} --trafficPercent 100 --priorProper false --priorMean 0.1 --priorStddev 0.05 --observationStart {today}').ok
+assert Skill("project-sync", f"start-run {experiment_id} {slug}").ok
+assert Skill("project-sync", f'update-state {experiment_id} --lastAction "Created experiment {slug}"').ok
+assert Skill("project-sync", f"set-stage {experiment_id} measuring").ok
+assert Skill("project-sync", f'add-activity {experiment_id} --type stage_update --title "Experiment {slug} created"').ok
+```
+
+**Running / re-running analysis:**  
+`analyze.ts` calls the web `/analyze` endpoint which writes `inputData` and `analysisResult` automatically. Then:
+```python
+assert Skill("project-sync", f"analyze-run {experiment_id} {slug}").ok
+```
 
 **Closing an experiment:**
-1. `upsert-experiment` — save `--status decided --observationEnd "YYYY-MM-DD"`
-2. `update-state` — save `--lastAction "Experiment <slug> closed"`
+```python
+assert Skill("project-sync", f"decide-run {experiment_id} {slug}").ok
+assert Skill("project-sync", f'update-state {experiment_id} --lastAction "Experiment {slug} closed"').ok
+```
 
 ---
 
@@ -324,13 +322,46 @@ When handing off to `evidence-analysis`, pass the experiment's `analysisResult` 
 
 ---
 
+## Execution Procedure
+
+```python
+def manage_experiment(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.hypothesis in ("", None):
+        Skill("hypothesis-design", project_id); return
+    if state.primaryMetric in ("", None):
+        Skill("measurement-design", project_id); return
+    intent = classify_intent(user_message)
+    # "create" → create-run + start-run path (see Persist State / Starting an experiment)
+    # "reanalyze" → analyze.ts + analyze-run path
+    # "bandit" → analyze.ts + bandit reweighting cycle
+    # "holdout" → create holdout run with time-stamped slug
+    # "close" → decide-run + hand off to learning-capture
+    execute_intent(intent, project_id, state)
+```
+
+## Signal Inference
+
+| Check | Rule |
+|---|---|
+| `hypothesis` or `primaryMetric` empty | Redirect upstream before doing any experiment work |
+| Run already exists for this hypothesis | Resume from its current status; do not create a duplicate |
+| `no_data` from analyze endpoint | Instrumentation hasn't fired yet — confirm `flag_evaluation` + metric event are being sent |
+| n < `minimumSample` | Wait; do not interpret results |
+| SRM p < 0.01 | Stop; fix traffic split before handing off to `evidence-analysis` |
+| Bandit: `enough_units: false` | Burn-in not complete; do not apply weights yet |
+| User provides raw numbers manually | Do not inline-compute `analysisResult` — the web UI renderer expects the server schema |
+
 ## Reference Files
 
 - [references/experiment-folder-spec.md](references/experiment-folder-spec.md) — DB schema reference, experiment fields, `inputData` format, `analysisResult` JSON examples
-- [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian A/B analysis: metric types, prior patterns, output interpretation, sequential testing, family-wise error
+- [references/analysis-bayesian.md](references/analysis-bayesian.md) — Bayesian A/B algorithm: posterior math, outputs, `minimumSample` floor
+- [references/analysis-bayesian-usage-patterns.md](references/analysis-bayesian-usage-patterns.md) — proportion, continuous, inverse, multi-arm, informative prior, primary+guardrails patterns
+- [references/analysis-bayesian-decision-guide.md](references/analysis-bayesian-decision-guide.md) — decision table, observation window, SRM investigation, sequential testing, FWE
 - [references/analysis-bandit.md](references/analysis-bandit.md) — Bandit analysis: Thompson Sampling, `analysisResult` fields, FeatBit API integration, stopping condition
 - [references/analysis-holdout.md](references/analysis-holdout.md) — Holdout group: post-launch long-term validation, three effect patterns, checkpoint cadence
-- [references/data-source-guide.md](references/data-source-guide.md) — input contract and §FeatBit / §Database / §Custom patterns for producing `inputData`
+- [references/data-source-guide.md](references/data-source-guide.md) — track-service query endpoint, `ExperimentQueryRequest`/`ExperimentQueryResponse` shapes, canonical data flow
+
 **Agent-facing script:**
 
 - [scripts/analyze.ts](scripts/analyze.ts) — trigger the web app's `/api/experiments/:id/analyze` endpoint for a run

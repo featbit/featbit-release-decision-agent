@@ -1,3 +1,8 @@
+---
+name: Decision Framing Guide
+description: CONTINUE / PAUSE / ROLLBACK CANDIDATE / INCONCLUSIVE language, decision statement template, and common framing mistakes for evidence-analysis.
+---
+
 # Decision Framing Guide
 
 ## TOC

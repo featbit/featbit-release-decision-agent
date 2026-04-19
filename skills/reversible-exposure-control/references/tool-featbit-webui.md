@@ -1,3 +1,8 @@
+---
+name: Tool Adapter: FeatBit Web UI
+description: FeatBit web UI operations: when to use, targeting rules setup, multi-variant flag configuration, and audit trail review.
+---
+
 # Tool Adapter: FeatBit Web UI
 
 **Vendor:** FeatBit  

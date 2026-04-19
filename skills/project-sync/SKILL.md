@@ -30,7 +30,24 @@ npx tsx scripts/sync.ts <command> [args]
 
 ## Environment
 
+| Variable | Default | Purpose |
+|---|---|---|
+| `SYNC_API_URL` | `http://localhost:3000` | Base URL of the web app |
+| `ACCESS_TOKEN` | _(empty)_ | Bearer token sent as `Authorization` header. Web API does not validate today — scaffolding is ready for when it does. Pass via `--access-token` on the hub skill invocation. |
+
 Set `SYNC_API_URL` if the web app is not running at the default `http://localhost:3000`.
+
+---
+
+## Failure Modes
+
+| Symptom | Cause | Action |
+|---|---|---|
+| `Unable to reach sync API` | Web app not running or wrong `SYNC_API_URL` | Start the web app; verify `SYNC_API_URL` |
+| `ERROR 401` / `403` | Token required but missing or wrong | Set `ACCESS_TOKEN` env var |
+| `Invalid stage: "..."` | Caller used a non-canonical stage value | Use only: `intent \| hypothesis \| implementing \| measuring \| learning` |
+| `Invalid activity type` | Non-canonical `--type` value | Use only the values in the Canonical Enums table |
+| Non-zero exit, no output | Network timeout or unexpected server crash | Check web app logs; retry once |
 
 ---
 
@@ -260,14 +277,14 @@ npx tsx scripts/sync.ts create-run <experiment-id> <slug> --method bayesian_ab .
 # 4b. Activate it
 npx tsx scripts/sync.ts start-run <experiment-id> <slug>
 
-npx tsx scripts/sync.ts add-activity <experiment-id> --type run_started --title "Run <slug> started"
+npx tsx scripts/sync.ts add-activity <experiment-id> --type run_collecting --title "Run <slug> started"
 ```
 
 When recording a decision:
 
 ```bash
 npx tsx scripts/sync.ts record-decision <experiment-id> <slug> --decision CONTINUE --decisionSummary "..."
-npx tsx scripts/sync.ts complete-run <experiment-id> <slug>
+npx tsx scripts/sync.ts decide-run <experiment-id> <slug>
 npx tsx scripts/sync.ts add-activity <experiment-id> --type decision_recorded --title "Decision: CONTINUE"
 ```
 
@@ -282,3 +299,26 @@ Agent skill → project-sync → npx tsx sync.ts <command> → HTTP API → Pris
 - The web database (via API + Prisma) is the canonical source for all project state.
 - Skills pass simple string arguments — no JSON construction needed.
 - The script validates all enums and formats before making any HTTP calls.
+
+---
+
+## Execution Procedure
+
+```python
+def persist_stage_transition(experiment_id, fields, stage, activity_type, activity_title):
+    # All three writes are required. Do not skip any step.
+    assert Skill("project-sync", f'update-state {experiment_id} {fields}').ok
+    assert Skill("project-sync", f"set-stage {experiment_id} {stage}").ok
+    assert Skill("project-sync", f'add-activity {experiment_id} --type {activity_type} --title "{activity_title}"').ok
+```
+
+**Invocation model:** All satellite skills call this skill via `Skill("project-sync", "<command> <args>")`. They never construct raw HTTP requests. The three-step pattern above is the minimum contract for every stage transition.
+
+## Signal Inference
+
+| Command tier | When to use |
+|---|---|
+| **Project-level** (`update-state`, `set-stage`, `add-activity`, `get-experiment`) | Every stage transition in every satellite skill |
+| **Run-level** (`create-run`, `start-run`, `analyze-run`, `decide-run`, `archive-run`, `save-input`, `save-result`, `record-decision`, `save-learning`) | Only when an experiment run is being created, advanced, or closed |
+
+Auth scaffolding: if `ACCESS_TOKEN` is set (via `--access-token` on the hub skill or the env var), every HTTP request includes `Authorization: Bearer <token>`. The web API ignores it today but will validate it once the auth gate is enabled.

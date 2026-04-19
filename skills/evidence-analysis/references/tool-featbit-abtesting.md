@@ -1,3 +1,8 @@
+---
+name: Tool Adapter: FeatBit AB Testing Toolkit
+description: FeatBit experiment dashboard usage: reading per-variant results, confidence interpretation, and AB testing UI reference.
+---
+
 # Tool Adapter: FeatBit AB Testing Toolkit
 
 **Vendor:** FeatBit  

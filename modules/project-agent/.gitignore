@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+codex-config/config.toml
+codex-config/
+codex-config;C/
+
+# prepare-skills copies these from ../../skills-project/ at build time.
+# Keep them out of git to avoid drift with the source.
+skills/
+scripts/memory-read.ts
+scripts/memory-write.ts
+scripts/memory-delete.ts

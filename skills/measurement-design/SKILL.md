@@ -85,13 +85,55 @@ Check: can the current codebase emit this event? If not, instrumentation must be
 
 ### Persist State
 
-After completing work, use the `project-sync` skill to persist state to the database:
+Use `Skill("project-sync", ...)` to sync state. All three writes are required, and instrumentation must be confirmed before writing:
 
-1. `update-state` — save `--primaryMetric "<metric>"` and `--guardrails "<guardrail list>"`
-2. `set-stage` — set to `measuring`
-3. `add-activity` — record what happened, e.g. `--type stage_update --title "Metrics defined"`
+```python
+assert Skill("project-sync", f'update-state {experiment_id} --primaryMetric "{metric_event} — {rationale}" --guardrails "{guardrail_list}" --lastAction "Metrics defined"').ok
+assert Skill("project-sync", f"set-stage {experiment_id} measuring").ok
+assert Skill("project-sync", f'add-activity {experiment_id} --type stage_update --title "Metrics defined"').ok
+```
+
+**`primaryMetric` field format:** plain-text prose — event name + rationale for choosing it.  
+Example: `"purchase_completed — chosen as north star because it directly measures the revenue impact of the checkout redesign."`  
+Downstream skills extract the bare event name by splitting on ` — ` and taking the left token.
+
+## Execution Procedure
+
+```python
+def design_measurement(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.hypothesis in ("", None):
+        Skill("hypothesis-design", project_id)
+        return
+    # --- primary metric ---
+    # ask: "if you had ONE number to make a go/no-go decision, what is it?"
+    primary_metric = elicit_primary_metric(state, user_message)
+    # --- guardrails (2–3 max) ---
+    guardrails = elicit_guardrails(state)
+    # --- event design ---
+    events = design_events(primary_metric, guardrails)
+    # --- instrumentation gate ---
+    instrumentation_confirmed = confirm_instrumentation(events)
+    if not instrumentation_confirmed:
+        say("Instrumentation must be confirmed before exposure begins.")
+        return  # do not advance stage until confirmed
+    assert Skill("project-sync", f'update-state {project_id} --primaryMetric "{primary_metric.event} — {primary_metric.rationale}" --guardrails "{guardrails_text}" --lastAction "Metrics defined"').ok
+    assert Skill("project-sync", f"set-stage {project_id} measuring").ok
+    assert Skill("project-sync", f'add-activity {project_id} --type stage_update --title "Metrics defined"').ok
+    Skill("reversible-exposure-control", project_id)
+```
+
+## Signal Inference
+
+| Check | Rule |
+|---|---|
+| `hypothesis` empty | Redirect to `hypothesis-design` |
+| User lists multiple "primary" metrics | Push back — ask which ONE decides the go/no-go |
+| Guardrail count > 3 | Ask which 2–3 matter most; trim the rest to diagnostics |
+| Instrumentation not confirmed | Block stage advance; do not write `set-stage measuring` |
+| Traffic split planned (concurrent experiments) | Flag that sample size must be calculated on the reduced traffic slice, not full traffic |
 
 ## Reference Files
 
-- [references/event-schema-design.md](references/event-schema-design.md) — vendor-agnostic event design principles, naming conventions, metric-to-event mapping, anti-patterns
+- [references/event-schema-design.md](references/event-schema-design.md) — TrackPayload shape, event naming conventions, metric-to-event mapping, anti-patterns
 - [references/tool-featbit-sdk.md](references/tool-featbit-sdk.md) — FeatBit SDK track() usage, experiment event association, sendToExperiment

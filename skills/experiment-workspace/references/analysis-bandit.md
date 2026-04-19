@@ -1,3 +1,8 @@
+---
+name: Bandit Analysis Reference
+description: Thompson Sampling algorithm, analysisResult fields, FeatBit API weight integration, stopping condition, and post-bandit final analysis.
+---
+
 # Bandit Analysis Reference
 
 Thompson Sampling multi-armed bandit for dynamic traffic allocation.

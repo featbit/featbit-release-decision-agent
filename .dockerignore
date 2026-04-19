@@ -1,0 +1,19 @@
+**/.git
+**/.gitignore
+**/node_modules
+**/.next
+**/dist
+**/.env
+**/.env.local
+
+# Codex runtime state — volume-mounted at container start, must not be in build context
+modules/project-agent/codex-config/sessions
+modules/project-agent/codex-config/memories
+modules/project-agent/codex-config/shell_snapshots
+modules/project-agent/codex-config/tmp
+modules/project-agent/codex-config/*.sqlite
+modules/project-agent/codex-config/*.sqlite-shm
+modules/project-agent/codex-config/*.sqlite-wal
+modules/project-agent/codex-config/logs_*
+modules/project-agent/codex-config/state_*
+modules/project-agent/codex-config/installation_id

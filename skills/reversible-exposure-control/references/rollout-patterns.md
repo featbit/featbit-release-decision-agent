@@ -1,3 +1,8 @@
+---
+name: Rollout Patterns
+description: Vendor-agnostic progressive exposure strategy: conservative start, protected audiences, expansion criteria, rollback triggers, and anti-patterns.
+---
+
 # Rollout Patterns
 
 Vendor-agnostic guidance for progressive exposure strategy. These patterns apply regardless of which flag management tool is used.

@@ -1,3 +1,8 @@
+---
+name: Holdout Group Reference
+description: Post-launch holdout group setup, three effect patterns (holds / decays / improves), and checkpoint cadence for long-term validation.
+---
+
 # Holdout Group Reference
 
 A holdout group is a small percentage of users kept permanently on the old version after a feature has been fully launched. It is a **post-launch validation tool**, not a pre-launch decision tool.

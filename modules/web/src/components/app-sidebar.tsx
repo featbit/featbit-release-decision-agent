@@ -19,6 +19,7 @@ import {
   Flag,
   Database,
   ExternalLink,
+  BrainCircuit,
 } from "lucide-react";
 import { UserMenu } from "@/components/auth/user-menu";
 
@@ -99,6 +100,12 @@ export async function AppSidebar() {
                 <SidebarMenuButton render={<Link href="/data-warehouse" />}>
                   <Database className="size-4" />
                   <span>Data Warehouse</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/data/ai-memory" />}>
+                  <BrainCircuit className="size-4" />
+                  <span>AI Memory</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

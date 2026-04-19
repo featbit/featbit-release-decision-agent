@@ -1,3 +1,8 @@
+---
+name: PM to Dev Handoff for Reversible Exposure
+description: Handoff template and required fields for passing a complete feature flag contract from experiment owner to the team that owns code and flag operations.
+---
+
 # PM to Dev Handoff for Reversible Exposure
 
 Use this reference when the current user owns the release decision but does not own the codebase, the feature flag wrapper, or the production flag tooling.

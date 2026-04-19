@@ -1,0 +1,7 @@
+description: "Agent skills for project-agent — memory-backed product context elicitation and read/write for FeatBit experiment agents."
+topics:
+  - agent-skills
+  - featbit
+  - feature-flags
+  - ai-agent
+  - project-memory

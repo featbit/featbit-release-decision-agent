@@ -1,3 +1,8 @@
+---
+name: Goal Extraction Patterns
+description: Question sequences for tactic-first and vague-improvement inputs, vague-to-clear examples, measurability criteria, and common anti-patterns.
+---
+
 # Goal Extraction Patterns
 
 ## The Core Question Sequence

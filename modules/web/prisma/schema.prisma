@@ -112,3 +112,36 @@ model Message {
 
   @@map("message")
 }
+
+model ProjectMemory {
+  id                String   @id @default(uuid())
+  featbitProjectKey String   @map("featbit_project_key")
+  key               String
+  type              String
+  content           String
+  sourceAgent       String?  @map("source_agent")
+  createdByUserId   String?  @map("created_by_user_id")
+  editable          Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([featbitProjectKey, key])
+  @@index([featbitProjectKey, type])
+  @@map("project_memory")
+}
+
+model UserProjectMemory {
+  id                String   @id @default(uuid())
+  featbitProjectKey String   @map("featbit_project_key")
+  featbitUserId     String   @map("featbit_user_id")
+  key               String
+  type              String
+  content           String
+  sourceAgent       String?  @map("source_agent")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([featbitProjectKey, featbitUserId, key])
+  @@index([featbitProjectKey, featbitUserId, type])
+  @@map("user_project_memory")
+}

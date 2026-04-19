@@ -82,12 +82,63 @@ Write a structured decision statement with:
 
 ### Persist State
 
-After completing work, use the `project-sync` skill to persist state to the database:
+Use `Skill("project-sync", ...)` to sync state. Stage stays at `measuring` — no stage advance here (the project stage advances to `learning` only when `learning-capture` completes):
 
-1. `update-state` — save `--lastAction "Decision: <category>"`
-2. `set-stage` — set to `deciding`
-3. `upsert-experiment` — save `--decision <category> --decisionSummary "plain-language action" --decisionReason "technical rationale with data"`
-4. `add-activity` — record what happened, e.g. `--type decision --title "Decision: <category>"`
+```python
+assert Skill("project-sync", f'update-state {experiment_id} --lastAction "Decision: {category}"').ok
+# stage stays at measuring — do NOT call set-stage here
+assert Skill("project-sync", f'record-decision {experiment_id} {slug} --decision {category} --decisionSummary "{summary}" --decisionReason "{reason}"').ok
+assert Skill("project-sync", f'decide-run {experiment_id} {slug}').ok
+assert Skill("project-sync", f'add-activity {experiment_id} --type decision_recorded --title "Decision: {category}"').ok
+```
+
+## Execution Procedure
+
+```python
+def analyze_evidence(project_id, user_message):
+    state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.primaryMetric in ("", None):
+        Skill("measurement-design", project_id)
+        return
+    active_run = pick_active_run(state)  # run in collecting or analyzing status
+    # --- 6-check sufficiency gate ---
+    checks = [
+        check_simultaneous(active_run),
+        check_volume(active_run),         # n >= minimumSample per variant
+        check_risk_convergence(active_run),
+        check_clean_window(active_run),
+        check_instrumentation(active_run),
+        check_srm(active_run),            # chi-sq p >= 0.01
+    ]
+    if any(check.failed for check in checks):
+        say(format_insufficiency(checks))
+        return  # do not produce a decision; do not write record-decision
+    # --- 6-rule classification cascade ---
+    category = classify(active_run.analysisResult)
+    # ROLLBACK: guardrail P(win) <= 5% or primary P(win) <= 5%
+    # PAUSE guardrail: guardrail P(win) <= 20%
+    # CONTINUE: primary P(win) >= 95% and risk[trt] low and all guardrails > 20%
+    # PAUSE primary: primary P(win) 80-95%
+    # INCONCLUSIVE: P(win) 20-80% after full window, or risk both still high
+    # lean-control: P(win) < 20% but above ROLLBACK threshold
+    summary, reason = build_decision_artifact(category, active_run)
+    assert Skill("project-sync", f'update-state {project_id} --lastAction "Decision: {category}"').ok
+    assert Skill("project-sync", f'record-decision {project_id} {active_run.slug} --decision {category} --decisionSummary "{summary}" --decisionReason "{reason}"').ok
+    assert Skill("project-sync", f'decide-run {project_id} {active_run.slug}').ok
+    assert Skill("project-sync", f'add-activity {project_id} --type decision_recorded --title "Decision: {category}"').ok
+    Skill("learning-capture", project_id)
+```
+
+## Signal Inference
+
+| Check | Rule |
+|---|---|
+| `primaryMetric` empty | Redirect to `measurement-design` |
+| No active run | Check experiment records — may need `experiment-workspace` to start one |
+| SRM check fails | Stop; do not interpret metric results; investigate traffic split |
+| Both risk values still high | More data needed; do not decide — wait |
+| User impatient with sample below floor | Explain: below `minimumSample`, Gaussian approximation is unreliable |
+| INCONCLUSIVE | Still requires a written decision artifact — "we don't know yet" is a valid and complete frame |
 
 ## Reference Files
 
