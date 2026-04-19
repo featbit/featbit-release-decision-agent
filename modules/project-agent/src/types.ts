@@ -10,6 +10,11 @@ export interface QueryRequestBody {
    * "{projectKey}:{userId}". Same sessionKey → resume the same Codex thread.
    */
   sessionKey?: string;
+  /**
+   * Codex thread ID from a previous session. When provided, project-agent
+   * will attempt to resume this thread directly (bypasses in-memory lookup).
+   */
+  codexThreadId?: string;
 }
 
 export type SseEventName =

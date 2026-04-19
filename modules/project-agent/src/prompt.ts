@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import type { MemorySnapshot } from "./agent.js";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -64,24 +65,26 @@ export interface BootstrapPromptInput {
   userId: string | undefined;
   isBootstrap: boolean;
   userPrompt: string;
+  memory?: MemorySnapshot;
 }
 
 /**
  * Builds the prompt sent to Codex on a new turn.
  *
- * Codex itself reads AGENTS.md from the working directory for always-on
- * instructions. The dynamic session-specific briefing (which skills exist,
- * who the user is, which project) goes into the first user prompt.
+ * On bootstrap: embeds the core skill procedure and pre-fetched memory
+ * directly so the agent needs no file reads or script calls at startup.
+ * On subsequent turns: returns the user prompt verbatim.
  */
 export function buildPrompt(input: BootstrapPromptInput): string {
   if (!input.isBootstrap) return input.userPrompt;
 
   const skills = loadSkills();
-  const skillBlock = skills
+  const coreSkill = skills.find((s) => s.name === "project-agent-core");
+  const skillList = skills
     .map((s) => `- \`${s.name}\` — ${s.description || "(no description)"}`)
     .join("\n");
 
-  return [
+  const lines: string[] = [
     `# Session bootstrap`,
     ``,
     `You are **project-agent**. Scope: FeatBit project \`${input.projectKey}\`` +
@@ -89,25 +92,47 @@ export function buildPrompt(input: BootstrapPromptInput): string {
     ``,
     `## Available skills`,
     ``,
-    `Each skill is a markdown contract under \`./skills/<name>/SKILL.md\` in your working directory. Load a skill by reading its SKILL.md file. Invoke helper scripts under \`./scripts/\`.`,
+    `Load a skill on demand by reading \`./skills/<name>/SKILL.md\`. Use helper scripts under \`./scripts/\` for memory access.`,
     ``,
-    skillBlock,
+    skillList,
     ``,
-    `## Session-start procedure`,
-    ``,
-    `1. Activate **project-memory-read** first. Read its SKILL.md, then run its canonical load sequence to build a context brief. Cache what you find.`,
-    `2. If the brief lacks \`capability.experience_level\` or \`capability.featbit_flag_experience\`, activate **product-context-elicitation** Phase 0 before anything else.`,
-    `3. If the brief lacks core product facts (\`product_description\`, \`target_audience\`, \`north_star_metric\`), activate **product-context-elicitation** Phase 1 next.`,
-    `4. Otherwise, greet the user briefly (one line), surface the \`Data → AI Memory\` link once, and ask how you can help. Do not dump memory contents at the user.`,
-    ``,
-    `## Ground rules`,
-    ``,
-    `- Every persistent write goes through **project-memory-write** with provenance. Never bypass.`,
-    `- Tune tone to the user's calibrated \`experience_level\` on every reply.`,
-    `- Do not ask methodological questions during onboarding; those belong to downstream experiment skills.`,
-    ``,
+  ];
+
+  // Embed core skill so the agent does not need to read the file at startup.
+  if (coreSkill) {
+    lines.push(
+      `## Execution procedure`,
+      ``,
+      `The following is your core protocol. Follow it now — do not re-read the skill file.`,
+      ``,
+      coreSkill.body,
+      ``
+    );
+  }
+
+  // Inject pre-fetched memory so the agent skips in-process script calls.
+  if (input.memory) {
+    lines.push(`## Memory snapshot (pre-fetched — do not re-read via scripts)`, ``);
+    lines.push(`**product_facts:**`, formatMemory(input.memory.productFacts), ``);
+    lines.push(`**goals:**`, formatMemory(input.memory.goals), ``);
+    lines.push(`**capability (user):**`, formatMemory(input.memory.capability), ``);
+  }
+
+  lines.push(
     input.userPrompt
       ? `## Initial user message\n\n${input.userPrompt}`
-      : `Begin the session now.`,
-  ].join("\n");
+      : `Begin the session now.`
+  );
+
+  return lines.join("\n");
+}
+
+function formatMemory(entries: unknown[]): string {
+  if (!Array.isArray(entries) || entries.length === 0) return "(empty)";
+  return entries
+    .map((e) => {
+      const entry = e as Record<string, unknown>;
+      return `- ${entry.key ?? "?"}: ${entry.content ?? ""}`;
+    })
+    .join("\n");
 }

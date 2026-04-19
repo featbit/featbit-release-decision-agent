@@ -26,6 +26,8 @@ interface ChatMessage {
   text: string;
   /** Accumulated reasoning/thinking text — attached inline to agent messages */
   thinking?: string;
+  /** True once turn_completed fires — collapses the thinking block */
+  isFinal?: boolean;
   payload?: Record<string, unknown>;
 }
 
@@ -33,23 +35,56 @@ interface AgentChatProps {
   projectKey: string | null;
   userId: string | null;
   autoBootstrap: boolean;
+  onBootstrapComplete?: () => void;
 }
 
 const AGENT_URL =
   process.env.NEXT_PUBLIC_PROJECT_AGENT_URL ?? "http://localhost:3031";
 
+const SESSION_API = (projectKey: string, userId: string) =>
+  `/api/agent-session/${encodeURIComponent(projectKey)}/${encodeURIComponent(userId)}`;
+
 export function AgentChat({
   projectKey,
   userId,
   autoBootstrap,
+  onBootstrapComplete,
 }: AgentChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [activity, setActivity] = useState<string | null>(null);
   const hasBootstrappedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const codexThreadIdRef = useRef<string | null>(null);
+
+  // Load session (messages + codexThreadId) from DB on mount.
+  useEffect(() => {
+    if (!projectKey || !userId) { setSessionLoaded(true); return; }
+    fetch(SESSION_API(projectKey, userId))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { codexThreadId?: string; messages?: ChatMessage[] } | null) => {
+        if (data?.codexThreadId) codexThreadIdRef.current = data.codexThreadId;
+        if (data?.messages?.length) setMessages(data.messages);
+      })
+      .catch(() => {})
+      .finally(() => setSessionLoaded(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectKey, userId]);
+
+  const saveSession = useCallback(
+    (msgs: ChatMessage[]) => {
+      if (!projectKey || !userId) return;
+      void fetch(SESSION_API(projectKey, userId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: msgs }),
+      });
+    },
+    [projectKey, userId]
+  );
 
   const send = useCallback(
     async (text: string) => {
@@ -83,15 +118,49 @@ export function AgentChat({
         });
       };
 
+      // Intermediate agent_message items accumulate here; on turn_completed
+      // the last one is promoted to the visible response and earlier ones
+      // stay in the collapsed thinking block.
+      const agentMsgBuffer: string[] = [];
+      let turnCompleted = false;
+
+      const promoteFinalMessage = () => {
+        if (agentMsgBuffer.length === 0) return;
+        const finalText = agentMsgBuffer[agentMsgBuffer.length - 1];
+        const thinkingItems = agentMsgBuffer.slice(0, -1);
+        const thinkingText =
+          thinkingItems.length > 0 ? thinkingItems.join("\n\n") : undefined;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === agentMsgId
+              ? { ...m, text: finalText, thinking: thinkingText, isFinal: true }
+              : m
+          )
+        );
+      };
+
       try {
         for await (const ev of streamSseEvents(
           `${AGENT_URL}/query`,
-          { prompt: text, projectKey, userId: userId ?? undefined },
+          {
+            prompt: text,
+            projectKey,
+            userId: userId ?? undefined,
+            codexThreadId: codexThreadIdRef.current ?? undefined,
+          },
           controller.signal
         )) {
-          if (ev.event === "item_updated") {
-            // Progressive text streaming — replace current agent bubble text
-            // with the latest partial state from the server.
+          if (ev.event === "thread_started") {
+            const tid = (ev.data as { thread_id?: string })?.thread_id;
+            if (tid && projectKey && userId) {
+              codexThreadIdRef.current = tid;
+              void fetch(SESSION_API(projectKey, userId), {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ codexThreadId: tid }),
+              });
+            }
+          } else if (ev.event === "item_updated") {
             const item = (ev.data as { item?: Record<string, unknown> })?.item;
             if (
               item?.type === "agent_message" &&
@@ -99,9 +168,18 @@ export function AgentChat({
               item.text
             ) {
               setActivity(null);
+              // Stream current (not-yet-completed) item into the thinking
+              // preview so the user sees progress before turn_completed fires.
+              const preview = item.text as string;
               setMessages((prev) =>
                 prev.map((m) =>
-                  m.id === agentMsgId ? { ...m, text: item.text as string } : m
+                  m.id === agentMsgId
+                    ? {
+                        ...m,
+                        text: "",
+                        thinking: [...agentMsgBuffer, preview].join("\n\n"),
+                      }
+                    : m
                 )
               );
             }
@@ -110,29 +188,16 @@ export function AgentChat({
             const type = typeof item?.type === "string" ? item.type : "";
 
             if (type === "agent_message" && typeof item?.text === "string") {
-              // Each agent_message item_completed may be a separate turn
-              // segment — append with spacing so multi-part replies flow
-              // naturally. item_updated already streamed partial text for the
-              // same segment, so replace-in-place (no extra newlines).
               setActivity(null);
-              const newText = item.text as string;
+              agentMsgBuffer.push(item.text as string);
+              // All confirmed items go into thinking; text stays empty until
+              // turn_completed so the thinking block stays open.
               setMessages((prev) =>
-                prev.map((m) => {
-                  if (m.id !== agentMsgId) return m;
-                  // If item_updated already streamed this segment's text,
-                  // the streaming text equals or starts with newText —
-                  // just confirm it in place. Otherwise append as a new segment.
-                  const alreadyStreamed =
-                    m.text && m.text.endsWith(newText);
-                  return {
-                    ...m,
-                    text: alreadyStreamed
-                      ? m.text
-                      : m.text
-                      ? `${m.text}\n\n${newText}`
-                      : newText,
-                  };
-                })
+                prev.map((m) =>
+                  m.id === agentMsgId
+                    ? { ...m, text: "", thinking: agentMsgBuffer.join("\n\n") }
+                    : m
+                )
               );
             } else if (type === "reasoning") {
               const raw = item?.content;
@@ -160,24 +225,11 @@ export function AgentChat({
                 typeof item?.command === "string" ? item.command : "";
               if (cmd) {
                 setActivity(`Running: ${cmd.slice(0, 40)}${cmd.length > 40 ? "…" : ""}`);
-                insertBeforeAgent({
-                  id: crypto.randomUUID(),
-                  role: "command",
-                  text: cmd,
-                  payload: item as Record<string, unknown>,
-                });
-              }
-            } else if (type === "todo_list") {
-              const items = Array.isArray(item?.items) ? item.items : [];
-              if (items.length > 0) {
-                insertBeforeAgent({
-                  id: crypto.randomUUID(),
-                  role: "todo",
-                  text: "",
-                  payload: item as Record<string, unknown>,
-                });
               }
             }
+          } else if (ev.event === "turn_completed") {
+            turnCompleted = true;
+            promoteFinalMessage();
           } else if (ev.event === "error" || ev.event === "turn_failed") {
             const payload = ev.data as {
               message?: string;
@@ -202,25 +254,31 @@ export function AgentChat({
           ]);
         }
       } finally {
-        // Remove empty agent placeholder if no content arrived
-        setMessages((prev) =>
-          prev.filter((m) => !(m.id === agentMsgId && !m.text))
-        );
+        if (!turnCompleted) promoteFinalMessage();
+        setMessages((prev) => {
+          const cleaned = prev.filter(
+            (m) => !(m.id === agentMsgId && !m.text && !m.thinking)
+          );
+          saveSession(cleaned);
+          return cleaned;
+        });
         setStreaming(false);
         setActivity(null);
         abortRef.current = null;
       }
     },
-    [projectKey, userId, streaming]
+    [projectKey, userId, streaming, saveSession]
   );
 
   useEffect(() => {
-    if (!autoBootstrap || !projectKey) return;
+    if (!autoBootstrap || !projectKey || !sessionLoaded) return;
     if (hasBootstrappedRef.current) return;
+    if (messages.length > 0) return; // history restored — skip bootstrap
     hasBootstrappedRef.current = true;
+    onBootstrapComplete?.();
     void send("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoBootstrap, projectKey]);
+  }, [autoBootstrap, projectKey, sessionLoaded]);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -272,8 +330,8 @@ export function AgentChat({
             isStreaming={streaming}
           />
         ))}
-        {/* Typing dots: shown while streaming but no agent bubble text yet */}
-        {streaming && !messages.some((m) => m.role === "agent" && m.text) && (
+        {/* Typing dots: shown while streaming but no content visible yet */}
+        {streaming && !messages.some((m) => m.role === "agent" && (m.text || m.thinking)) && (
           <div className="flex gap-3 text-sm">
             <div className="flex shrink-0 items-start pt-0.5">
               <div className="flex size-7 items-center justify-center rounded-full bg-foreground/10">
@@ -299,7 +357,13 @@ export function AgentChat({
       >
         <Textarea
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            // Auto-grow: reset height first so shrinking works, then clamp to 5 lines.
+            const el = e.target;
+            el.style.height = "0";
+            el.style.height = `${Math.min(el.scrollHeight, 5 * 24)}px`;
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -308,7 +372,8 @@ export function AgentChat({
           }}
           placeholder="Message project-agent…"
           rows={1}
-          className="min-h-0 resize-none"
+          className="min-h-0 resize-none overflow-y-auto"
+          style={{ height: "36px" }}
           disabled={streaming}
         />
         {streaming ? (
@@ -379,7 +444,7 @@ function MessageBubble({
       <div className="max-w-[85%] rounded-lg px-3 py-2 bg-muted text-sm flex-1">
         {message.thinking && (
           <details
-            open={!message.text}
+            open={!message.isFinal}
             className="mb-2 text-xs text-muted-foreground group"
           >
             <summary className="cursor-pointer select-none hover:text-foreground list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">

@@ -1,10 +1,10 @@
 ---
 name: product-context-elicitation
-description: Two-phase first-run intake. Phase 0 calibrates the user (experience level + prior FeatBit flag usage) so the agent knows how to talk to them. Phase 1 asks up to seven high-value product questions, modulated by the calibrated experience tier. Activate on first login, on first project creation, when a new user joins a project with empty user-scope memory, or when project memory is missing the canonical product_facts entries. Do not re-run Phase 1 when those entries already exist unless the user explicitly asks to redo onboarding.
+description: First-run intake that grounds the agent in the user's product before any experiment work begins. Starts with a platform welcome, collects project URLs (fetches and summarises their content), asks for a free-text intro, then calibrates user experience level. Downstream experiment skills depend on the memory entries this skill writes. Activate when product_description or experience_level are missing from memory; do not re-run when those entries already exist unless the user explicitly asks.
 license: MIT
 metadata:
   author: FeatBit
-  version: "0.2.0"
+  version: "0.3.0"
   category: project-onboarding
 ---
 
@@ -12,223 +12,200 @@ metadata:
 
 This skill is how **project-agent** earns the right to give useful suggestions later. Without grounded product context, every downstream hypothesis and experiment recommendation is guessing.
 
-Its job is to elicit a compact, semantically meaningful picture of the user's product and project — and persist it into **project memory** so it is available to every subsequent conversation, every experiment skill, and every future user on the same project.
+Its job is to give the user a clear platform welcome, understand their product through URLs and a short intro, and capture structured facts in **AI Memory** so every future session — and every experiment skill — starts informed.
 
 ## Execution Procedure
 
 ```python
 def run_elicitation(project_key: str, user_id: str):
-    # On Entry: load current state via project-memory-read
-    caps  = Skill("project-memory-read", "--scope=user --type=capability")
+    caps  = Skill("project-memory-read", "--scope=user  --type=capability")
     facts = Skill("project-memory-read", "--scope=project --type=product_facts")
-    goals = Skill("project-memory-read", "--scope=project --type=goals")
 
     phase0_done = has_keys(caps,  ["experience_level", "featbit_flag_experience"])
-    phase1_done = has_keys(facts, ["product_description", "target_audience", "north_star_metric"])
-
-    if not phase0_done:
-        run_phase0(project_key, user_id)
-        caps = Skill("project-memory-read", "--scope=user --type=capability")
+    phase1_done = has_keys(facts, ["product_description", "product_urls"])
 
     if not phase1_done:
-        tier = caps.get("experience_level", "some_experience")
-        run_phase1(project_key, user_id, tier)
+        welcome()                               # see Welcome Message
+        urls  = collect_urls()                  # see URL Collection
+        pages = fetch_urls(urls)                # see URL Fetching
+        intro = collect_intro(pages)            # see Intro Question
+        write_product_facts(project_key, user_id, urls, pages, intro)
 
-    complete(project_key, user_id, tier=caps.get("experience_level", "some_experience"))
+    if not phase0_done:
+        calibrate_user(project_key, user_id)    # see Phase 0 — Calibration
 
-def run_phase0(project_key: str, user_id: str):
-    tier     = ask_experience_level()    # see Phase 0 — Calibration: 0a
-    flag_exp = ask_flag_experience()     # see Phase 0 — Calibration: 0b
-    Skill("project-memory-write", f'--scope=user --key=experience_level --type=capability --content="{tier}" --source-agent=project-agent')
-    Skill("project-memory-write", f'--scope=user --key=featbit_flag_experience --type=capability --content="{flag_exp}" --source-agent=project-agent')
-
-def run_phase1(project_key: str, user_id: str, tier: str):
-    questions = adaptive_questions(tier)  # see Adaptive Depth section for skipping rules
-    for q in questions:
-        answer = ask_one(q.prompt)
-        reflect_and_confirm(answer)       # paraphrase + wait for confirmation
-        Skill("project-memory-write", f'--scope=project --key={q.key} --type={q.type} --content="{answer}" --source-agent=project-agent --created-by={user_id}')
-
-def complete(project_key: str, user_id: str, tier: str):
-    Skill("project-memory-write", f'--scope=project --key=onboarding_completed_at --type=product_facts --content="{now()}" --source-agent=project-agent --created-by={user_id}')
-    post_summary(tier)  # see Completion Handoff
-    if user_came_for_experiment_help():
-        Skill("intent-shaping").ok
+    complete(project_key, user_id)              # see Completion Handoff
 ```
 
-## When to Activate
+## Welcome Message
 
-The skill has **two phases** with independent activation conditions. Always check Phase 0 first.
+Say this verbatim (adapt only punctuation for tone). Do **not** add emojis.
 
-### Phase 0 — User calibration (per user, per project)
+> "Welcome to FeatBit Experimentation.
+>
+> I'm **project-agent** — your project's context layer. I maintain a memory of your product, your past experiments, and what you've learned from them, so every suggestion you get is grounded in your specific situation rather than generic advice.
+>
+> To build that context, I need to understand your product first. It takes about 2 minutes and everything is saved to **AI Memory** (Data → AI Memory) — you never have to repeat yourself across sessions.
+>
+> Let's start: **what are the URLs for your project?** Paste your homepage, product page, blog, docs, or any other public pages — one per line. I'll read them."
 
-Activate when:
+## URL Collection
 
-- `user_project_memory` for this `(projectKey, userId)` does **not** contain an `experience_level` entry, **or** it does not contain a `featbit_flag_experience` entry.
+Wait for the user's reply. Accept:
+- A single URL
+- A list of URLs (newline- or comma-separated)
+- "I don't have a website yet" or similar → skip fetching, go straight to Intro Question
 
-Phase 0 runs even when Phase 1 is already complete — a new collaborator joining an existing project needs calibration even though the product facts are on file.
+Parse out every valid `http://` or `https://` URL. If none are parseable and the user didn't explicitly decline, ask once:
+> "I couldn't find any URLs in your message. Could you paste the links directly? Or type 'skip' to move on without them."
 
-### Phase 1 — Product context (per project, shared)
+## URL Fetching
 
-Activate when **any** of these is true:
-
-- First login for a user who has no FeatBit project selected yet, and the project they are about to create is new.
-- A FeatBit project has just been created and has no `project_memory` rows with `type = "product_facts"`.
-- The user explicitly says "help me set this up", "onboard me", "let's start fresh", or clicks the onboarding entry point.
-- `product_description` is missing from project memory but the user is asking for experiment guidance — run a compressed version first, then hand off.
-
-Do **not** activate Phase 1 when:
-
-- `project_memory` already contains `product_description`, `target_audience`, and `north_star_metric` entries **and** the user did not ask to redo intake. Instead, surface a one-line summary of what is on file and ask only if something has changed.
-- The user is mid-experiment and asked an operational question. Interrupting with intake is hostile.
-
-## Operating Principles
-
-1. **Ask few, ask well.** Five to seven questions, hard ceiling. Every question must map to an entry the agent will actually use downstream.
-2. **One question at a time.** Do not dump a form. The conversational shape is what makes the user willing to answer at all.
-3. **Reflect, then write.** After each answer, paraphrase what you heard in one line and ask for confirmation before writing to memory. Users catch misunderstandings when they see their words reflected back.
-4. **Accept "I don't know" and skip.** Write a `"(not provided)"` entry so the agent later knows the question was asked and declined, not forgotten.
-5. **Never ask the same question twice across sessions.** Read existing project memory on entry and skip anything already answered.
-
-## On Entry — Read Current State
-
-Before asking anything, load both memory stores via `project-memory-read`:
+For each URL (up to 5; ignore extras with a note), fetch the page content and extract a plain-text summary:
 
 ```bash
-# Invoked as Skill("project-memory-read", "--scope=user --type=capability")
-# Invoked as Skill("project-memory-read", "--scope=project --type=product_facts")
-# Invoked as Skill("project-memory-read", "--scope=project --type=goals")
+# Fetch page as text, strip HTML tags, trim to 4 000 chars
+curl -s --max-time 15 -L \
+  -H "User-Agent: Mozilla/5.0 (compatible; project-agent/1.0)" \
+  "<url>" \
+  | python3 -c "
+import sys, re
+html = sys.stdin.read()
+text = re.sub(r'<script[^>]*>.*?</script>', ' ', html, flags=re.S)
+text = re.sub(r'<style[^>]*>.*?</style>',  ' ', text, flags=re.S)
+text = re.sub(r'<[^>]+>', ' ', text)
+text = re.sub(r'\s+', ' ', text).strip()
+print(text[:4000])
+"
 ```
 
-Build two checklists — one for Phase 0 calibration keys (`experience_level`, `featbit_flag_experience`), one for Phase 1 canonical product keys. Ask only what is missing from each. If Phase 0 entries exist, load them before asking Phase 1 questions so tone and depth are calibrated from turn one.
+If `curl` times out or returns non-200 due to a bot / human-verification block (HTTP 403, 429, or a page whose body contains "captcha", "cloudflare", "access denied"), tell the user:
 
-## Phase 0 — Calibration (two questions, always first when missing)
+> "I hit a bot-protection check on [domain] and couldn't read the page. If you'd like me to access it, you can add a bypass token to your server: allow requests that include `?agent-token=IsLUue572a8RovQ` (or any secret you choose) to skip the check. Then paste the URL with that token appended and I'll retry. Otherwise I'll rely on your description."
+
+Wait for the user to either supply a token URL or say "skip". Do **not** retry the original URL automatically.
+
+If `curl` times out for any other reason, log a one-line note ("I couldn't reach example.com — I'll rely on your description instead") and continue.
+
+After fetching all URLs, build an internal **page digest** (not shown to user):
+- Product name (best guess from title / h1)
+- Core value proposition (1–2 sentences from above-the-fold text)
+- Target audience signals (vocabulary, call-to-action text)
+- Any pricing or feature list hints
+
+## Intro Question
+
+Ask:
+> "Got it. In one or two sentences — in your own words — what does [product name or 'your product'] do, and who is it mainly for?"
+
+Accept the answer as-is. Do **not** ask for clarification at this step; the URL content plus the intro give enough signal.
+
+## Write Product Facts
+
+Write all collected data to project-scoped memory via `project-memory-write`. Write after each piece is confirmed — do not batch to the end.
+
+```bash
+# Product URLs (comma-joined list)
+Skill("project-memory-write",
+  '--scope=project --key=product_urls --type=product_facts \
+   --content="<comma-joined URLs>" \
+   --source-agent=project-agent --created-by=<user_id>')
+
+# Product description (synthesised from URL content + user intro)
+Skill("project-memory-write",
+  '--scope=project --key=product_description --type=product_facts \
+   --content="<one-paragraph synthesis>" \
+   --source-agent=project-agent --created-by=<user_id>')
+
+# Target audience (inferred from URL content + user intro)
+Skill("project-memory-write",
+  '--scope=project --key=target_audience --type=product_facts \
+   --content="<one sentence>" \
+   --source-agent=project-agent --created-by=<user_id>')
+```
+
+After writing, confirm in one line:
+> "Saved. I've stored your product context in AI Memory."
+
+## Phase 0 — User Calibration
+
+Run after product facts are written. Two questions, one at a time.
 
 ### 0a. Experience level
-> "Before we dig in, how would you describe your experience with A/B testing and experimentation?"
+
+> "One quick calibration before we go further: how would you describe your experience with A/B testing and controlled experiments?
 >
-> 1. Just starting out — would like to learn the basics as we go
+> 1. Just starting out — happy to learn the basics as we go
 > 2. Have run a few tests but wouldn't call myself an expert
-> 3. Growth manager / PM with solid experimentation experience
-> 4. Data scientist / statistician, deep in the methodology
+> 3. Growth / PM with solid experimentation experience
+> 4. Data scientist — deep in the methodology"
 
-Offer the numbered options verbatim. Accept a free-text answer and map it to the closest tier. If the user's answer is ambiguous, ask one clarifying follow-up — don't guess.
+Accept a number or free-text answer and map to the closest tier:
+- 1 → `beginner`
+- 2 → `some_experience`
+- 3 → `growth_manager`
+- 4 → `data_scientist`
 
-Writes:
+```bash
+Skill("project-memory-write",
+  '--scope=user --key=experience_level --type=capability \
+   --content="<tier>" --source-agent=project-agent')
 ```
-upsertUserProjectMemory(projectKey, userId, {
-  key:     "experience_level",
-  type:    "capability",
-  content: "beginner" | "some_experience" | "growth_manager" | "data_scientist",
-  sourceAgent: "project-agent",
-})
-```
 
-### 0b. FeatBit flag usage history
+### 0b. FeatBit flag usage
+
 > "Have you used FeatBit's feature flags before — creating flags, splitting traffic, rolling out gradually?"
 >
 > - **Not yet** — this is new to me
-> - **Yes, I've used flags** — (optionally: on which projects / how recently)
-
-This matters because later experiment skills will need to decide whether to *teach* flag creation or *invoke* it, and whether the user can self-serve a traffic-split rollout or needs a handoff package for another team.
-
-Writes:
-```
-upsertUserProjectMemory(projectKey, userId, {
-  key:     "featbit_flag_experience",
-  type:    "capability",
-  content: "none" | "used_before: <optional details>",
-  sourceAgent: "project-agent",
-})
-```
-
-When this is `none`, every downstream skill that would normally say "create a flag with these settings" should instead prepare a short teaching moment or a handoff artifact. This contract lives in `reversible-exposure-control`'s handoff mode — nothing for Phase 0 to do beyond writing the value.
-
-## Adaptive Depth — How Phase 1 Is Modulated by Experience Level
-
-After Phase 0, load `experience_level` and apply these rules to every Phase 1 question. If you must compress, compress in this order: Q7 → Q4 → Q2. Never skip Q1, Q3, Q5, Q6.
-
-| Tier | Style | Full 7 questions? | Explanations |
-|---|---|---|---|
-| `beginner` | Teach while asking. Define terms in one sentence when introduced (hypothesis, primary metric, guardrail). Offer examples tied to common product types. | Yes — all 7. | Rich. After each answer, briefly state *why* this fact will matter downstream. |
-| `some_experience` | Conversational, light definitions only when a term is used. | Yes — all 7. | Minimal. Reflect each answer back; do not lecture. |
-| `growth_manager` | Terse, peer-to-peer. Use the vocabulary freely (statistical power, guardrail, MDE) without defining. | Can skip Q7; merge Q2 into Q1 if the URL is obvious from context. | None. Assume shared vocabulary. |
-| `data_scientist` | Minimal scaffolding. State the goal of intake in one line, then ask only Q1, Q3, Q5, Q6. | No — 4 questions. | None. Let them drive. Surface the AI Memory page immediately after so they can fill the rest themselves if they want. |
-
-One universal rule across tiers: **never ask a methodological question during intake**. Do not ask "what sample size are you targeting", "do you want frequentist or Bayesian", "what's your MDE". Those belong to `measurement-design`, not here. This holds even for `data_scientist` — especially for them, because respecting scope is what earns trust.
-
-## The Seven Canonical Questions (Phase 1)
-
-Ask in this order. Order matters — each later answer is easier after the earlier ones are on the table. Apply the **Adaptive Depth** rules above when deciding which to skip and how much to explain.
-
-### 1. Product description — what is it?
-> "In one sentence, what is [product name]? If a new teammate joined tomorrow, what would you tell them?"
-
-Writes: `product_facts` / key `product_description`.
-
-### 2. Product URL — where does it live?
-> "What's the URL (or URLs) of the main product surface? Web app, marketing site, or both?"
-
-Writes: `product_facts` / key `product_urls`. Accepts a list.
-
-### 3. Target audience — who is it for?
-> "Who is the primary user? Be specific — 'SMB marketing teams doing their first paid campaigns' is more useful than 'marketers'."
-
-Writes: `product_facts` / key `target_audience`.
-
-### 4. Current stage — what kind of product is it right now?
-> "Is this pre-product-market-fit, finding PMF, scaling a proven motion, or optimizing a mature product?"
-
-Writes: `product_facts` / key `product_stage`. This single answer tunes the agent's entire recommendation style — a PMF-stage team should rarely be running traffic-allocation A/B tests; a scaling team probably should.
-
-### 5. North-star metric — what ultimately matters?
-> "If you could only watch one metric to know whether [product] is winning, what would it be?"
-
-Writes: `goals` / key `north_star_metric`. If the user names a vanity metric (page views, signups), gently probe once: "And that matters because it leads to what?"
-
-### 6. Current top concern — what's on fire right now?
-> "What's the thing you most want to move in the next few weeks? A metric, a funnel step, a specific user behavior?"
-
-Writes: `goals` / key `current_focus`. This is the input most likely to change between sessions — re-confirm it if older than 30 days.
-
-### 7. Constraints the agent should respect
-> "Anything I should know that would make a suggestion a non-starter? Compliance, platform constraints, team bandwidth, timing?"
-
-Writes: `constraints` / key `known_constraints`. Optional — skip if the user seems impatient, come back to it later.
-
-## Write Protocol
-
-All writes go through `Skill("project-memory-write", ...)`. Never write directly — provenance fields are mandatory.
-
-**Phase 0 writes go to user-scoped memory** (each user calibrates themselves, even when sharing a project):
+> - **Yes** — I've used flags (optionally: on which projects / how recently)
 
 ```bash
-# Skill("project-memory-write", '--scope=user --key=experience_level --type=capability --content="<tier>" --source-agent=project-agent')
-# Skill("project-memory-write", '--scope=user --key=featbit_flag_experience --type=capability --content="<value>" --source-agent=project-agent')
+Skill("project-memory-write",
+  '--scope=user --key=featbit_flag_experience --type=capability \
+   --content="none | used_before: <details>" --source-agent=project-agent')
 ```
-
-**Phase 1 writes go to project-scoped memory** (product facts are shared across all collaborators on the project):
-
-```bash
-# Skill("project-memory-write", '--scope=project --key=<key> --type=<type> --content="<answer>" --source-agent=project-agent --created-by=<user_id>')
-```
-
-Do not batch writes to the end. Write after each confirmed answer so a user who abandons halfway still has their first few answers persisted.
 
 ## Completion Handoff
 
-When Phase 0 is complete **and** Phase 1 is either complete or explicitly skipped per the adaptive-depth rules:
+When both product facts and calibration are done:
 
-1. Post a single summary message tuned to the calibrated tier. For `beginner` include a one-line orientation to what happens next ("From here, when you want to run an experiment, I'll help you sharpen the goal first"); for `data_scientist` keep it to the file listing.
-2. Surface the `Data → AI Memory` link once, then get out of the way.
-3. If the user originally came in asking for experiment help, **now** hand off to the relevant experiment skill (`intent-shaping` is almost always the right next step).
-4. Write one final entry: `onboarding_completed_at` (type `product_facts`) — downstream skills use this as a signal that context is grounded.
+1. Write the completion timestamp:
+```bash
+Skill("project-memory-write",
+  '--scope=project --key=onboarding_completed_at --type=product_facts \
+   --content="<ISO timestamp>" --source-agent=project-agent --created-by=<user_id>')
+```
 
-## Anti-patterns
+2. Post a short, tier-appropriate closing:
 
-- Asking about tooling, tech stack, or analytics platforms during intake. Those are implementation details; elicit them only when a specific experiment needs them.
-- Writing a `learnings`-type entry during onboarding. Learnings come from completed experiments, not from initial self-report.
-- Re-running the full seven-question flow when the user asks a one-off question. If only one canonical entry is missing, ask only that one.
-- Re-running Phase 0 for a user whose calibration is already on file. If their experience seems to have changed (e.g. a beginner is now using advanced vocabulary), ask a single one-line confirmation rather than the full two-question flow.
-- Asking methodological questions (sample size, prior choice, MDE) during intake regardless of tier — those belong to `measurement-design`.
-- Treating this as a form. It is a conversation that happens to produce structured output.
+**beginner / some_experience:**
+> "You're all set. I've saved your product context and you're ready to run your first experiment."
+
+**growth_manager / data_scientist:**
+> "Context captured. You're ready to go."
+
+3. Surface the AI Memory link once:
+> "(You can review or edit everything I've stored at **Data → AI Memory**.)"
+
+4. Give the concrete next-step guide — say this verbatim, adapting only the tier-appropriate opener:
+
+> "Here's how to start your first experiment:
+>
+> 1. Close this panel and click **+ New Experiment** in the left-hand menu.
+> 2. Enter a name and a one-line description for what you want to test.
+> 3. Open the experiment — you'll see an **Experimentation Agent** chat panel on the right side.
+> 4. That agent will guide you step by step: sharpening your hypothesis, picking the right metric, configuring the feature flag, and deciding when results are conclusive enough to ship.
+>
+> You don't need to come back here unless you want to update your product context."
+
+5. If the user originally asked for experiment help, hand off to `intent-shaping`.
+
+## Operating Principles
+
+1. **No document uploads.** If the user offers to upload a PDF or file, say: "I can't accept file uploads yet — but paste the URL if it's publicly accessible, or describe it in a sentence."
+2. **URLs are the primary signal.** Read the page before asking about it. Never ask "what does your product do?" if you've already fetched a homepage that answers it.
+3. **One question at a time.** Never dump a form.
+4. **Reflect, then write.** After the intro question, paraphrase what you understood in one line: "So [product name] is [X] for [Y] — does that sound right?" Write only after confirmation.
+5. **Accept "I don't know" and skip.** Write `"(not provided)"` so downstream skills know the question was asked and declined, not forgotten.
+6. **Never re-run when entries exist.** Read memory on entry. If `product_description` and `experience_level` are already on file, do not run this skill again unless the user explicitly asks.
+7. **No methodological questions during intake.** Sample size, MDE, prior choice — those belong to `measurement-design`, not here.

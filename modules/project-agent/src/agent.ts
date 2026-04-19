@@ -48,8 +48,22 @@ export async function runAgentStream(
 
   const userPrompt = body.prompt?.trim() ?? "";
   const isBootstrap = userPrompt.length === 0;
-  const prompt = buildPrompt({ projectKey, userId, isBootstrap, userPrompt });
+
+  // Pre-fetch memory server-side on bootstrap so the agent receives the full
+  // context in its first prompt — no in-agent script calls needed at startup.
+  const memoryBase = process.env.MEMORY_API_BASE ?? "http://localhost:3000";
+  const memory = isBootstrap
+    ? await prefetchMemory(projectKey, userId, memoryBase)
+    : undefined;
+
+  const prompt = buildPrompt({ projectKey, userId, isBootstrap, userPrompt, memory });
   const sessionKey = resolveSessionKey(projectKey, userId, body.sessionKey);
+
+  // Seed the in-memory store with the client-supplied thread ID so resumption
+  // works even after a container restart (client persists the ID in the DB).
+  if (body.codexThreadId && !getThreadId(sessionKey)) {
+    setThreadId(sessionKey, body.codexThreadId);
+  }
 
   const codex = new Codex({
     env: buildChildEnv(projectKey, userId),
@@ -62,7 +76,7 @@ export async function runAgentStream(
       : codex.startThread(threadOptions());
 
     console.log(
-      `[agent] sessionKey="${sessionKey}" resume=${!!existingThreadId} bootstrap=${isBootstrap}`
+      `[agent] sessionKey="${sessionKey}" resume=${!!existingThreadId} threadId=${existingThreadId ?? "new"} bootstrap=${isBootstrap}`
     );
 
     const { events } = await thread.runStreamed(prompt, {
@@ -193,4 +207,36 @@ function buildChildEnv(
 function describeErr(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+export interface MemorySnapshot {
+  productFacts: unknown[];
+  goals: unknown[];
+  capability: unknown[];
+}
+
+async function prefetchMemory(
+  projectKey: string,
+  userId: string | undefined,
+  base: string
+): Promise<MemorySnapshot> {
+  const enc = encodeURIComponent;
+  const get = async (url: string): Promise<unknown[]> => {
+    try {
+      const r = await fetch(url);
+      return r.ok ? ((await r.json()) as unknown[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const [productFacts, goals, capability] = await Promise.all([
+    get(`${base}/api/memory/project/${enc(projectKey)}?type=product_facts`),
+    get(`${base}/api/memory/project/${enc(projectKey)}?type=goals`),
+    userId
+      ? get(`${base}/api/memory/user/${enc(projectKey)}/${enc(userId)}?type=capability`)
+      : Promise.resolve([] as unknown[]),
+  ]);
+
+  return { productFacts, goals, capability };
 }

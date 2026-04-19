@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, Minus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +49,13 @@ export function AgentButton() {
   const [minimized, setMinimized] = useState(false);
   const [hasMemory, setHasMemory] = useState<boolean | null>(null);
   const autoOpenFiredRef = useRef(false);
+  // Stays true only until the first bootstrap completes; prevents re-bootstrap
+  // when the drawer is closed and reopened (AgentChat unmounts/remounts).
+  const bootstrapDoneRef = useRef(false);
+
+  const handleBootstrapComplete = useCallback(() => {
+    bootstrapDoneRef.current = true;
+  }, []);
 
   const projectKey = currentProject?.key ?? null;
   const userId = profile?.id ?? null;
@@ -68,18 +75,18 @@ export function AgentButton() {
     return () => { cancelled = true; };
   }, [isReady, projectKey]);
 
-  // needsBootstrap: true only when we have a definitive answer (null = loading)
+  // needsBootstrap is a live derived value — only true before cookie is set.
   const needsBootstrap =
     userId !== null &&
     hasMemory === false &&
     !hasOnboardingCookie(userId);
 
-  // Auto-open the drawer once when bootstrap is needed.
+  // Auto-open once when the first-time conditions hold.
   useEffect(() => {
     if (!needsBootstrap) return;
     if (autoOpenFiredRef.current) return;
     autoOpenFiredRef.current = true;
-    markOnboarded(userId!); // set cookie immediately so refresh doesn't re-fire
+    markOnboarded(userId!); // write cookie so refresh doesn't re-trigger
     setOpen(true);
   }, [needsBootstrap, userId]);
 
@@ -153,7 +160,8 @@ export function AgentButton() {
             <AgentChat
               projectKey={projectKey}
               userId={userId}
-              autoBootstrap={needsBootstrap}
+              autoBootstrap={!bootstrapDoneRef.current}
+              onBootstrapComplete={handleBootstrapComplete}
             />
           )}
         </SheetContent>
