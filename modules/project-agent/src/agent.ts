@@ -4,6 +4,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { initSseHeaders, sendSseEvent, closeSseStream } from "./sse.js";
 import { buildPrompt } from "./prompt.js";
+// ExperimentContext pre-fetch removed: the agent now queries
+// /api/agent-context/<projectKey> on demand via curl when the user asks
+// about experiments, rather than shipping a (usually-ignored) snapshot
+// inside every bootstrap prompt.
 import {
   getThreadId,
   setThreadId,
@@ -49,8 +53,9 @@ export async function runAgentStream(
   const userPrompt = body.prompt?.trim() ?? "";
   const isBootstrap = userPrompt.length === 0;
 
-  // Pre-fetch memory server-side on bootstrap so the agent receives the full
-  // context in its first prompt — no in-agent script calls needed at startup.
+  // Pre-fetch project-level memory (product_facts / goals / capability) so the
+  // agent opens with the right context. Experiment state is NOT pre-fetched —
+  // the agent fetches it on demand via curl when the user asks.
   const memoryBase = process.env.MEMORY_API_BASE ?? "http://localhost:3000";
   const memory = isBootstrap
     ? await prefetchMemory(projectKey, userId, memoryBase)

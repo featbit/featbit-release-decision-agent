@@ -23,7 +23,7 @@ public sealed class VariationItem
 {
     [JsonPropertyName("flagKey")]      public string  FlagKey      { get; set; } = "";
     [JsonPropertyName("variant")]      public string  Variant      { get; set; } = "";
-    [JsonPropertyName("timestamp")]    public long    Timestamp    { get; set; }   // epoch seconds
+    [JsonPropertyName("timestamp")]    public long    Timestamp    { get; set; }   // epoch milliseconds
     [JsonPropertyName("experimentId")] public string? ExperimentId { get; set; }
     [JsonPropertyName("layerId")]      public string? LayerId      { get; set; }
 }
@@ -31,7 +31,7 @@ public sealed class VariationItem
 public sealed class MetricItem
 {
     [JsonPropertyName("eventName")]    public string  EventName    { get; set; } = "";
-    [JsonPropertyName("timestamp")]    public long    Timestamp    { get; set; }   // epoch seconds
+    [JsonPropertyName("timestamp")]    public long    Timestamp    { get; set; }   // epoch milliseconds
     [JsonPropertyName("numericValue")] public double? NumericValue { get; set; }
     [JsonPropertyName("type")]         public string? Type         { get; set; }
 }

@@ -58,6 +58,8 @@ const EXPERIMENTS: ExperimentConfig[] = [
 ];
 
 interface TrackPayload {
+  // timestamps are epoch milliseconds — track-service enforces
+  // metric.ts >= exposure.ts so metric events fire at or after exposure.
   user: { keyId: string };
   variations?: { flagKey: string; variant: string; timestamp: number; experimentId?: string }[];
   metrics?:    { eventName: string; timestamp: number }[];
@@ -79,7 +81,8 @@ function pickVariant(cfg: ExperimentConfig): ExperimentConfig["variants"][number
 }
 
 function buildPayload(cfg: ExperimentConfig): TrackPayload {
-  const now     = Math.floor(Date.now() / 1000);
+  const exposureMs = Date.now();
+  const metricMs   = exposureMs + 1;       // strictly after exposure
   const variant = pickVariant(cfg);
   const userKey = `${cfg.userKeyPrefix}-${Math.floor(Math.random() * cfg.userKeySpace).toString().padStart(6, "0")}`;
 
@@ -88,20 +91,20 @@ function buildPayload(cfg: ExperimentConfig): TrackPayload {
     variations: [{
       flagKey:      cfg.flagKey,
       variant:      variant.name,
-      timestamp:    now,
+      timestamp:    exposureMs,
       experimentId: cfg.experimentId,
     }],
     metrics: [],
   };
 
   if (Math.random() < variant.convRate) {
-    p.metrics!.push({ eventName: cfg.primaryMetric, timestamp: now });
+    p.metrics!.push({ eventName: cfg.primaryMetric, timestamp: metricMs });
   }
   // page_view fires almost every session; other guardrails fire sparsely.
   for (const g of cfg.guardrails) {
     const fire = g === "page_view" ? 0.8 : cfg.guardrailFireRate;
     if (Math.random() < fire) {
-      p.metrics!.push({ eventName: g, timestamp: now });
+      p.metrics!.push({ eventName: g, timestamp: metricMs });
     }
   }
   if (p.metrics!.length === 0) delete p.metrics;

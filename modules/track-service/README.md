@@ -93,9 +93,12 @@ dotnet run
 
 ### `POST /api/track`
 
-批量接收 SDK 上报数据。Wire format 与旧 cf-worker 保持一致，
-`run-active-test-worker` 不需要改任何代码，只要把 `WORKER_URL` 环境变量
-指向新的 track-service 即可。
+批量接收 SDK 上报数据。
+
+**Timestamp 约定**：`timestamp` 字段是 **epoch milliseconds**（`Date.now()`
+在 JS 里直接就是这个精度）。服务端在归因时会强制 `metric.timestamp >=
+exposure.timestamp`，所以 SDK 发送时必须保证 metric event 的时间戳不早于
+对应的 flag 曝光时间戳，否则会被 query 丢弃。
 
 ```http
 POST /api/track HTTP/1.1
@@ -107,10 +110,10 @@ Content-Type:  application/json
     "user": { "keyId": "user-123", "properties": { "country": "US" } },
     "variations": [
       { "flagKey": "new-checkout", "variant": "treatment",
-        "timestamp": 1776300000, "experimentId": "exp-1" }
+        "timestamp": 1776300000000, "experimentId": "exp-1" }
     ],
     "metrics": [
-      { "eventName": "checkout-completed", "timestamp": 1776300060 }
+      { "eventName": "checkout-completed", "timestamp": 1776300060000 }
     ]
   }
 ]
@@ -170,7 +173,9 @@ Content-Type: application/json
 ```
 
 JOIN 语义：每个用户**锁定他第一次看到的 variant**（`argMin(variant, timestamp)`），
-然后看他在窗口期内有没有触发 metricEvent。这与 stats-service 期望的输入完全对齐。
+并记录那次曝光的 timestamp (`exposure_ts`)。然后只统计在窗口期内、且
+**timestamp ≥ exposure_ts** 的 metric event，避免"曝光前行为"被错误归因到
+variant 上。这与 stats-service 期望的输入完全对齐。
 
 ### `GET /health`
 

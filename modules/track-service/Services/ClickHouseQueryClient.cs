@@ -11,8 +11,9 @@ namespace FeatBit.TrackService.Services;
 ///
 /// One ClickHouse query, executed at request time, joins flag_evaluations to
 /// metric_events on user_key. For each user we lock in the variant they saw
-/// FIRST (argMin on timestamp) and count whether they fired the metric event
-/// at least once during the window.
+/// FIRST (argMin on timestamp) and capture that exposure timestamp, then only
+/// count metric events that fire AT OR AFTER the user's first exposure — so
+/// pre-exposure behaviour can never be mis-attributed to a variant.
 /// </summary>
 public sealed class ClickHouseQueryClient(
     IOptions<ClickHouseOptions> opts,
@@ -28,39 +29,48 @@ public sealed class ClickHouseQueryClient(
         DateOnly end,
         CancellationToken ct)
     {
+        // Unit of analysis is the user: n = users, x_i = that user's total
+        // numeric_value across all qualifying metric events. The stats client
+        // (modules/web/src/lib/stats/bayesian.ts) computes
+        //   variance = (sum_sq - sum_val² / users) / (users - 1)
+        // which only makes sense if sum_sq = Σ(per-user total)², not
+        // Σ(per-event value²). That's why we aggregate per-user in user_totals
+        // FIRST and only square at the outer layer.
         var sql = $@"
 WITH first_eval AS
 (
     SELECT
         user_key,
-        argMin(variant, timestamp) AS variant
+        argMin(variant, timestamp) AS variant,
+        min(timestamp)             AS exposure_ts
     FROM {_cfg.Database}.{_cfg.FlagEvaluationsTable}
     WHERE env_id   = {{envId:String}}
       AND flag_key = {{flagKey:String}}
       AND toDate(timestamp) BETWEEN {{start:Date}} AND {{end:Date}}
     GROUP BY user_key
 ),
-conversions AS
+user_totals AS
 (
     SELECT
-        user_key,
-        count() AS conv_count,
-        sum(ifNull(numeric_value, 0))                              AS sum_val,
-        sum(ifNull(numeric_value, 0) * ifNull(numeric_value, 0))   AS sum_sq
-    FROM {_cfg.Database}.{_cfg.MetricEventsTable}
-    WHERE env_id     = {{envId:String}}
-      AND event_name = {{metric:String}}
-      AND toDate(timestamp) BETWEEN {{start:Date}} AND {{end:Date}}
-    GROUP BY user_key
+        m.user_key                       AS user_key,
+        count()                          AS conv_count,
+        sum(ifNull(m.numeric_value, 0))  AS sum_val_user
+    FROM {_cfg.Database}.{_cfg.MetricEventsTable} AS m
+    INNER JOIN first_eval AS fe ON fe.user_key = m.user_key
+    WHERE m.env_id     = {{envId:String}}
+      AND m.event_name = {{metric:String}}
+      AND toDate(m.timestamp) BETWEEN {{start:Date}} AND {{end:Date}}
+      AND m.timestamp >= fe.exposure_ts
+    GROUP BY m.user_key
 )
 SELECT
-    fe.variant                AS variant,
-    count()                   AS users,
-    countIf(c.conv_count > 0) AS conversions,
-    sum(c.sum_val)            AS sum_val,
-    sum(c.sum_sq)             AS sum_sq
+    fe.variant                                                          AS variant,
+    count()                                                             AS users,
+    countIf(ut.conv_count > 0)                                          AS conversions,
+    sum(ifNull(ut.sum_val_user, 0))                                     AS sum_val,
+    sum(ifNull(ut.sum_val_user, 0) * ifNull(ut.sum_val_user, 0))        AS sum_sq
 FROM first_eval AS fe
-LEFT JOIN conversions AS c ON c.user_key = fe.user_key
+LEFT JOIN user_totals AS ut ON ut.user_key = fe.user_key
 GROUP BY variant
 ORDER BY variant;
 ";

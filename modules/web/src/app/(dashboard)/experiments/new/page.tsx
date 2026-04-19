@@ -1,11 +1,8 @@
-import { createExperimentAction } from "@/lib/actions";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { NewExperimentForm } from "./new-experiment-form";
 
 export default function NewExperimentPage() {
   return (
@@ -25,32 +22,7 @@ export default function NewExperimentPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form action={createExperimentAction} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Experiment Name</Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="e.g. Onboarding tooltip experiment"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Textarea
-                id="description"
-                name="description"
-                placeholder="What are you trying to learn or improve?"
-                rows={3}
-              />
-            </div>
-            <div className="flex gap-3 pt-2">
-              <Button type="submit">Create Experiment</Button>
-              <Button nativeButton={false} variant="outline" render={<Link href="/experiments" />}>
-                Cancel
-              </Button>
-            </div>
-          </form>
+          <NewExperimentForm />
         </CardContent>
       </Card>
     </div>

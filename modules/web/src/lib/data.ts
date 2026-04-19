@@ -34,10 +34,15 @@ export async function getExperiment(id: string) {
 export async function createExperiment(data: {
   name: string;
   description?: string;
+  featbitProjectKey?: string | null;
 }) {
   const envId = await getCurrentEnvId();
   const experiment = await prisma.experiment.create({
-    data: { ...data, featbitEnvId: envId ?? undefined },
+    data: {
+      ...data,
+      featbitEnvId: envId ?? undefined,
+      featbitProjectKey: data.featbitProjectKey ?? undefined,
+    },
   });
   await prisma.activity.create({
     data: {

@@ -40,12 +40,12 @@ interface TrackPayload {
   variations?: Array<{
     flagKey:      string;
     variant:      string;
-    timestamp:    number;         // epoch seconds
+    timestamp:    number;         // epoch milliseconds
     experimentId?: string;
   }>;
   metrics?: Array<{
     eventName:    string;
-    timestamp:    number;         // epoch seconds
+    timestamp:    number;         // epoch milliseconds
     numericValue?: number;
   }>;
 }
@@ -61,7 +61,7 @@ function randomUserKey(): string {
 }
 
 function buildPayload(): TrackPayload {
-  const nowSec  = Math.floor(Date.now() / 1000);
+  const nowMs   = Date.now();
   const variant = Math.random() < 0.5 ? CONTROL_VARIANT : TREATMENT_VARIANT;
 
   const payload: TrackPayload = {
@@ -69,23 +69,23 @@ function buildPayload(): TrackPayload {
     variations: [{
       flagKey:      FLAG_KEY,
       variant,
-      timestamp:    nowSec,
+      timestamp:    nowMs,
       experimentId: EXPERIMENT_ID,
     }],
     metrics: [],
   };
 
-  // Primary conversion
+  // Primary conversion — fires after exposure so metric.ts > exposure.ts
   const convRate = variant === TREATMENT_VARIANT ? TREATMENT_CONV_RATE : CONTROL_CONV_RATE;
   if (Math.random() < convRate) {
-    payload.metrics!.push({ eventName: PRIMARY_METRIC_EVENT, timestamp: nowSec });
+    payload.metrics!.push({ eventName: PRIMARY_METRIC_EVENT, timestamp: nowMs + 1 });
   }
 
-  // Guardrail — at most one per payload
+  // Guardrail — at most one per payload, also strictly post-exposure
   if (Math.random() < GUARDRAIL_FIRE_RATE) {
     payload.metrics!.push({
       eventName: GUARDRAIL_EVENTS[randInt(GUARDRAIL_EVENTS.length - 1)],
-      timestamp: nowSec,
+      timestamp: nowMs + 1,
     });
   }
 

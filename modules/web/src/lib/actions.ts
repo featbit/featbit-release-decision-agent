@@ -15,6 +15,7 @@ import {
 export async function createExperimentAction(formData: FormData) {
   const name = formData.get("name") as string;
   const description = formData.get("description") as string | null;
+  const featbitProjectKey = formData.get("featbitProjectKey") as string | null;
 
   if (!name || name.trim().length === 0) {
     throw new Error("Experiment name is required");
@@ -23,6 +24,7 @@ export async function createExperimentAction(formData: FormData) {
   const experiment = await createExperiment({
     name: name.trim(),
     description: description?.trim() || undefined,
+    featbitProjectKey: featbitProjectKey?.trim() || null,
   });
 
   redirect(`/experiments/${experiment.id}`);

@@ -62,7 +62,8 @@ services:
       # project-sync skill's sync.ts calls the web app's /api/experiments/*
       # endpoints. Inside the docker network the web service is reachable
       # as http://web:3000 (localhost would hit sandbox itself).
-      SYNC_API_URL:  "http://web:3000"
+      SYNC_API_URL:      "http://web:3000"
+      MEMORY_API_BASE:   "http://web:3000"
     volumes:
       - ./sandbox/data:/app/data
       # Global skills — mounted read-only from repo root /skills.

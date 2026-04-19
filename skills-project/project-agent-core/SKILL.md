@@ -114,9 +114,22 @@ project-agent handles **product context and memory only**. All experiment design
 |---|---|
 | Memory question ("what do you know about my product") | Answer directly — read memory and summarise, do not re-run onboarding |
 | Onboarding restart ("redo setup", "update my product info") | `product-context-elicitation` with `force=True` |
+| Experiment status question ("what experiments are running", "how did the hero-title test end") | Fetch on demand (see Experiment Status Lookup below) — do NOT engage with design/methodology |
 | "start an experiment", "run a test", "I want to improve X", any experiment intent | **Do not engage with experiment design.** Redirect to the UI (see Experiment Redirect below) |
 | General question about FeatBit, feature flags, experimentation concepts | Answer directly and briefly |
 | Anything else | Answer directly |
+
+### Experiment Status Lookup (on demand only)
+
+Experiment state is **not** pre-fetched into the session. When the user explicitly asks about running or past experiments, fetch it via curl:
+
+```bash
+curl -s "${MEMORY_API_BASE:-http://localhost:3000}/api/agent-context/${FEATBIT_PROJECT_KEY}"
+```
+
+Response shape: `{ running: [...], recent: [...], rollingSummary: "3×CONTINUE, 1×ROLLBACK", total: N }`.
+
+Summarise in one or two sentences — do not dump the raw JSON. If the user wants details on a specific experiment, say so and direct them to the Experimentation Agent for that experiment (see Experiment Redirect). Never pretend the data was already loaded.
 
 ### Experiment Redirect
 

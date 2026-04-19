@@ -304,6 +304,52 @@ If the command returns `"status": "unavailable"`, the database is unreachable. T
 
 Treat the project as a blank new project when the decision fields are empty and there are no meaningful experiments or learnings yet.
 
+### Product Context Loading (silent)
+
+After `get-experiment` resolves `featbitProjectKey`, silently fetch `product_facts` so hypotheses and metrics can be grounded in what the product actually is and who uses it. Use the same `SYNC_API_URL` that `project-sync` uses (it points to the correct web-app host for this deployment — never hardcode `http://web:3000` or `localhost`):
+
+```bash
+curl -s "${SYNC_API_URL:-http://localhost:3000}/api/memory/project/${featbit_project_key}?type=product_facts"
+```
+
+Keep the parsed JSON as internal context (`_productFacts`). Never mention this loading step to the user. Do **NOT** read `type=learnings` — cross-experiment conflict checking uses the dedicated `/conflicts` endpoint instead (see Pre-Start Conflict Check below).
+
+### Pre-Start Conflict Check
+
+Before the user commits to starting an experiment run (i.e., before `experiment-workspace` invokes `start-run`), check whether the configured flag key, primary metric, audience, and observation window conflict with any already-active experiments:
+
+```bash
+curl -s "${SYNC_API_URL:-http://localhost:3000}/api/experiments/${experiment_id}/conflicts"
+```
+
+The response shape:
+
+```json
+{
+  "experimentId": "...",
+  "scannedCount": 5,
+  "hasConflicts": true,
+  "conflicts": [
+    {
+      "experimentName": "Pricing Page Conversion",
+      "severity": "high",
+      "dimensions": ["flag_key", "metric"],
+      "details": ["Both experiments use the same feature flag: ...", "..."]
+    }
+  ]
+}
+```
+
+If `hasConflicts` is true, surface the conflicts concisely to the user **before** dispatching to `start-run`:
+
+> **Heads up — conflicts detected:**
+> - "Pricing Page Conversion" (high) — shared flag `pricing-page-redesign`; same primary metric
+> - "Another Exp" (medium) — audience overlap on free-tier users
+>
+> Running in parallel will pollute attribution. Options: pick a different flag/metric, restrict audience to a mutually exclusive segment, or wait for the conflicting experiments to close.
+
+This is informational, not a blocker — the user may proceed after acknowledgment.
+
 ### First interaction
 
 After loading state, greet the user briefly, then ask them to describe the experiment or feature change they want to work on.
@@ -341,6 +387,8 @@ Identify which control lenses are relevant based on the project state and the us
 ## Execution Procedure
 
 ```python
+SYNC = env("SYNC_API_URL", default="http://localhost:3000")
+
 def on_session_start(argv, user_message):
     project_id, access_token = parse_args(argv)
     assert project_id, "project-id is required — ask the user if missing"
@@ -351,6 +399,11 @@ def on_session_start(argv, user_message):
         greet_blank()
         ask_user("What are you trying to improve or learn?")
         return
+
+    # Silent: ground future hypothesis/metric suggestions in the actual product.
+    if state.featbitProjectKey:
+        _productFacts = http_get(f"{SYNC}/api/memory/project/{state.featbitProjectKey}?type=product_facts")
+
     recap = summarize_nonempty(state)   # at most two short sentences
     say(recap)
     ask_user("What would you like to work on next?")
@@ -359,6 +412,13 @@ def on_user_turn(project_id, state, message):
     lens = infer_cf_lens(state, message)   # see Signal Inference below
     if lens is None:
         return  # answer the question directly; no satellite dispatch
+
+    # Conflict check right before starting an experiment run.
+    if lens == "CF-05/CF-06" and about_to_start_run(message, state):
+        res = http_get(f"{SYNC}/api/experiments/{project_id}/conflicts")
+        if res.hasConflicts:
+            warn_conflicts_to_user(res.conflicts)   # concise, one line each
+
     satellite, args = dispatch[lens](project_id, state, message)
     return Skill(satellite, args)
 ```
