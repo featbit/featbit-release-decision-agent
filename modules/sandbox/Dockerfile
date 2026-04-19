@@ -1,7 +1,8 @@
 FROM node:24-slim
 
-# git + ca-certificates are required by the `skills add` clone step below
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+# git + ca-certificates for `skills add`; curl so skills can hit HTTP endpoints
+# (release-decision skill uses it to load product_facts and check experiment conflicts)
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code CLI via pnpm (significantly faster than npm for large packages)
 ENV PNPM_HOME="/root/.local/share/pnpm"
