@@ -2,7 +2,6 @@
 
 import { STAGES } from "@/lib/stages";
 import { cn } from "@/lib/utils";
-import { Settings } from "lucide-react";
 import type { Experiment, ExperimentRun } from "@/generated/prisma";
 
 type ExperimentLike = Experiment & { experimentRuns: ExperimentRun[] };
@@ -33,41 +32,58 @@ function stageHasContent(experiment: ExperimentLike, stageKey: string): boolean 
   }
 }
 
-interface StageSidebarProps {
+interface StageStepperProps {
   experiment: ExperimentLike;
   activeTab: string;
   onStageSelect: (stageKey: string) => void;
 }
 
-export function StageSidebar({
+// Chevron arrow-tip width in pixels. Each middle step has a right-pointing tip
+// and a matching left notch so neighbors interlock.
+const POINT = 10;
+
+function chevronClip(isFirst: boolean, isLast: boolean): string | undefined {
+  if (isFirst && isLast) return undefined;
+  if (isFirst)
+    return `polygon(0 0, calc(100% - ${POINT}px) 0, 100% 50%, calc(100% - ${POINT}px) 100%, 0 100%)`;
+  if (isLast)
+    return `polygon(0 0, 100% 0, 100% 100%, 0 100%, ${POINT}px 50%)`;
+  return `polygon(0 0, calc(100% - ${POINT}px) 0, 100% 50%, calc(100% - ${POINT}px) 100%, 0 100%, ${POINT}px 50%)`;
+}
+
+export function StageStepper({
   experiment,
   activeTab,
   onStageSelect,
-}: StageSidebarProps) {
-  const settingsSelected = activeTab === "settings";
-
+}: StageStepperProps) {
   return (
-    <nav className="flex flex-col p-2 w-40 shrink-0 border-r overflow-y-auto">
-      <div className="flex flex-col gap-0.5">
-        {STAGES.map((stage) => {
-          const isSelected = stage.key === activeTab;
-          const hasContent = stageHasContent(experiment, stage.key);
+    <nav className="flex items-stretch gap-0.5 px-2 py-1 border-b shrink-0 bg-muted/20">
+      {STAGES.map((stage, i) => {
+        const isSelected = stage.key === activeTab;
+        const hasContent = stageHasContent(experiment, stage.key);
+        const isFirst = i === 0;
+        const isLast = i === STAGES.length - 1;
+        const clipPath = chevronClip(isFirst, isLast);
 
-          return (
-            <button
-              key={stage.key}
-              type="button"
-              onClick={() => onStageSelect(stage.key)}
-              className={cn(
-                "flex items-center gap-2 px-2.5 py-2 rounded-md text-xs whitespace-nowrap transition-colors text-left cursor-pointer",
-                isSelected
-                  ? "bg-foreground text-background font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              )}
-            >
+        return (
+          <button
+            key={stage.key}
+            type="button"
+            onClick={() => onStageSelect(stage.key)}
+            style={{ clipPath }}
+            className={cn(
+              "flex-1 flex flex-col justify-center py-1 text-left transition-all cursor-pointer min-w-0 leading-tight",
+              isFirst ? "pl-3" : "pl-5",
+              isLast ? "pr-3" : "pr-5",
+              isSelected
+                ? "bg-foreground text-background [filter:drop-shadow(0_2px_3px_rgb(0_0_0_/_0.18))] -translate-y-px"
+                : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+            )}
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold w-full min-w-0">
               <span
                 className={cn(
-                  "size-1.5 rounded-full shrink-0",
+                  "size-1 rounded-full shrink-0",
                   hasContent
                     ? isSelected
                       ? "bg-background"
@@ -77,39 +93,21 @@ export function StageSidebar({
                       : "bg-muted-foreground/30"
                 )}
               />
-              <span className="flex flex-col gap-0.5 min-w-0">
-                <span className="truncate">{stage.label}</span>
-                <span
-                  className={cn(
-                    "text-[10px] font-normal",
-                    isSelected
-                      ? "text-background/60"
-                      : "text-muted-foreground/60"
-                  )}
-                >
-                  {stage.cf}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-auto pt-2 border-t border-border/60">
-        <button
-          type="button"
-          onClick={() => onStageSelect("settings")}
-          className={cn(
-            "flex items-center gap-2 w-full px-2.5 py-2 rounded-md text-xs whitespace-nowrap transition-colors text-left cursor-pointer",
-            settingsSelected
-              ? "bg-foreground text-background font-medium"
-              : "text-muted-foreground hover:text-foreground hover:bg-muted"
-          )}
-        >
-          <Settings className="size-3.5 shrink-0" />
-          <span>Settings</span>
-        </button>
-      </div>
+              <span className="truncate">{stage.label}</span>
+            </span>
+            <span
+              className={cn(
+                "text-[9px] font-normal pl-2.5 truncate w-full",
+                isSelected
+                  ? "text-background/60"
+                  : "text-muted-foreground/60"
+              )}
+            >
+              {stage.cf}
+            </span>
+          </button>
+        );
+      })}
     </nav>
   );
 }

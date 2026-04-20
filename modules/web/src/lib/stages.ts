@@ -10,7 +10,7 @@ export const STAGES = [
   },
   {
     key: "implementing",
-    label: "Implementing",
+    label: "Exposure",
     cf: "CF-03/04",
     skill: "reversible-exposure-control",
     description: "Feature flag, rollout strategy & traffic exposure",

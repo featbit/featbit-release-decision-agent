@@ -13,12 +13,28 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Pencil, Plus, X } from "lucide-react";
+import { Pencil, Plus, X, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Experiment } from "@/generated/prisma";
 
 /* ── Types ── */
-type GuardrailRow = { name: string; description: string };
+type GuardrailRow = {
+  name: string;
+  event: string;
+  metricType: "binary" | "numeric";
+  metricAgg: "once" | "count" | "sum";
+  direction: "increase_bad" | "decrease_bad";
+  description: string;
+};
+
+const NEW_GUARDRAIL: GuardrailRow = {
+  name: "",
+  event: "",
+  metricType: "binary",
+  metricAgg: "once",
+  direction: "increase_bad",
+  description: "",
+};
 
 /* ── Parse primaryMetric from JSON or plain text ── */
 function parsePrimaryMetric(value: string | null | undefined) {
@@ -40,14 +56,28 @@ function parsePrimaryMetric(value: string | null | undefined) {
   return { name: value, event: "", metricType: "binary", metricAgg: "once", description: "" };
 }
 
-/* ── Parse guardrails from JSON array or free text ── */
+/* ── Parse guardrails from JSON array or legacy free text ── */
 function parseGuardrailsToRows(value: string | null | undefined): GuardrailRow[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
-      return parsed.map((g) => ({
+      return parsed.map((g): GuardrailRow => ({
         name: g.name ?? g.event ?? "",
+        event: g.event ?? g.name ?? "",
+        metricType: g.metricType === "numeric" ? "numeric" : "binary",
+        metricAgg:
+          g.metricAgg === "count"
+            ? "count"
+            : g.metricAgg === "sum"
+              ? "sum"
+              : "once",
+        // `inverse:true` from older data → decrease_bad (higher is worse
+        // means we actually want lower, so increase is bad). Keep simple.
+        direction:
+          g.direction === "decrease_bad" || g.inverse === false
+            ? "decrease_bad"
+            : "increase_bad",
         description: g.description ?? "",
       }));
     }
@@ -57,11 +87,15 @@ function parseGuardrailsToRows(value: string | null | undefined): GuardrailRow[]
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((line) => {
+    .map((line): GuardrailRow => {
       const match = line.match(/^(.+?)\s*[—–-]+\s*(.+)$/);
-      return match
-        ? { name: match[1].trim(), description: match[2].trim() }
-        : { name: line, description: "" };
+      const name = match ? match[1].trim() : line;
+      return {
+        ...NEW_GUARDRAIL,
+        name,
+        event: name,
+        description: match ? match[2].trim() : "",
+      };
     });
 }
 
@@ -97,12 +131,18 @@ function NativeSelect({
 function GuardrailsEditor({ initialRows }: { initialRows: GuardrailRow[] }) {
   const [rows, setRows] = useState<GuardrailRow[]>(initialRows);
 
-  function update(i: number, field: keyof GuardrailRow, value: string) {
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
+  function update<K extends keyof GuardrailRow>(
+    i: number,
+    field: K,
+    value: GuardrailRow[K],
+  ) {
+    setRows((prev) =>
+      prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)),
+    );
   }
 
   function add() {
-    setRows((prev) => [...prev, { name: "", description: "" }]);
+    setRows((prev) => [...prev, { ...NEW_GUARDRAIL }]);
   }
 
   function remove(i: number) {
@@ -117,7 +157,7 @@ function GuardrailsEditor({ initialRows }: { initialRows: GuardrailRow[] }) {
       {rows.length > 0 && (
         <div className="space-y-2">
           {rows.map((row, i) => (
-            <div key={i} className="rounded-md border px-2.5 py-2 space-y-1.5 relative">
+            <div key={i} className="rounded-md border px-2.5 py-2 space-y-2 relative">
               <button
                 type="button"
                 onClick={() => remove(i)}
@@ -128,21 +168,100 @@ function GuardrailsEditor({ initialRows }: { initialRows: GuardrailRow[] }) {
               </button>
 
               <div className="space-y-1 pr-5">
-                <Label className="text-[10px] uppercase text-muted-foreground">Metric Name</Label>
+                <Label className="text-[10px] uppercase text-muted-foreground">
+                  Metric Name
+                </Label>
                 <Input
                   value={row.name}
                   onChange={(e) => update(i, "name", e.target.value)}
-                  placeholder="e.g. checkout_abandoned"
-                  className="text-xs font-mono h-7"
+                  placeholder="e.g. Checkout abandonment"
+                  className="text-xs h-7"
                 />
               </div>
 
               <div className="space-y-1">
-                <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>
+                <Label className="text-[10px] uppercase text-muted-foreground">
+                  Event Name
+                </Label>
+                <Input
+                  value={row.event}
+                  onChange={(e) => update(i, "event", e.target.value)}
+                  placeholder="e.g. checkout_abandoned"
+                  className="text-xs font-mono h-7"
+                />
+                <p className="text-[10px] text-muted-foreground/70">
+                  The event key tracked in your application.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase text-muted-foreground">
+                    Metric Type
+                  </Label>
+                  <select
+                    value={row.metricType}
+                    onChange={(e) =>
+                      update(i, "metricType", e.target.value as GuardrailRow["metricType"])
+                    }
+                    className={cn(
+                      "h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs",
+                      "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                    )}
+                  >
+                    <option value="binary">Binary</option>
+                    <option value="numeric">Numeric</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase text-muted-foreground">
+                    Aggregation
+                  </Label>
+                  <select
+                    value={row.metricAgg}
+                    onChange={(e) =>
+                      update(i, "metricAgg", e.target.value as GuardrailRow["metricAgg"])
+                    }
+                    className={cn(
+                      "h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs",
+                      "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                    )}
+                  >
+                    <option value="once">Once per user</option>
+                    <option value="count">Count all</option>
+                    <option value="sum">Sum values</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase text-muted-foreground">
+                    Alarm If
+                  </Label>
+                  <select
+                    value={row.direction}
+                    onChange={(e) =>
+                      update(i, "direction", e.target.value as GuardrailRow["direction"])
+                    }
+                    className={cn(
+                      "h-7 w-full rounded-md border border-input bg-transparent px-2 text-xs",
+                      "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                    )}
+                    title="Which direction counts as a regression"
+                  >
+                    <option value="increase_bad">↑ Increases</option>
+                    <option value="decrease_bad">↓ Decreases</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase text-muted-foreground">
+                  Description{" "}
+                  <span className="text-muted-foreground/60 normal-case">(optional)</span>
+                </Label>
                 <Textarea
                   value={row.description}
                   onChange={(e) => update(i, "description", e.target.value)}
-                  placeholder="e.g. Must not increase — streamlined flow must not confuse users"
+                  placeholder="e.g. Streamlined flow must not confuse users"
                   rows={2}
                   className="text-xs resize-none"
                 />
@@ -275,6 +394,8 @@ function MetricEditForm({
 
 /**
  * Pencil button + structured dialog for editing Primary Metric and Guardrails.
+ * @deprecated Kept for legacy import compatibility — new flows should use
+ * MetricEditPanel via a parent state toggle (same pattern as FlagIntegrationPanel).
  */
 export function MetricEditDialog({ experiment }: { experiment: Experiment }) {
   const [open, setOpen] = useState(false);
@@ -306,5 +427,56 @@ export function MetricEditDialog({ experiment }: { experiment: Experiment }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Inline panel version — replaces stage content while editing metrics. Parent
+ * controls open/close state; close button returns user to the summary view.
+ * Mirrors the FlagIntegrationPanel UX so Measure / chat panel on the right
+ * stays visible.
+ */
+export function MetricEditPanel({
+  experiment,
+  onClose,
+}: {
+  experiment: Experiment;
+  onClose: () => void;
+}) {
+  return (
+    <section className="flex flex-col h-full min-h-0 rounded-md border bg-background">
+      {/* Header */}
+      <div className="border-b px-5 py-4">
+        <div className="flex items-start gap-4">
+          <div className="size-9 rounded-md bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
+            <BarChart3 className="size-5 text-blue-700 dark:text-blue-300" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-medium">Edit Experiment Metrics</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Define the primary success metric and guardrails. These drive how
+              runs are analyzed.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            title="Close"
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+        <MetricEditForm
+          experiment={experiment}
+          onDone={onClose}
+          onCancel={onClose}
+        />
+      </div>
+    </section>
   );
 }

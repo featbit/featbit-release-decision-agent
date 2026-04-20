@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { StageSidebar } from "@/components/experiment/stage-bar";
+import { StageStepper } from "@/components/experiment/stage-bar";
 import { StageContentPanel } from "@/components/experiment/stage-content-panel";
 import { ChatPanel } from "@/components/experiment/chat-panel";
 import { ResizablePanels } from "@/components/experiment/resizable-panels";
@@ -13,7 +13,8 @@ import { ChatTriggerContext } from "@/components/experiment/chat-trigger-context
 import { EntryModePicker, ModeSwitchDialog } from "@/components/experiment/entry-mode-picker";
 import { ExpertSetupDialog } from "@/components/experiment/expert-setup-dialog";
 import { Button } from "@/components/ui/button";
-import { Pencil, Shuffle } from "lucide-react";
+import { Pencil, Shuffle, Settings } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 import type {
   Experiment,
@@ -107,6 +108,19 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
           )}
           <WorkspaceSwitcher readOnly />
           <ActivityPopover activities={experiment.activities} />
+          <button
+            type="button"
+            onClick={() => setActiveTab("settings")}
+            title="Settings"
+            className={cn(
+              "flex items-center justify-center size-7 rounded-md transition-colors cursor-pointer",
+              activeTab === "settings"
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Settings className="size-3.5" />
+          </button>
         </div>
       </div>
     </header>
@@ -140,13 +154,15 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
         rightCollapsed={rightCollapsed}
         onRightCollapsedChange={setRightCollapsed}
         left={
-          <div className="flex h-full">
-            <StageSidebar
-              experiment={experiment}
-              activeTab={activeTab}
-              onStageSelect={setActiveTab}
-            />
-            <div className="flex-1 min-w-0">
+          <div className="flex flex-col h-full">
+            {activeTab !== "settings" && (
+              <StageStepper
+                experiment={experiment}
+                activeTab={activeTab}
+                onStageSelect={setActiveTab}
+              />
+            )}
+            <div className="flex-1 min-w-0 min-h-0">
               <StageContentPanel experiment={experiment} activeTab={activeTab} />
             </div>
           </div>

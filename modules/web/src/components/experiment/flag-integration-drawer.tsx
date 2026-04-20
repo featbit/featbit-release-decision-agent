@@ -1,13 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -277,19 +270,17 @@ function newId() {
   return `tmp-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 }
 
-// ── Main drawer ─────────────────────────────────────────────────────────────
+// ── Main panel (inline, replaces the stage content while open) ──────────────
 
-export function FlagIntegrationDrawer({
+export function FlagIntegrationPanel({
   experiment,
   experimentRuns,
-  open,
-  onOpenChange,
+  onClose,
   onEditAdvanced,
 }: {
   experiment: Experiment;
   experimentRuns: ExperimentRun[];
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
+  onClose: () => void;
   onEditAdvanced?: () => void;
 }) {
   const banditImport = useMemo(
@@ -300,80 +291,78 @@ export function FlagIntegrationDrawer({
   const [mode, setMode] = useState<Mode>(initialMode);
 
   useEffect(() => {
-    if (open) setMode(experiment.flagKey ? "config" : "picker");
-  }, [open, experiment.flagKey, experiment.id]);
+    setMode(experiment.flagKey ? "config" : "picker");
+  }, [experiment.flagKey, experiment.id]);
 
   const flagKey = experiment.flagKey;
   const envId = experiment.featbitEnvId;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        className="w-[96vw] sm:!max-w-[88rem] p-0 flex flex-col gap-0"
-      >
-        <DrawerHeader
-          mode={mode}
-          flagKey={flagKey}
-          onChangeFlag={() => setMode("picker")}
-          onEditAdvanced={onEditAdvanced}
-          canChangeFlag={Boolean(experiment.flagKey)}
-        />
+    <section className="flex flex-col h-full min-h-0 rounded-md border bg-background">
+      <PanelHeader
+        mode={mode}
+        flagKey={flagKey}
+        onChangeFlag={() => setMode("picker")}
+        onEditAdvanced={onEditAdvanced}
+        onClose={onClose}
+        canChangeFlag={Boolean(experiment.flagKey)}
+      />
 
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          {mode === "picker" ? (
-            <div className="px-5 py-4 flex-1 min-h-0 flex flex-col">
-              <FlagPickerBody
-                active={open && mode === "picker"}
-                experimentId={experiment.id}
-                experimentProjectKey={experiment.featbitProjectKey}
-                experimentEnvId={experiment.featbitEnvId}
-                onPicked={() => setMode("config")}
-                onCancel={
-                  experiment.flagKey ? () => setMode("config") : undefined
-                }
-              />
-            </div>
-          ) : flagKey && envId ? (
-            <FlagConfigBody
-              key={`${envId}:${flagKey}`}
-              envId={envId}
-              flagKey={flagKey}
-              active={open && mode === "config"}
-              banditImport={banditImport}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        {mode === "picker" ? (
+          <div className="px-5 py-4 flex-1 min-h-0 flex flex-col">
+            <FlagPickerBody
+              active={mode === "picker"}
+              experimentId={experiment.id}
+              experimentProjectKey={experiment.featbitProjectKey}
+              experimentEnvId={experiment.featbitEnvId}
+              onPicked={() => setMode("config")}
+              onCancel={
+                experiment.flagKey ? () => setMode("config") : undefined
+              }
             />
-          ) : (
-            <div className="p-8 text-center text-sm text-muted-foreground italic">
-              No flag bound. Pick one first.
-            </div>
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
+          </div>
+        ) : flagKey && envId ? (
+          <FlagConfigBody
+            key={`${envId}:${flagKey}`}
+            envId={envId}
+            flagKey={flagKey}
+            active={mode === "config"}
+            banditImport={banditImport}
+          />
+        ) : (
+          <div className="p-8 text-center text-sm text-muted-foreground italic">
+            No flag bound. Pick one first.
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
-function DrawerHeader({
+function PanelHeader({
   mode,
   flagKey,
   onChangeFlag,
   onEditAdvanced,
+  onClose,
   canChangeFlag,
 }: {
   mode: Mode;
   flagKey: string | null;
   onChangeFlag: () => void;
   onEditAdvanced?: () => void;
+  onClose: () => void;
   canChangeFlag: boolean;
 }) {
   return (
-    <SheetHeader className="border-b px-5 py-4 gap-0">
+    <div className="border-b px-5 py-4">
       <div className="flex items-start gap-4">
         <div className="size-9 rounded-md bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
           <Flag className="size-5 text-blue-700 dark:text-blue-300" />
         </div>
         <div className="flex-1 min-w-0">
-          <SheetTitle className="text-base flex items-center gap-2">
+          <h2 className="text-base font-medium flex items-center gap-2">
             {mode === "picker"
               ? "Connect a Feature Flag"
               : flagKey ?? "Feature Flag"}
@@ -385,14 +374,14 @@ function DrawerHeader({
                 bound
               </Badge>
             )}
-          </SheetTitle>
-          <SheetDescription className="text-xs mt-0.5">
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
             {mode === "picker"
               ? "Pick an existing flag from FeatBit. Variations and toggle state stay managed in FeatBit."
               : "Edit targeting rules and default rollout. Toggle and variations are managed in FeatBit."}
-          </SheetDescription>
+          </p>
         </div>
-        <div className="flex gap-2 shrink-0 mr-8">
+        <div className="flex gap-2 shrink-0 items-center">
           {mode === "config" && canChangeFlag && (
             <Button variant="outline" size="sm" onClick={onChangeFlag} className="gap-1.5">
               <ArrowLeftRight className="size-3.5" /> Change flag
@@ -403,9 +392,18 @@ function DrawerHeader({
               <KeyRound className="size-3.5" /> SDK credentials
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            className="ml-1"
+            title="Close"
+          >
+            <X className="size-4" />
+          </Button>
         </div>
       </div>
-    </SheetHeader>
+    </div>
   );
 }
 
@@ -1490,13 +1488,15 @@ function SegmentValueInput({
 
 // ── Rollout editor ──────────────────────────────────────────────────────────
 
+// Palette tuned for stacked-bar contrast: adjacent colors span ~120° of hue
+// so even the first two (blue + orange) read as clearly different slices.
 const PALETTE = [
   { bar: "bg-blue-500",    text: "text-blue-700 dark:text-blue-300" },
-  { bar: "bg-violet-500",  text: "text-violet-700 dark:text-violet-300" },
+  { bar: "bg-orange-500",  text: "text-orange-700 dark:text-orange-300" },
   { bar: "bg-emerald-500", text: "text-emerald-700 dark:text-emerald-300" },
-  { bar: "bg-amber-500",   text: "text-amber-700 dark:text-amber-300" },
   { bar: "bg-pink-500",    text: "text-pink-700 dark:text-pink-300" },
-  { bar: "bg-cyan-500",    text: "text-cyan-700 dark:text-cyan-300" },
+  { bar: "bg-violet-500",  text: "text-violet-700 dark:text-violet-300" },
+  { bar: "bg-yellow-400",  text: "text-yellow-700 dark:text-yellow-300" },
 ];
 
 function RolloutEditor({
@@ -1546,16 +1546,18 @@ function RolloutEditor({
             Sum: {outerSum}% {sumValid ? "✓" : "(should be 100%)"}
           </span>
         </div>
-        <div className="h-3 rounded overflow-hidden flex bg-muted">
+        <div className="h-5 rounded overflow-hidden flex bg-muted divide-x divide-background/30">
           {variations.map((v, idx) => {
             if (v.percentage <= 0) return null;
             return (
               <div
                 key={v.id}
-                className={PALETTE[idx % PALETTE.length].bar}
+                className={`${PALETTE[idx % PALETTE.length].bar} flex items-center justify-center text-[10px] font-mono font-medium text-white tabular-nums`}
                 style={{ width: `${Math.min(100, v.percentage)}%` }}
                 title={`${variationName(flag, v.id)}: ${v.percentage}%`}
-              />
+              >
+                {v.percentage >= 10 ? `${v.percentage}%` : ""}
+              </div>
             );
           })}
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { updateFlagConfigAction } from "@/lib/actions";
 import {
   Dialog,
@@ -14,9 +14,29 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Flag, Pencil, Eye, EyeOff, ExternalLink, Code, GitBranch, Plus, X } from "lucide-react";
+import {
+  Flag,
+  Pencil,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Code,
+  GitBranch,
+  Plus,
+  X,
+  KeyRound,
+  Copy,
+  Check,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import type { Experiment, ExperimentRun } from "@/generated/prisma";
-import { FlagIntegrationDrawer } from "./flag-integration-drawer";
+import {
+  projectService,
+  SecretType,
+  type EnvSecret,
+} from "@/lib/featbit-auth";
 
 /* ── Types ── */
 type VariantRow = { key: string; description: string };
@@ -285,7 +305,7 @@ function ReadOnlyRow({
   );
 }
 
-/* ── SDK credentials popup (runtime fields: envSecret, accessToken, serverUrl) ── */
+/* ── SDK Credentials popup: live secrets from FeatBit + editable server URL ── */
 function SdkCredentialsPopup({
   experiment,
   open,
@@ -295,108 +315,216 @@ function SdkCredentialsPopup({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  // Always open directly in edit mode — drawer already shows the read-only flag state.
-  const [editing, setEditing] = useState(true);
-  const featbitUrl = buildFeatBitUrl(experiment);
-  const variantRows = parseVariantsToRows(experiment.variants);
+  const [secrets, setSecrets] = useState<EnvSecret[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [serverUrl, setServerUrl] = useState(experiment.flagServerUrl ?? "");
+  const [saving, setSaving] = useState(false);
 
-  function close() {
-    setEditing(true);
-    onOpenChange(false);
+  const load = useCallback(async () => {
+    if (!experiment.featbitEnvId) {
+      setError("No FeatBit environment bound. Connect a flag first.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const projects = await projectService.getProjects();
+      let env = null;
+      for (const p of projects) {
+        env = p.environments?.find((e) => e.id === experiment.featbitEnvId);
+        if (env) break;
+      }
+      if (!env) {
+        setError(
+          "Couldn't find this environment in FeatBit. You may have lost access.",
+        );
+        setSecrets([]);
+      } else {
+        setSecrets(env.secrets ?? []);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [experiment.featbitEnvId]);
+
+  useEffect(() => {
+    if (open) load();
+  }, [open, load]);
+
+  useEffect(() => {
+    if (open) setServerUrl(experiment.flagServerUrl ?? "");
+  }, [open, experiment.flagServerUrl]);
+
+  const serverSecret = secrets?.find((s) => s.type === SecretType.Server);
+  const clientSecret = secrets?.find((s) => s.type === SecretType.Client);
+
+  async function saveServerUrlAndSyncSecret() {
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append("experimentId", experiment.id);
+      fd.append("flagKey", experiment.flagKey ?? "");
+      fd.append("flagServerUrl", serverUrl.trim());
+      // Sync the server env secret into the experiment so the sandbox runner
+      // can evaluate flags. Don't touch variants or other fields.
+      if (serverSecret?.value) fd.append("envSecret", serverSecret.value);
+      if (experiment.accessToken) fd.append("accessToken", experiment.accessToken);
+      if (experiment.featbitProjectKey)
+        fd.append("featbitProjectKey", experiment.featbitProjectKey);
+      if (experiment.featbitEnvId)
+        fd.append("featbitEnvId", experiment.featbitEnvId);
+      await updateFlagConfigAction(fd);
+      onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v) { setEditing(false); onOpenChange(false); }
-      }}
-    >
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-sm">
-            <Flag className="size-4" />
-            Feature Flag Details
+            <KeyRound className="size-4" />
+            SDK Credentials
           </DialogTitle>
           <DialogDescription className="text-xs">
-            FeatBit connection details, variations, and targeting link.
+            Credentials for FeatBit SDKs / API to evaluate this flag. Pulled
+            live from FeatBit — regenerate them in FeatBit if compromised.
           </DialogDescription>
         </DialogHeader>
 
-        {editing ? (
-          <FlagEditForm experiment={experiment} onDone={close} onCancel={() => setEditing(false)} />
+        {loading && !secrets ? (
+          <div className="flex items-center gap-2 justify-center py-8 text-xs text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading from FeatBit…
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 py-6 text-sm">
+            <AlertCircle className="size-6 text-destructive" />
+            <p className="text-destructive text-center text-xs max-w-md">{error}</p>
+            <Button variant="outline" size="sm" onClick={load}>
+              <RefreshCw className="size-3.5 mr-1.5" /> Retry
+            </Button>
+          </div>
         ) : (
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <ReadOnlyRow label="Flag Key" value={experiment.flagKey} mono />
-              <ReadOnlyRow label="FeatBit Project" value={experiment.featbitProjectKey} mono />
-              <ReadOnlyRow label="Environment ID" value={experiment.featbitEnvId} mono />
-              <ReadOnlyRow label="Server URL" value={experiment.flagServerUrl} mono />
-              <ReadOnlyRow label="Env Secret" value={mask(experiment.envSecret)} mono />
-              <ReadOnlyRow label="Access Token" value={mask(experiment.accessToken)} mono />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="serverUrl" className="text-xs">
+                Server address
+              </Label>
+              <Input
+                id="serverUrl"
+                value={serverUrl}
+                onChange={(e) => setServerUrl(e.target.value)}
+                placeholder="https://app-eval.featbit.co"
+                className="text-sm font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Used by SDKs or API for flag evaluation.
+              </p>
             </div>
 
-            {/* Variations read-only */}
-            {variantRows.length > 0 && (
-              <div className="space-y-1">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase">
-                  Variations
-                </span>
-                <div className="space-y-1">
-                  {variantRows.map((v, i) => (
-                    <div key={i} className="flex items-baseline gap-2">
-                      <span className="text-xs font-mono font-medium">{v.key}</span>
-                      {v.description && (
-                        <span className="text-[11px] text-muted-foreground">{v.description}</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {featbitUrl && (
-              <a
-                href={featbitUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-              >
-                <ExternalLink className="size-3" />
-                Open in FeatBit Targeting
-              </a>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                <Pencil className="size-3 mr-1.5" />
-                Edit
-              </Button>
-            </DialogFooter>
+            <SecretRow label="Server env secret" secret={serverSecret} />
+            <SecretRow label="Client env secret" secret={clientSecret} />
           </div>
         )}
+
+        <DialogFooter className="gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+          >
+            Close
+          </Button>
+          <Button
+            size="sm"
+            disabled={saving || !serverSecret}
+            onClick={saveServerUrlAndSyncSecret}
+          >
+            {saving ? (
+              <Loader2 className="size-3.5 animate-spin mr-1.5" />
+            ) : null}
+            Sync to experiment
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-/* ── Main flag + variants section ── */
+/* ── Read-only secret row with copy button ── */
+function SecretRow({ label, secret }: { label: string; secret: EnvSecret | undefined }) {
+  const [visible, setVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    if (!secret?.value) return;
+    try {
+      await navigator.clipboard.writeText(secret.value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be blocked — no-op */
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      {secret ? (
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Input
+              readOnly
+              type={visible ? "text" : "password"}
+              value={secret.value}
+              className="text-sm font-mono pr-9"
+            />
+            <button
+              type="button"
+              onClick={() => setVisible((v) => !v)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              tabIndex={-1}
+            >
+              {visible ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+            </button>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={copy}
+            className="shrink-0 gap-1.5"
+          >
+            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">
+          Not defined in this environment.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ── Main flag + variants section (summary view only) ── */
 export function FlagIntegrationHeader({
   experiment,
   experimentRuns,
+  onEdit,
 }: {
   experiment: Experiment;
   experimentRuns: ExperimentRun[];
+  onEdit: () => void;
 }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [sdkCredsOpen, setSdkCredsOpen] = useState(false);
   const isConfigured = Boolean(experiment.flagKey);
   const featbitUrl = buildFeatBitUrl(experiment);
-
-  // Primary entry: everything (picker + live flag state) lives inside the drawer.
-  function openPrimary() {
-    setDrawerOpen(true);
-  }
 
   const allVariants = parseVariantsToRows(experiment.variants);
 
@@ -411,10 +539,10 @@ export function FlagIntegrationHeader({
     <section className="space-y-3">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
         <Code className="size-3.5" />
-        <span>Feature Flag Integration</span>
+        <span>Flag Integration & Rollout</span>
         <button
           type="button"
-          onClick={openPrimary}
+          onClick={onEdit}
           className="ml-1 text-muted-foreground/50 hover:text-foreground transition-colors"
           title="Edit feature flag"
         >
@@ -422,29 +550,33 @@ export function FlagIntegrationHeader({
         </button>
       </div>
 
-      <div className="rounded-md border bg-muted/10 px-3 py-3 space-y-3">
-        {/* Flag key */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase">Flag Key</span>
+      <div className="rounded-md border bg-muted/10 px-4 py-4 space-y-4">
+        {/* Flag key — own line, bold, prominent */}
+        <div className="space-y-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase">
+            Flag Key
+          </span>
           {isConfigured ? (
-            <button
-              type="button"
-              onClick={openPrimary}
-              className="group flex items-center gap-1.5 cursor-pointer"
-            >
-              <Badge className="text-sm font-mono px-2.5 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 group-hover:bg-blue-200 dark:group-hover:bg-blue-900/60 transition-colors">
-                <Flag className="size-3 mr-1" />
-                {experiment.flagKey}
-              </Badge>
-              {featbitUrl && (
-                <ExternalLink className="size-3 text-muted-foreground group-hover:text-blue-600 transition-colors" />
-              )}
-            </button>
+            <div className="flex items-baseline gap-2">
+              <button
+                type="button"
+                onClick={onEdit}
+                className="group inline-flex items-baseline gap-1.5 cursor-pointer text-left"
+              >
+                <Flag className="size-4 text-blue-600 dark:text-blue-400 self-center shrink-0" />
+                <span className="font-mono text-base font-bold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                  {experiment.flagKey}
+                </span>
+                {featbitUrl && (
+                  <ExternalLink className="size-3.5 text-muted-foreground group-hover:text-blue-600 transition-colors shrink-0 self-center" />
+                )}
+              </button>
+            </div>
           ) : (
             <button
               type="button"
-              onClick={openPrimary}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground/50 italic hover:text-muted-foreground cursor-pointer"
+              onClick={onEdit}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground/60 italic hover:text-muted-foreground cursor-pointer"
             >
               Not configured — click to set up
               <Pencil className="size-3" />
@@ -454,9 +586,11 @@ export function FlagIntegrationHeader({
 
         {/* Variations */}
         {allVariants.length > 0 && (
-          <div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Variations</span>
-            <div className="flex flex-wrap gap-1.5 mt-1">
+          <div className="space-y-1">
+            <span className="text-[10px] font-medium text-muted-foreground uppercase">
+              Variations
+            </span>
+            <div className="flex flex-wrap gap-1.5">
               {allVariants.map(({ key, description }) => {
                 const isControl = description?.toLowerCase().includes("control");
                 const isUsed = usedInRuns.has(key);
@@ -486,49 +620,31 @@ export function FlagIntegrationHeader({
           </div>
         )}
 
-        {/* FeatBit connection info */}
-        {isConfigured && (experiment.featbitProjectKey || experiment.featbitEnvId) && (
-          <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-            {experiment.featbitProjectKey && (
-              <span>
-                Project:{" "}
-                <span className="font-mono font-medium text-foreground">
-                  {experiment.featbitProjectKey}
-                </span>
-              </span>
-            )}
-            {experiment.featbitEnvId && (
-              <span>
-                Env:{" "}
-                <span className="font-mono font-medium text-foreground">
-                  {experiment.featbitEnvId}
-                </span>
-              </span>
-            )}
-            {experiment.envSecret && (
-              <Badge variant="secondary" className="text-[10px]">Connected</Badge>
-            )}
-          </div>
-        )}
+        {/* Primary CTA — full inline editor */}
+        <div className="pt-1">
+          <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5">
+            <Pencil className="size-3.5" />
+            {isConfigured ? "Edit Rollout Config" : "Connect & Configure Flag"}
+          </Button>
+        </div>
       </div>
 
-      <FlagIntegrationDrawer
-        experiment={experiment}
-        experimentRuns={experimentRuns}
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        onEditAdvanced={() => setSdkCredsOpen(true)}
-      />
-      <SdkCredentialsPopup
-        experiment={experiment}
-        open={sdkCredsOpen}
-        onOpenChange={setSdkCredsOpen}
-      />
     </section>
   );
 }
 
+/* Re-export for the stage-content-panel to render the inline config panel +
+ * SDK creds dialog. Parent controls open/close state. */
+export { FlagIntegrationPanel } from "./flag-integration-drawer";
+export { SdkCredentialsPopup };
+
 /* ── Legacy export ── */
 export function FlagConfig({ experiment }: { experiment: Experiment }) {
-  return <FlagIntegrationHeader experiment={experiment} experimentRuns={[]} />;
+  return (
+    <FlagIntegrationHeader
+      experiment={experiment}
+      experimentRuns={[]}
+      onEdit={() => {}}
+    />
+  );
 }

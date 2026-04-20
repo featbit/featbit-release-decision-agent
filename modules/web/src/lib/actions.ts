@@ -265,6 +265,37 @@ export async function updateExperimentRunAudienceAction(formData: FormData) {
   revalidatePath(`/experiments/${experimentId}`);
 }
 
+export async function updateExperimentRunObservationWindowAction(
+  formData: FormData,
+) {
+  const experimentRunId = formData.get("experimentRunId") as string;
+  const experimentId = formData.get("experimentId") as string;
+  const startRaw = (formData.get("observationStart") as string | null)?.trim();
+  const endRaw = (formData.get("observationEnd") as string | null)?.trim();
+
+  if (!experimentRunId) throw new Error("experimentRunId is required");
+
+  const toDate = (s: string | null | undefined) =>
+    s && !isNaN(new Date(s).getTime()) ? new Date(s) : null;
+
+  await updateExperimentRun(experimentRunId, {
+    observationStart: toDate(startRaw),
+    observationEnd: toDate(endRaw),
+  });
+
+  if (experimentId) {
+    await addActivity(experimentId, {
+      type: "note",
+      title: "Observation window updated",
+      detail:
+        startRaw || endRaw
+          ? `From ${startRaw || "—"} to ${endRaw || "—"}`
+          : "Cleared",
+    });
+    revalidatePath(`/experiments/${experimentId}`);
+  }
+}
+
 /**
  * Pick "guided" (AI-chat) or "expert" (self-configured) entry mode for a new
  * experiment. Called from the entry-mode picker; expert mode records the

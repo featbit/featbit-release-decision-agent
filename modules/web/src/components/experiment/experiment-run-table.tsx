@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useTransition } from "react";
 import {
   Beaker,
   Bot,
@@ -10,13 +10,16 @@ import {
   Info,
   Loader2,
   MessageCircle,
+  Pencil,
   RefreshCw,
   ShieldCheck,
   Target,
   Users,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -27,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { AnalysisView } from "./analysis-markdown";
 import { ExperimentRunTrafficConfig } from "./experiment-run-traffic-config";
 import { useChatTrigger } from "./chat-trigger-context";
+import { updateExperimentRunObservationWindowAction } from "@/lib/actions";
 import type { ExperimentRun } from "@/generated/prisma";
 
 /* ── Colour maps ── */
@@ -167,6 +171,115 @@ function fmtDate(d: Date | string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** <input type="datetime-local"> expects "YYYY-MM-DDTHH:mm" in local time. */
+function toLocalInput(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(date.getTime())) return "";
+  const off = date.getTimezoneOffset();
+  return new Date(date.getTime() - off * 60_000).toISOString().slice(0, 16);
+}
+
+/* ── Observation window (inline-editable on each run card) ── */
+function ObservationWindowInline({
+  run,
+  experimentId,
+}: {
+  run: ExperimentRun;
+  experimentId: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [start, setStart] = useState(toLocalInput(run.observationStart));
+  const [end, setEnd] = useState(toLocalInput(run.observationEnd));
+  const [pending, startTransition] = useTransition();
+
+  const baselineStart = toLocalInput(run.observationStart);
+  const baselineEnd = toLocalInput(run.observationEnd);
+  const dirty = start !== baselineStart || end !== baselineEnd;
+
+  function startEdit() {
+    setStart(baselineStart);
+    setEnd(baselineEnd);
+    setEditing(true);
+  }
+
+  function cancel() {
+    setStart(baselineStart);
+    setEnd(baselineEnd);
+    setEditing(false);
+  }
+
+  function save() {
+    const fd = new FormData();
+    fd.append("experimentRunId", run.id);
+    fd.append("experimentId", experimentId);
+    fd.append("observationStart", start);
+    fd.append("observationEnd", end);
+    startTransition(async () => {
+      await updateExperimentRunObservationWindowAction(fd);
+      setEditing(false);
+    });
+  }
+
+  if (editing) {
+    return (
+      <span className="inline-flex items-center gap-1.5 flex-wrap">
+        <Calendar className="size-3" />
+        <Input
+          type="datetime-local"
+          value={start}
+          onChange={(e) => setStart(e.target.value)}
+          className="h-7 text-xs w-44"
+        />
+        <span className="text-muted-foreground">→</span>
+        <Input
+          type="datetime-local"
+          value={end}
+          onChange={(e) => setEnd(e.target.value)}
+          className="h-7 text-xs w-44"
+        />
+        <Button
+          size="sm"
+          className="h-7 text-xs"
+          onClick={save}
+          disabled={!dirty || pending}
+        >
+          {pending ? "Saving…" : "Save"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs px-2"
+          onClick={cancel}
+          disabled={pending}
+        >
+          <X className="size-3" />
+        </Button>
+      </span>
+    );
+  }
+
+  const hasDates = run.observationStart && run.observationEnd;
+  return (
+    <button
+      type="button"
+      onClick={startEdit}
+      className="inline-flex items-center gap-1 group hover:text-foreground transition-colors"
+      title="Edit observation window"
+    >
+      <Calendar className="size-3" />
+      {hasDates ? (
+        <span>
+          {fmtDate(run.observationStart!)} → {fmtDate(run.observationEnd!)}
+        </span>
+      ) : (
+        <span className="italic">Set observation window</span>
+      )}
+      <Pencil className="size-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+    </button>
+  );
+}
+
 /* ── Tab content panels ── */
 
 function SummaryTab({
@@ -287,24 +400,31 @@ function SummaryTab({
         </div>
       )}
 
-      {/* Sample + window */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        {exp.minimumSample && (
-          <span>
-            Min sample:{" "}
-            <span className="tabular-nums font-medium text-foreground">
-              {exp.minimumSample}
-            </span>
-            /variant
+      {/* Observation window — prominent block, drives analysis query range */}
+      <div className="rounded-md border bg-muted/20 px-3 py-2 space-y-1">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+          <Calendar className="size-3" />
+          <span>Observation Window</span>
+          <span className="text-[9px] font-normal italic text-muted-foreground/70 normal-case tracking-normal">
+            analysis pulls data inside this range
           </span>
-        )}
-        {exp.observationStart && exp.observationEnd && (
-          <span>
-            <Calendar className="inline size-3 mr-0.5" />
-            {fmtDate(exp.observationStart)} → {fmtDate(exp.observationEnd)}
-          </span>
-        )}
+        </div>
+        <ObservationWindowInline
+          run={exp}
+          experimentId={exp.experimentId}
+        />
       </div>
+
+      {/* Min sample */}
+      {exp.minimumSample && (
+        <div className="text-xs text-muted-foreground">
+          Min sample:{" "}
+          <span className="tabular-nums font-medium text-foreground">
+            {exp.minimumSample}
+          </span>
+          /variant
+        </div>
+      )}
 
       {analysisPanel && (
         <div className="pt-1">

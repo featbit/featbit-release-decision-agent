@@ -46,12 +46,25 @@ export interface Organization {
   initialized: boolean;
 }
 
+export enum SecretType {
+  Client = "client",
+  Server = "server",
+}
+
+export interface EnvSecret {
+  id: string;
+  name: string;
+  type: SecretType;
+  value: string;
+}
+
 export interface Environment {
   id: string;
   projectId: string;
   name: string;
   key: string;
   description?: string;
+  secrets?: EnvSecret[];
 }
 
 export interface Project {
