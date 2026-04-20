@@ -49,6 +49,23 @@ Trigger analysis by POSTing to `/api/experiments/<experimentId>/analyze` with `{
 
 If the user asks "do you have my data?" or "can you see what I entered?", read `inputData` and confirm concretely: event name, per-variant n/k (or n/sum/sum_squares), guardrail events, inverse flags — not "I can't reach the database."
 
+### Respect the `inverse` flag — do not override the verdict
+
+The analyzer's `verdict` and `p_harm` values **already account for each metric's `inverse` flag** (read from the guardrails JSON on the experiment and from `metrics[event].inverse` in `inputData`). They are authoritative.
+
+**Hard rules:**
+
+1. **Do not quote metrics that don't exist.** The analyzer outputs `p_harm` (probability of harm) and `p_win` (probability of win) — they are complements. Never write things like "P(win) ≈ 0% so rollback" when the actual output field is `p_harm = 0`. That's inventing numbers.
+2. **Do not override the analyzer's `verdict` silently.** If the analyzer says `"guardrail healthy"` and `p_harm = 0`, that is the evidence. Your job is to frame it, not flip it.
+3. **When your intuition disagrees with the verdict, flag the configuration.** If a guardrail shows `rel_delta` with large magnitude (say |Δ| ≥ 50%) but `verdict: "guardrail healthy"` and `p_harm ≈ 0`, the most likely explanation is that `inverse` is set the wrong way for what the user actually meant. Ask, don't assume:
+
+   > "gtest moved from 2.3% to 20% (+770%), and the analyzer reports P(harm)=0 with verdict `healthy`. That's because the guardrail is configured as 'higher is better' (`inverse=false`). If this metric is actually 'lower is better' (e.g. error rate, abandonment, latency), flip `inverse` in the setup and re-run — the verdict will change. Which did you mean?"
+
+4. **If the user confirms the config is correct**, go with the analyzer's verdict. A +770% move on a higher-is-better guardrail is not harm.
+5. **If the user confirms inverse was wrong**, they need to toggle it in the wizard (Edit setup) and re-analyze. Do not pretend the flipped-direction numbers apply to the current run record — they don't until the re-analysis writes a fresh `analysisResult`.
+
+This rule exists because a previous run produced a ROLLBACK decision by misquoting `p_harm=0` as `P(win)≈0%` and ignoring `inverse=false`. That fabrication is not allowed.
+
 ## Decision Actions
 
 ### Evidence sufficiency check (CF-06 first)

@@ -12,10 +12,57 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Plus, X, Beaker, Target, ShieldCheck, Sigma, Database, Calendar } from "lucide-react";
+import { Plus, X, Beaker, Target, ShieldCheck, Sigma, Database, Calendar, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { saveExpertSetupAction } from "@/lib/actions";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { Experiment, ExperimentRun } from "@/generated/prisma";
+
+/* ── Tooltip question-mark used inline next to a field label ── */
+function FieldHelp({ children }: { children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            className="inline-flex cursor-help text-muted-foreground/50 hover:text-foreground focus:text-foreground transition-colors outline-none"
+          >
+            <HelpCircle className="size-3" />
+          </span>
+        }
+      />
+      <TooltipContent side="top" className="max-w-xs text-left leading-snug whitespace-normal">
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/* ── Label + inline help — keeps the (?) right next to the text ── */
+function LabelWithHelp({
+  htmlFor,
+  label,
+  help,
+  className,
+}: {
+  htmlFor?: string;
+  label: string;
+  help: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Label htmlFor={htmlFor} className={cn("flex items-center gap-1", className)}>
+      {label}
+      <FieldHelp>{help}</FieldHelp>
+    </Label>
+  );
+}
 
 /* ── Types ── */
 type GuardrailRow = {
@@ -309,7 +356,12 @@ function PriorPicker({
       {mode === "proper" && (
         <div className="grid grid-cols-2 gap-3 pt-1">
           <div className="space-y-1">
-            <Label htmlFor="priorMean" className="text-xs">Prior mean</Label>
+            <LabelWithHelp
+              htmlFor="priorMean"
+              label="Prior mean"
+              className="text-xs"
+              help="Expected relative effect before seeing data. 0 = you expect no difference; 0.1 = you expect a +10% lift. Shrinks early noisy estimates toward this value."
+            />
             <Input
               id="priorMean"
               name="priorMean"
@@ -324,7 +376,12 @@ function PriorPicker({
             </p>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="priorStddev" className="text-xs">Prior stddev</Label>
+            <LabelWithHelp
+              htmlFor="priorStddev"
+              label="Prior stddev"
+              className="text-xs"
+              help="Uncertainty around the prior mean. Larger = weaker prior (data dominates faster). Typical values: 0.1–0.5. If unsure, 0.3 is a safe default."
+            />
             <Input
               id="priorStddev"
               name="priorStddev"
@@ -384,7 +441,11 @@ function GuardrailsEditor({
           </button>
           <div className="grid grid-cols-2 gap-2 pr-5">
             <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Name</Label>
+              <LabelWithHelp
+                label="Name"
+                className="text-[10px] uppercase text-muted-foreground"
+                help="Human-readable label for this guardrail."
+              />
               <Input
                 value={row.name}
                 onChange={(e) => update(i, "name", e.target.value)}
@@ -393,7 +454,11 @@ function GuardrailsEditor({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Event</Label>
+              <LabelWithHelp
+                label="Event"
+                className="text-[10px] uppercase text-muted-foreground"
+                help="SDK event key sent to FeatBit for this guardrail metric. Must match the tracked event name exactly."
+              />
               <Input
                 value={row.event}
                 onChange={(e) => update(i, "event", e.target.value)}
@@ -404,7 +469,11 @@ function GuardrailsEditor({
           </div>
           <div className="grid grid-cols-[1fr_auto] gap-2 pr-5 items-end">
             <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>
+              <LabelWithHelp
+                label="Description"
+                className="text-[10px] uppercase text-muted-foreground"
+                help="Short note on what this guardrail protects against. Included in the decision record."
+              />
               <Textarea
                 value={row.description}
                 onChange={(e) => update(i, "description", e.target.value)}
@@ -414,7 +483,17 @@ function GuardrailsEditor({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-[10px] uppercase text-muted-foreground">Type</Label>
+              <LabelWithHelp
+                label="Type"
+                className="text-[10px] uppercase text-muted-foreground"
+                help={(
+                  <>
+                    <b>Binary</b> — pass <code>n</code> + <code>k</code> (converters).
+                    <br />
+                    <b>Numeric</b> — pass <code>n</code> + <code>sum</code> + <code>sum_squares</code>.
+                  </>
+                )}
+              />
               <select
                 value={row.metricType}
                 onChange={(e) => update(i, "metricType", e.target.value)}
@@ -429,17 +508,30 @@ function GuardrailsEditor({
               </select>
             </div>
           </div>
-          <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer select-none">
+          <label
+            className={cn(
+              "flex items-start gap-2 rounded-md border px-2.5 py-1.5 text-[11px] cursor-pointer select-none transition-colors",
+              row.inverse
+                ? "border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/30"
+                : "border-border bg-muted/20 hover:bg-muted/40",
+            )}
+          >
             <input
               type="checkbox"
               checked={row.inverse}
               onChange={(e) => update(i, "inverse", e.target.checked)}
-              className="size-3.5"
+              className="size-4 mt-0.5 accent-amber-600"
             />
-            <span>
-              Lower is better (inverse) — analyzer treats an increase as a
-              regression (e.g. latency, error rate).
+            <span className="flex-1">
+              <span className="font-medium text-foreground">Lower is better</span>
+              <span className="text-muted-foreground"> — a DECREASE is the win for this guardrail. Check this for metrics like abandonment, error rate, latency.</span>
             </span>
+            <FieldHelp>
+              <b>Critical:</b> the analyzer computes <code>P(harm)</code> based on this flag.
+              <br />• Unchecked (default) → higher is better, P(harm) = P(treatment &lt; control).
+              <br />• Checked → lower is better, P(harm) = P(treatment &gt; control).
+              <br />Setting this wrong flips P(harm) and the verdict — a huge regression can read as &quot;healthy&quot; if inverse isn&apos;t set.
+            </FieldHelp>
           </label>
 
           {/* Observed data for this guardrail */}
@@ -659,13 +751,20 @@ function VariantsDataEditor({
 
 /* ── Section wrapper ── */
 function Section({
-  icon, title, subtitle, children,
-}: { icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode }) {
+  icon, title, subtitle, help, children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+  help?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <fieldset className="space-y-3 rounded-lg border px-3 pb-3 pt-2">
       <legend className="px-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {icon}
         {title}
+        {help && <FieldHelp>{help}</FieldHelp>}
       </legend>
       {subtitle && <p className="text-[10px] text-muted-foreground -mt-1">{subtitle}</p>}
       {children}
@@ -748,6 +847,7 @@ function ExpertSetupForm({
   ];
 
   return (
+    <TooltipProvider delay={150}>
     <form
       action={async (formData) => {
         await saveExpertSetupAction(formData);
@@ -762,7 +862,17 @@ function ExpertSetupForm({
       )}
 
       {/* ── Algorithm ── */}
-      <Section icon={<Beaker className="size-3.5" />} title="Algorithm">
+      <Section
+        icon={<Beaker className="size-3.5" />}
+        title="Algorithm"
+        help={(
+          <>
+            <b>Bayesian A/B</b> — fixed traffic split, posterior probability of win and harm per variant. Best when you need a clean comparison.
+            <br />
+            <b>Multi-armed bandit</b> — adaptively shifts traffic toward the winning arm as data comes in. Best when minimizing regret matters more than a clean A/B comparison.
+          </>
+        )}
+      >
         <AlgorithmPicker defaultValue={method} />
       </Section>
 
@@ -773,7 +883,12 @@ function ExpertSetupForm({
       >
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label htmlFor="metricName" className="text-xs">Name</Label>
+            <LabelWithHelp
+              htmlFor="metricName"
+              label="Name"
+              className="text-xs"
+              help="Human-readable label for this metric, shown in the UI and decision notes (e.g. 'Checkout completion rate'). Does not need to match any event key."
+            />
             <Input
               id="metricName"
               name="metricName"
@@ -784,7 +899,12 @@ function ExpertSetupForm({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="metricEvent" className="text-xs">Event</Label>
+            <LabelWithHelp
+              htmlFor="metricEvent"
+              label="Event"
+              className="text-xs"
+              help="The event key your SDK sends to FeatBit (e.g. 'purchase_completed'). Must match the code exactly — the analyzer uses it to look up per-variant counts."
+            />
             <Input
               id="metricEvent"
               name="metricEvent"
@@ -797,7 +917,21 @@ function ExpertSetupForm({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label htmlFor="metricType" className="text-xs">Type</Label>
+            <LabelWithHelp
+              htmlFor="metricType"
+              label="Type"
+              className="text-xs"
+              help={(
+                <>
+                  <b>Binary</b>: yes/no outcome per user — the analyzer needs
+                  <code> n</code> (users) and <code>k</code> (converters).
+                  <br />
+                  <b>Numeric</b>: a value per user (revenue, duration) — the
+                  analyzer needs <code>n</code>, <code>sum</code>, and
+                  <code> sum_squares</code> to compute variance.
+                </>
+              )}
+            />
             <select
               id="metricType"
               name="metricType"
@@ -814,7 +948,19 @@ function ExpertSetupForm({
             </select>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="metricAgg" className="text-xs">Aggregation</Label>
+            <LabelWithHelp
+              htmlFor="metricAgg"
+              label="Aggregation"
+              className="text-xs"
+              help={(
+                <>
+                  How events are counted per user:
+                  <br />• <b>Once</b> — at most one event per user counts (deduped).
+                  <br />• <b>Count</b> — total event count.
+                  <br />• <b>Sum</b> — sum of value attached to events (numeric only).
+                </>
+              )}
+            />
             <NativeSelect id="metricAgg" name="metricAgg" defaultValue={metric.metricAgg}>
               <option value="once">Once per user</option>
               <option value="count">Count all</option>
@@ -823,9 +969,12 @@ function ExpertSetupForm({
           </div>
         </div>
         <div className="space-y-1">
-          <Label htmlFor="metricDescription" className="text-xs">
-            Description <span className="text-muted-foreground/60">(optional)</span>
-          </Label>
+          <LabelWithHelp
+            htmlFor="metricDescription"
+            label="Description (optional)"
+            className="text-xs"
+            help="Free-text context about what the metric measures and why it matters — goes into the decision record and helps the AI reason about tradeoffs."
+          />
           <Textarea
             id="metricDescription"
             name="metricDescription"
@@ -835,18 +984,31 @@ function ExpertSetupForm({
             placeholder="What does this measure and why does it matter?"
           />
         </div>
-        <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer select-none">
+        <label
+          className={cn(
+            "flex items-start gap-2 rounded-md border px-2.5 py-2 text-[11px] cursor-pointer select-none transition-colors",
+            primaryInverse
+              ? "border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/30"
+              : "border-border bg-muted/20 hover:bg-muted/40",
+          )}
+        >
           <input
             type="checkbox"
             name="primaryInverse"
             checked={primaryInverse}
             onChange={(e) => setPrimaryInverse(e.target.checked)}
-            className="size-3.5"
+            className="size-4 mt-0.5 accent-amber-600"
           />
-          <span>
-            Lower is better (inverse) — check for metrics where a decrease is
-            the win (latency, error rate, drop-off).
+          <span className="flex-1">
+            <span className="font-medium text-foreground">Lower is better (inverse)</span>
+            <span className="text-muted-foreground"> — check for metrics where a DECREASE is the win: latency, error rate, bounce rate, drop-off.</span>
           </span>
+          <FieldHelp>
+            <b>Critical — sets the direction of P(harm) / P(win).</b>
+            <br />• Unchecked (default) → higher is better.
+            <br />• Checked → lower is better.
+            <br />If this is wrong, a huge regression can show up as verdict <i>&quot;strong signal → adopt treatment&quot;</i> because the analyzer thinks your metric is going the right way.
+          </FieldHelp>
         </label>
       </Section>
 
@@ -860,14 +1022,31 @@ function ExpertSetupForm({
       </Section>
 
       {/* ── Priors & min sample ── */}
-      <Section icon={<Sigma className="size-3.5" />} title="Prior & Stopping">
+      <Section
+        icon={<Sigma className="size-3.5" />}
+        title="Prior & Stopping"
+        help={(
+          <>
+            Controls how the analyzer combines past belief with observed data, plus the floor for when a decision is allowed.
+            <br />
+            <b>Flat prior</b>: no prior belief — the data drives everything.
+            <br />
+            <b>Informative prior</b>: a Gaussian prior (mean, stddev) shrinks early noisy results toward your prior belief. Use when you have past A/B data or a known baseline.
+          </>
+        )}
+      >
         <PriorPicker
           defaultMode={priorMode}
           defaultMean={priorMean}
           defaultStddev={priorStddev}
         />
         <div className="space-y-1">
-          <Label htmlFor="minimumSample" className="text-xs">Minimum sample per variant</Label>
+          <LabelWithHelp
+            htmlFor="minimumSample"
+            label="Minimum sample per variant"
+            className="text-xs"
+            help="The analysis stays INCONCLUSIVE until each variant has at least this many users / events. Protects against declaring a winner on noisy early data. Leave blank for no floor."
+          />
           <Input
             id="minimumSample"
             name="minimumSample"
@@ -893,7 +1072,12 @@ function ExpertSetupForm({
       >
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label htmlFor="observationStart" className="text-xs">Start</Label>
+            <LabelWithHelp
+              htmlFor="observationStart"
+              label="Start"
+              className="text-xs"
+              help="First day data was collected for this run. Shown in the decision report; also used by the analyzer when pulling live data from track-service."
+            />
             <Input
               id="observationStart"
               name="observationStart"
@@ -903,7 +1087,12 @@ function ExpertSetupForm({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="observationEnd" className="text-xs">End</Label>
+            <LabelWithHelp
+              htmlFor="observationEnd"
+              label="End"
+              className="text-xs"
+              help="Last day of the observation window. Leave blank while the run is ongoing — the analyzer will use today."
+            />
             <Input
               id="observationEnd"
               name="observationEnd"
@@ -923,7 +1112,12 @@ function ExpertSetupForm({
       >
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label htmlFor="controlVariant" className="text-xs">Control variant</Label>
+            <LabelWithHelp
+              htmlFor="controlVariant"
+              label="Control variant"
+              className="text-xs"
+              help="Variant name treated as the baseline. Must match the variant key in your FeatBit flag and in the data rows below."
+            />
             <Input
               id="controlVariant"
               name="controlVariant"
@@ -934,7 +1128,12 @@ function ExpertSetupForm({
             />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="treatmentVariant" className="text-xs">Treatment variant(s)</Label>
+            <LabelWithHelp
+              htmlFor="treatmentVariant"
+              label="Treatment variant(s)"
+              className="text-xs"
+              help="Variant(s) being compared against control. Use a comma-separated list for multiple arms (bandit)."
+            />
             <Input
               id="treatmentVariant"
               name="treatmentVariant"
@@ -958,5 +1157,6 @@ function ExpertSetupForm({
         <Button type="submit" size="sm">Save setup</Button>
       </DialogFooter>
     </form>
+    </TooltipProvider>
   );
 }

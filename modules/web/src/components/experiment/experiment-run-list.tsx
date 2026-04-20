@@ -31,7 +31,7 @@ const DECISION_COLOR: Record<string, string> = {
   CONTINUE:
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
   PAUSE: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
-  ROLLBACK_CANDIDATE:
+  ROLLBACK:
     "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   INCONCLUSIVE:
     "bg-muted text-muted-foreground",

@@ -36,7 +36,7 @@ const DECISION_BG: Record<string, string> = {
     "bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800",
   PAUSE:
     "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-800",
-  ROLLBACK_CANDIDATE:
+  ROLLBACK:
     "bg-red-100 border-red-300 dark:bg-red-900/40 dark:border-red-700",
   INCONCLUSIVE:
     "bg-gray-50 border-gray-200 dark:bg-gray-900/30 dark:border-gray-700",
@@ -47,7 +47,7 @@ const DECISION_COLORS: Record<string, string> = {
     "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
   PAUSE:
     "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
-  ROLLBACK_CANDIDATE:
+  ROLLBACK:
     "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
   INCONCLUSIVE:
     "bg-gray-100 text-gray-700 dark:bg-gray-800/40 dark:text-gray-300",
@@ -628,7 +628,7 @@ export function ExperimentRunTable({
   function handleAnalyze(exp: ExperimentRun) {
     if (!triggerChat) return;
 
-    const message = `请基于当前实验 run "${exp.slug}" 的现有分析结果，给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK_CANDIDATE / INCONCLUSIVE），并说明：1) 主指标信号 2) guardrail 风险 3) 下一步行动。`;
+    const message = `请基于当前实验 run "${exp.slug}" 的现有分析结果，给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE），并说明：1) 主指标信号 2) guardrail 风险 3) 下一步行动。`;
     triggerChat(message);
   }
 
