@@ -66,6 +66,32 @@ export async function updateFlagConfigAction(formData: FormData) {
   revalidatePath(`/experiments/${experimentId}`);
 }
 
+export async function bindFeatbitFlagAction(formData: FormData) {
+  const experimentId = formData.get("experimentId") as string;
+  const flagKey = formData.get("flagKey") as string;
+  const featbitEnvId = formData.get("featbitEnvId") as string;
+  const featbitProjectKey = formData.get("featbitProjectKey") as string | null;
+  const variants = formData.get("variants") as string | null;
+
+  if (!experimentId || !flagKey || !featbitEnvId) {
+    throw new Error("experimentId, flagKey and featbitEnvId are required");
+  }
+
+  await updateExperiment(experimentId, {
+    flagKey: flagKey.trim(),
+    featbitEnvId: featbitEnvId.trim(),
+    featbitProjectKey: featbitProjectKey?.trim() || null,
+    variants: variants?.trim() || null,
+  });
+
+  await addActivity(experimentId, {
+    type: "note",
+    title: `Connected feature flag ${flagKey}`,
+  });
+
+  revalidatePath(`/experiments/${experimentId}`);
+}
+
 export async function updateMetricsAction(formData: FormData) {
   const experimentId = formData.get("experimentId") as string;
   const metricName = (formData.get("metricName") as string | null)?.trim() || null;

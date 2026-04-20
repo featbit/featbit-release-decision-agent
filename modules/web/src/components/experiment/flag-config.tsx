@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Flag, Pencil, Eye, EyeOff, ExternalLink, Code, GitBranch, Plus, X } from "lucide-react";
 import type { Experiment, ExperimentRun } from "@/generated/prisma";
+import { FlagIntegrationDrawer } from "./flag-integration-drawer";
 
 /* ── Types ── */
 type VariantRow = { key: string; description: string };
@@ -284,8 +285,8 @@ function ReadOnlyRow({
   );
 }
 
-/* ── Flag detail popup ── */
-function FlagDetailPopup({
+/* ── SDK credentials popup (runtime fields: envSecret, accessToken, serverUrl) ── */
+function SdkCredentialsPopup({
   experiment,
   open,
   onOpenChange,
@@ -294,12 +295,13 @@ function FlagDetailPopup({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  // Always open directly in edit mode — drawer already shows the read-only flag state.
+  const [editing, setEditing] = useState(true);
   const featbitUrl = buildFeatBitUrl(experiment);
   const variantRows = parseVariantsToRows(experiment.variants);
 
   function close() {
-    setEditing(false);
+    setEditing(true);
     onOpenChange(false);
   }
 
@@ -386,9 +388,15 @@ export function FlagIntegrationHeader({
   experiment: Experiment;
   experimentRuns: ExperimentRun[];
 }) {
-  const [popupOpen, setPopupOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sdkCredsOpen, setSdkCredsOpen] = useState(false);
   const isConfigured = Boolean(experiment.flagKey);
   const featbitUrl = buildFeatBitUrl(experiment);
+
+  // Primary entry: everything (picker + live flag state) lives inside the drawer.
+  function openPrimary() {
+    setDrawerOpen(true);
+  }
 
   const allVariants = parseVariantsToRows(experiment.variants);
 
@@ -406,7 +414,7 @@ export function FlagIntegrationHeader({
         <span>Feature Flag Integration</span>
         <button
           type="button"
-          onClick={() => setPopupOpen(true)}
+          onClick={openPrimary}
           className="ml-1 text-muted-foreground/50 hover:text-foreground transition-colors"
           title="Edit feature flag"
         >
@@ -421,7 +429,7 @@ export function FlagIntegrationHeader({
           {isConfigured ? (
             <button
               type="button"
-              onClick={() => setPopupOpen(true)}
+              onClick={openPrimary}
               className="group flex items-center gap-1.5 cursor-pointer"
             >
               <Badge className="text-sm font-mono px-2.5 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 group-hover:bg-blue-200 dark:group-hover:bg-blue-900/60 transition-colors">
@@ -435,7 +443,7 @@ export function FlagIntegrationHeader({
           ) : (
             <button
               type="button"
-              onClick={() => setPopupOpen(true)}
+              onClick={openPrimary}
               className="flex items-center gap-1.5 text-xs text-muted-foreground/50 italic hover:text-muted-foreground cursor-pointer"
             >
               Not configured — click to set up
@@ -504,7 +512,18 @@ export function FlagIntegrationHeader({
         )}
       </div>
 
-      <FlagDetailPopup experiment={experiment} open={popupOpen} onOpenChange={setPopupOpen} />
+      <FlagIntegrationDrawer
+        experiment={experiment}
+        experimentRuns={experimentRuns}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onEditAdvanced={() => setSdkCredsOpen(true)}
+      />
+      <SdkCredentialsPopup
+        experiment={experiment}
+        open={sdkCredsOpen}
+        onOpenChange={setSdkCredsOpen}
+      />
     </section>
   );
 }
