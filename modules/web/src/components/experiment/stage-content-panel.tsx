@@ -556,8 +556,7 @@ function GuardrailBody({ g }: { g: GuardrailMetric }) {
       </LabelValue>
       <LabelValue label="Event Key">
         {g.event ? (
-          <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">
-            <Code className="size-3 text-muted-foreground" />
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">
             {g.event}
           </span>
         ) : (
