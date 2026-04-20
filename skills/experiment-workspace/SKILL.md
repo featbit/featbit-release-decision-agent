@@ -106,6 +106,14 @@ All experiment data lives in the shared PostgreSQL database, accessible via the 
 2. `track-service` must be running and receiving `flag_evaluation` + metric events from your instrumentation. Analysis reads straight from ClickHouse via track-service — no local `inputData` population step is needed.
 3. No Python or numpy/scipy install required on the agent side — analysis runs server-side inside the web app.
 
+### Expert-mode experiments (pre-pasted data, no flag wired)
+
+When `entryMode === "expert"` and a run already has `inputData` populated via the web wizard, the analysis endpoint does **not** need `flagKey` or `featbitEnvId`. The endpoint automatically uses the stored `inputData` when the live track-service fetch isn't possible or a flag isn't wired. Key behaviors to remember:
+
+- Don't ask the user to paste data or configure a FeatBit flag before analyzing — the wizard already did the equivalent.
+- The analyze response includes `dataSource: "live" | "stored"` — read it and mention it when explaining results ("numbers came from your pasted data" vs "fresh from track-service").
+- `inputData` is the canonical record of what the user entered: parse it to confirm numbers back to them when they ask "did you get my data?"
+
 ---
 
 ### "I want to start an experiment"

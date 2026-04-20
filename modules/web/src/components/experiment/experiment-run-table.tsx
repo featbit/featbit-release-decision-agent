@@ -37,7 +37,7 @@ const DECISION_BG: Record<string, string> = {
   PAUSE:
     "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-800",
   ROLLBACK_CANDIDATE:
-    "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800",
+    "bg-red-100 border-red-300 dark:bg-red-900/40 dark:border-red-700",
   INCONCLUSIVE:
     "bg-gray-50 border-gray-200 dark:bg-gray-900/30 dark:border-gray-700",
 };
@@ -384,10 +384,15 @@ function AnalysisTab({
 }) {
   // Pre-check what the backend requires. Rendering a config gap here beats
   // auto-firing a POST that always 400s before the experiment is set up.
+  // If inputData was already pasted in expert setup, we can analyze without
+  // live flag wiring — only the metric event is strictly needed.
+  const hasStoredInputData = !!exp.inputData;
   const missingFields: string[] = [];
-  if (!flagKey) missingFields.push("flag key");
-  if (!featbitEnvId) missingFields.push("FeatBit env ID");
   if (!exp.primaryMetricEvent) missingFields.push("primary metric event");
+  if (!hasStoredInputData) {
+    if (!flagKey) missingFields.push("flag key");
+    if (!featbitEnvId) missingFields.push("FeatBit env ID");
+  }
 
   const [analysisResult, setAnalysisResult] = useState<string | null>(
     exp.analysisResult ?? null

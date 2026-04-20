@@ -29,15 +29,25 @@ Check these fields:
 
 | Field | Purpose |
 |---|---|
+| `entryMode` | `"expert"` → user pre-filled setup + possibly data via the wizard; do not ask them to re-describe the experiment |
 | `primaryMetric` | The metric that decides the outcome |
 | `guardrails` | Metrics that must not degrade |
-| `hypothesis` | The causal claim being tested |
+| `hypothesis` | The causal claim being tested (may be empty in expert mode — don't block on it) |
 | `stage` | Current lifecycle position |
-| `experiments` | Existing experiment records and their status |
+| `experimentRuns[*].inputData` | JSON observed-data snapshot pasted via the wizard, shape `{metrics:{event:{variant:{n,k}|{n,sum,sum_squares},inverse?}}}` |
+| `experimentRuns[*].analysisResult` | Output of `runAnalysis` / `runBanditAnalysis`; may already exist |
 
-- If `primaryMetric` is empty → redirect to `measurement-design`
+- If `primaryMetric` is empty AND `entryMode !== "expert"` → redirect to `measurement-design`. In expert mode, the primary metric lives in `experimentRuns[*].primaryMetricEvent` even if the top-level `primaryMetric` text field is blank.
 - If `stage` is `deciding` → a decision may already exist; check experiment records before re-analyzing
 - If experiment records already have a `decision` field → may only need to review, not re-decide
+
+### Pulling observed data
+
+When `experimentRuns[*].inputData` is populated, that JSON *is* the observed data — you do not need track-service, ClickHouse, or live event queries. Parse it directly and use it for analysis.
+
+Trigger analysis by POSTing to `/api/experiments/<experimentId>/analyze` with `{runId}`. The endpoint automatically falls back to the stored `inputData` when `featbitEnvId` / `flagKey` are not wired up (expert-mode experiments with no FeatBit flag). The response includes `dataSource: "live" | "stored"` so you can tell the user where numbers came from.
+
+If the user asks "do you have my data?" or "can you see what I entered?", read `inputData` and confirm concretely: event name, per-variant n/k (or n/sum/sum_squares), guardrail events, inverse flags — not "I can't reach the database."
 
 ## Decision Actions
 

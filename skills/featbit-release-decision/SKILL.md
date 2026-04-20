@@ -300,9 +300,30 @@ Parse `project-id` and `access-token` from the starting prompt. If `project-id` 
 
 Before asking or saying anything, read the current project state from the database using the `project-sync` skill's `get-experiment` command with the `project-id` parsed from the invocation arguments.
 
-If the command returns `"status": "unavailable"`, the database is unreachable. Treat this exactly like a blank new project and proceed with the greeting — do not retry, do not diagnose, do not mention the database.
+If the command returns `"status": "unavailable"`, the database is unreachable. Retry the call **once** — transient container/network timing at session start is common. If the retry still fails, treat this exactly like a blank new project and proceed with the greeting — do not diagnose, do not mention the database.
+
+If the user later asserts that you *can* reach the database (e.g. "yes you can, you have the scripts"), run `get-experiment` again before telling them otherwise. The sandbox has `npx tsx scripts/sync.ts get-experiment <id>` available and `SYNC_API_URL` pre-wired — a single earlier failure is not a verdict.
 
 Treat the project as a blank new project when the decision fields are empty and there are no meaningful experiments or learnings yet.
+
+### Expert-mode recognition
+
+`get-experiment` returns two fields that change how the session should start:
+
+| Field | Meaning |
+|---|---|
+| `entryMode` | `"guided"` (AI-chat flow) or `"expert"` (user filled the setup wizard directly) or null (fresh, not yet picked) |
+| `experimentRuns[*].inputData` | JSON observed-data snapshot pasted via the expert wizard (shape: `{metrics:{event:{variant:{n,k}|{n,sum,sum_squares},inverse?}}}`) |
+
+When `entryMode === "expert"`:
+
+- The user already made most decisions in a structured form: `method`, `primaryMetricEvent`, `primaryMetricType`, `primaryMetricAgg`, `guardrailEvents`, `priorProper/Mean/Stddev`, `minimumSample`, `controlVariant`, `treatmentVariant`, `observationStart/End`, and often `inputData`.
+- **Do not** run the blank-project opening or ask "What are you trying to improve or learn?" Those fields are already set and the user chose expert mode to *skip* the shaping conversation.
+- **Do not** route to `intent-shaping`, `hypothesis-design`, or `measurement-design` unless the user explicitly asks to revisit them. The user explicitly opted out of that path.
+- **Do** acknowledge concretely what is already configured, using the fields you read. The web UI already sent a priming message summarizing the setup — answer it directly with what you see, not with a fresh greeting.
+- If any `experimentRuns[*].inputData` is populated, that is the observed data. Treat the experiment as at `measuring` stage and route to `evidence-analysis` / `experiment-workspace` next. Do not ask the user to "paste data" — it is already pasted.
+
+When `entryMode === "guided"` or null, use the original blank-project or state-recap openings.
 
 ### Product Context Loading (silent)
 
@@ -395,6 +416,8 @@ def on_session_start(argv, user_message):
     if access_token:
         set_env("ACCESS_TOKEN", access_token)
     state = Skill("project-sync", f"get-experiment {project_id}")
+    if state.status == "unavailable":
+        state = Skill("project-sync", f"get-experiment {project_id}")  # retry once
     if state.status == "unavailable" or is_blank_project(state):
         greet_blank()
         ask_user("What are you trying to improve or learn?")
@@ -403,6 +426,14 @@ def on_session_start(argv, user_message):
     # Silent: ground future hypothesis/metric suggestions in the actual product.
     if state.featbitProjectKey:
         _productFacts = http_get(f"{SYNC}/api/memory/project/{state.featbitProjectKey}?type=product_facts")
+
+    # Expert-mode shortcut: user completed the setup wizard; skip shaping
+    # questions and acknowledge what they configured directly.
+    if state.entryMode == "expert":
+        acknowledge_expert_setup(state)     # read method/metrics/priors/inputData
+        if any(r.inputData for r in state.experimentRuns):
+            route("evidence-analysis")      # data is already in; go analyze
+        return
 
     recap = summarize_nonempty(state)   # at most two short sentences
     say(recap)
@@ -427,12 +458,12 @@ def on_user_turn(project_id, state, message):
 
 | CF lens | Satellite | Activate when |
 |---|---|---|
-| CF-01 | `intent-shaping` | `goal` is empty or vague; user leads with a tactic; user says "I want to improve X" |
-| CF-02 | `hypothesis-design` | `goal` exists but `hypothesis` is empty or non-falsifiable |
+| CF-01 | `intent-shaping` | `goal` is empty or vague; user leads with a tactic; user says "I want to improve X". **Skip if `entryMode === "expert"`** — the user opted out of shaping. |
+| CF-02 | `hypothesis-design` | `goal` exists but `hypothesis` is empty or non-falsifiable. **Skip if `entryMode === "expert"`** unless the user explicitly asks. |
 | CF-03 / CF-04 | `reversible-exposure-control` | Change exists but no flag contract; user mentions "feature flag", "rollout", "canary", "who sees this first" |
-| CF-05 | `measurement-design` | `hypothesis` exists but `primaryMetric` is empty; user asks "how do I measure this" |
-| CF-05 / CF-06 | `experiment-workspace` | Instrumentation confirmed; user wants to start/run/close an experiment |
-| CF-06 / CF-07 | `evidence-analysis` | Data is being collected; user asks "analyze results", "is it enough", "continue or rollback" |
+| CF-05 | `measurement-design` | `hypothesis` exists but `primaryMetric` is empty; user asks "how do I measure this". **Skip if `entryMode === "expert"`** — metrics came from the wizard. |
+| CF-05 / CF-06 | `experiment-workspace` | Instrumentation confirmed; user wants to start/run/close an experiment. Also: `entryMode === "expert"` with populated `inputData` → go here to run analysis on the pasted data. |
+| CF-06 / CF-07 | `evidence-analysis` | Data is being collected; user asks "analyze results", "is it enough", "continue or rollback". Also: `entryMode === "expert"` with populated `inputData` — data is already in, jump straight here. |
 | CF-08 | `learning-capture` | A decision exists; user says "what did we learn", "close this", "next iteration" |
 | _(any)_ | `project-sync` | Always — satellite skills invoke this internally; hub does not call it directly |
 

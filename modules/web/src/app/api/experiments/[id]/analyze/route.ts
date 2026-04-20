@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { updateExperimentRun } from "@/lib/data";
 import { runAnalysis } from "@/lib/stats/analyze";
 import { runBanditAnalysis } from "@/lib/stats/bandit";
-import { queryAllMetrics, queryMetric } from "@/lib/stats/track-client";
+import { queryAllMetrics } from "@/lib/stats/track-client";
 
 export async function POST(
   req: NextRequest,
@@ -44,10 +44,21 @@ export async function POST(
   const { experiment } = run;
   const envId = experiment.featbitEnvId;
   const flagKey = experiment.flagKey;
+  const canLiveFetch = !!(envId && flagKey && run.primaryMetricEvent);
+  const hasStoredInputData = !!run.inputData;
 
-  if (!envId || !flagKey || !run.primaryMetricEvent) {
+  if (!run.primaryMetricEvent) {
     return NextResponse.json(
-      { error: "Missing required fields: featbitEnvId, flagKey, or primaryMetricEvent" },
+      { error: "Missing required fields: primaryMetricEvent" },
+      { status: 400 }
+    );
+  }
+  if (!canLiveFetch && !hasStoredInputData) {
+    return NextResponse.json(
+      {
+        error:
+          "No data available: either configure flag (featbitEnvId + flagKey) or paste observed data in expert setup.",
+      },
       { status: 400 }
     );
   }
@@ -83,34 +94,47 @@ export async function POST(
     }
   }
 
-  // ── Step 1: Query track-service for per-variant stats ───────────────────────
-  const metrics = await queryAllMetrics({
-    envId,
-    flagKey,
-    startDate,
-    endDate,
-    primaryMetricEvent: run.primaryMetricEvent,
-    guardrailEvents: guardrailEventNames,
-  });
+  // ── Step 1: Obtain per-variant stats ────────────────────────────────────────
+  // Prefer live track-service fetch when the flag is wired up. Fall back to
+  // stored inputData for "expert setup" experiments where the user pasted
+  // totals and there is no FeatBit flag to query yet.
+  type MetricsDict = Record<string, Record<string, Record<string, number>>>;
+  let metrics: MetricsDict | null = null;
+  let dataSource: "live" | "stored" = "live";
+
+  if (canLiveFetch) {
+    metrics = (await queryAllMetrics({
+      envId: envId as string,
+      flagKey: flagKey as string,
+      startDate,
+      endDate,
+      primaryMetricEvent: run.primaryMetricEvent,
+      guardrailEvents: guardrailEventNames,
+    })) as MetricsDict | null;
+  }
 
   if (!metrics) {
-    if (forceFresh) {
+    // Live fetch didn't work (or wasn't possible). Fall back to stored data.
+    if (hasStoredInputData) {
+      try {
+        const parsed = JSON.parse(run.inputData as string);
+        if (parsed && typeof parsed === "object" && parsed.metrics) {
+          metrics = parsed.metrics as MetricsDict;
+          dataSource = "stored";
+        }
+      } catch {/* ignore */}
+    }
+  }
+
+  if (!metrics) {
+    if (canLiveFetch && forceFresh) {
       return NextResponse.json(
         { error: "Failed to fetch data from track-service. Is it running?" },
         { status: 503 }
       );
     }
-    // Return stale cached result if available
-    if (run.inputData && run.analysisResult) {
-      return NextResponse.json({
-        inputData: run.inputData,
-        analysisResult: run.analysisResult,
-        stale: true,
-        warning: "track-service is temporarily unavailable, showing the last successful analysis.",
-      });
-    }
     return NextResponse.json(
-      { error: "No data returned from track-service" },
+      { error: "No data available for analysis" },
       { status: 503 }
     );
   }
@@ -173,5 +197,6 @@ export async function POST(
   return NextResponse.json({
     inputData,
     analysisResult: analysisResultJson,
+    dataSource,
   });
 }

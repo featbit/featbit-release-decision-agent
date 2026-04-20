@@ -48,6 +48,7 @@ model Experiment {
   featbitProjectKey  String?         @map("featbit_project_key")
   featbitEnvId       String?         @map("featbit_env_id")
   conflictAnalysis   String?         @map("conflict_analysis")
+  entryMode          String?         @map("entry_mode")
   activities         Activity[]
   experimentRuns     ExperimentRun[]
   messages           Message[]

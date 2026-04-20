@@ -10,6 +10,10 @@ import { ChatPanel } from "@/components/experiment/chat-panel";
 import { ResizablePanels } from "@/components/experiment/resizable-panels";
 import { ActivityPopover } from "@/components/experiment/activity-popover";
 import { ChatTriggerContext } from "@/components/experiment/chat-trigger-context";
+import { EntryModePicker, ModeSwitchDialog } from "@/components/experiment/entry-mode-picker";
+import { ExpertSetupDialog } from "@/components/experiment/expert-setup-dialog";
+import { Button } from "@/components/ui/button";
+import { Pencil, Shuffle } from "lucide-react";
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
 import type {
   Experiment,
@@ -35,7 +39,24 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
   );
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
+  const [expertEditOpen, setExpertEditOpen] = useState(false);
+  const [switchOpen, setSwitchOpen] = useState(false);
   const router = useRouter();
+
+  // Experiments created before this feature have entryMode=null and existing
+  // content (messages, runs, stage != initial) — treat those as "guided" so we
+  // don't interrupt legacy experiments with the picker.
+  const hasPriorWork =
+    experiment.messages.length > 0 ||
+    experiment.experimentRuns.length > 0 ||
+    !!experiment.hypothesis ||
+    !!experiment.intent;
+  const entryMode: "guided" | "expert" | null =
+    experiment.entryMode === "guided" || experiment.entryMode === "expert"
+      ? experiment.entryMode
+      : hasPriorWork
+        ? "guided"
+        : null;
 
   // Auto-refresh every 15 seconds to pick up new analysis results from the Worker
   useEffect(() => {
@@ -48,42 +69,83 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
     setRightCollapsed(false);
   }
 
+  const header = (
+    <header className="border-b shrink-0">
+      <div className="flex items-center gap-3 px-4 py-2">
+        <Link
+          href="/experiments"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="size-3.5" />
+          Experiments
+        </Link>
+        <span className="text-muted-foreground/40">|</span>
+        <h1 className="text-sm font-semibold truncate">{experiment.name}</h1>
+        <div className="ml-auto flex items-center gap-2">
+          {entryMode !== null && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSwitchOpen(true)}
+              className="h-7 text-xs"
+              title="Switch between guided and expert setup"
+            >
+              <Shuffle className="size-3" />
+              Switch mode
+            </Button>
+          )}
+          {entryMode === "expert" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExpertEditOpen(true)}
+              className="h-7 text-xs"
+            >
+              <Pencil className="size-3" />
+              Edit setup
+            </Button>
+          )}
+          <WorkspaceSwitcher readOnly />
+          <ActivityPopover activities={experiment.activities} />
+        </div>
+      </div>
+    </header>
+  );
+
+  function handleExpertSaved(summary: string) {
+    setPendingChatMessage(summary);
+    setActiveTab("measuring");
+  }
+
+  // ── Entry mode not yet selected: show the picker full-width ──
+  if (entryMode === null) {
+    return (
+      <>
+        {header}
+        <EntryModePicker
+          experiment={experiment}
+          onExpertSaved={handleExpertSaved}
+        />
+      </>
+    );
+  }
+
+  // ── Guided and expert modes both render the stage UI + AI chat panel.
+  // The only surface-level difference is the header "Edit setup" button
+  // (which opens the expert wizard) rendered above. Data is shared. ──
   return (
     <ChatTriggerContext.Provider value={triggerChat}>
-      {/* ── Header ── */}
-      <header className="border-b shrink-0">
-        <div className="flex items-center gap-3 px-4 py-2">
-          <Link
-            href="/experiments"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="size-3.5" />
-            Experiments
-          </Link>
-          <span className="text-muted-foreground/40">|</span>
-          <h1 className="text-sm font-semibold truncate">
-            {experiment.name}
-          </h1>
-          <div className="ml-auto flex items-center gap-2">
-            <WorkspaceSwitcher readOnly />
-            <ActivityPopover activities={experiment.activities} />
-          </div>
-        </div>
-      </header>
-
-      {/* ── Main: resizable left (stages) / right (chat) ── */}
+      {header}
       <ResizablePanels
         rightCollapsed={rightCollapsed}
         onRightCollapsedChange={setRightCollapsed}
         left={
           <div className="flex h-full">
-            {/* Vertical stage sidebar */}
             <StageSidebar
               experiment={experiment}
               activeTab={activeTab}
               onStageSelect={setActiveTab}
             />
-            {/* Stage content */}
             <div className="flex-1 min-w-0">
               <StageContentPanel experiment={experiment} activeTab={activeTab} />
             </div>
@@ -97,6 +159,19 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
             onTriggerConsumed={() => setPendingChatMessage(null)}
           />
         }
+      />
+      <ExpertSetupDialog
+        experiment={experiment}
+        open={expertEditOpen}
+        onOpenChange={setExpertEditOpen}
+        onSaved={handleExpertSaved}
+      />
+      <ModeSwitchDialog
+        experiment={experiment}
+        currentMode={entryMode}
+        open={switchOpen}
+        onOpenChange={setSwitchOpen}
+        onExpertSaved={handleExpertSaved}
       />
     </ChatTriggerContext.Provider>
   );

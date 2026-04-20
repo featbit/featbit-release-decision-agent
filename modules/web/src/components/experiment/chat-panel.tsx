@@ -125,7 +125,9 @@ export function ChatPanel({
     if (initRef.current) return;
     initRef.current = true;
     // Only bootstrap if there are no persisted messages (new experiment)
-    if (initialMessages.length === 0) {
+    // AND no external trigger is about to fire (e.g. expert-setup priming
+    // message) — otherwise we'd duplicate the greeting.
+    if (initialMessages.length === 0 && !triggerMessage) {
       sendMessage("");
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

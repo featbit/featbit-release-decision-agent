@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import {
   createExperiment,
+  createExperimentRun,
   deleteExperiment,
   updateExperiment,
   updateExperimentStage,
@@ -11,6 +12,7 @@ import {
   addMessage,
   updateExperimentRun,
 } from "@/lib/data";
+import { prisma } from "@/lib/prisma";
 
 export async function createExperimentAction(formData: FormData) {
   const name = formData.get("name") as string;
@@ -232,6 +234,260 @@ export async function updateExperimentRunAudienceAction(formData: FormData) {
   await addActivity(experimentId, {
     type: "note",
     title: "Experiment run audience & traffic updated",
+  });
+
+  revalidatePath(`/experiments/${experimentId}`);
+}
+
+/**
+ * Pick "guided" (AI-chat) or "expert" (self-configured) entry mode for a new
+ * experiment. Called from the entry-mode picker; expert mode records the
+ * selection only after the wizard is submitted via saveExpertSetupAction.
+ */
+export async function selectEntryModeAction(
+  experimentId: string,
+  mode: "guided" | "expert",
+) {
+  if (mode !== "guided" && mode !== "expert") {
+    throw new Error("Invalid entryMode");
+  }
+  await updateExperiment(experimentId, { entryMode: mode });
+  await addActivity(experimentId, {
+    type: "stage_change",
+    title: mode === "guided" ? "Started guided (AI chat) setup" : "Started expert setup",
+  });
+  revalidatePath(`/experiments/${experimentId}`);
+}
+
+/**
+ * Persist the expert-setup wizard in one transaction:
+ *   - Experiment.primaryMetric, guardrails, entryMode='expert', stage bump.
+ *   - Upserts a single ExperimentRun carrying method/priors/minSample/data.
+ *
+ * Re-running this action (when the user clicks "Edit setup") updates the
+ * same run in place via experimentRunId.
+ */
+export async function saveExpertSetupAction(formData: FormData) {
+  const experimentId = formData.get("experimentId") as string;
+  const existingRunId = (formData.get("experimentRunId") as string | null)?.trim() || null;
+
+  const methodRaw = (formData.get("method") as string | null)?.trim();
+  const method = methodRaw === "bandit" ? "bandit" : "bayesian_ab";
+
+  const metricName = (formData.get("metricName") as string | null)?.trim() || null;
+  const metricEvent = (formData.get("metricEvent") as string | null)?.trim() || null;
+  const metricType = (formData.get("metricType") as string | null)?.trim() || "binary";
+  const metricAgg = (formData.get("metricAgg") as string | null)?.trim() || "once";
+  const metricDescription = (formData.get("metricDescription") as string | null)?.trim() || null;
+  const primaryInverse = formData.get("primaryInverse") != null; // checkbox presence
+  const guardrailsRaw = (formData.get("guardrails") as string | null) ?? "[]";
+  const priorMode = (formData.get("priorMode") as string | null)?.trim() || "flat";
+  const priorMeanRaw = (formData.get("priorMean") as string | null)?.trim();
+  const priorStddevRaw = (formData.get("priorStddev") as string | null)?.trim();
+  const minimumSampleRaw = (formData.get("minimumSample") as string | null)?.trim();
+  const observationStartRaw = (formData.get("observationStart") as string | null)?.trim();
+  const observationEndRaw = (formData.get("observationEnd") as string | null)?.trim();
+
+  const controlVariant = (formData.get("controlVariant") as string | null)?.trim() || "control";
+  const treatmentVariant = (formData.get("treatmentVariant") as string | null)?.trim() || "treatment";
+  const dataRowsRaw = (formData.get("dataRows") as string | null) ?? "[]";
+
+  if (!metricEvent) {
+    throw new Error("Primary metric event is required");
+  }
+
+  // ── Normalise primary metric (Experiment.primaryMetric JSON) ─────────────
+  const primaryMetric = JSON.stringify({
+    ...(metricName && { name: metricName }),
+    event: metricEvent,
+    metricType,
+    metricAgg,
+    ...(metricDescription && { description: metricDescription }),
+    ...(primaryInverse && { inverse: true }),
+  });
+
+  // ── Normalise guardrails (Experiment.guardrails JSON for UI, plus a list
+  //    of event names for the ExperimentRun). Also keep observed data per
+  //    guardrail so it can be merged into inputData.metrics below. ──────────
+  type GuardrailDataRowIn = { variant?: string; n?: string; s?: string; ss?: string };
+  type GuardrailIn = {
+    name?: string;
+    event?: string;
+    description?: string;
+    inverse?: boolean;
+    metricType?: string;
+    dataRows?: GuardrailDataRowIn[];
+  };
+  type GuardrailParsed = {
+    name: string;
+    event: string;
+    description: string;
+    inverse: boolean;
+    metricType: string;
+    dataRows: GuardrailDataRowIn[];
+  };
+  let guardrailsForExperiment: string | null = null;
+  let guardrailEventNames: string[] = [];
+  let guardrailDescriptions: Record<string, string> = {};
+  let cleanedGuardrails: GuardrailParsed[] = [];
+  try {
+    const parsed = JSON.parse(guardrailsRaw) as GuardrailIn[];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      cleanedGuardrails = parsed
+        .map((g) => ({
+          name: g.name?.trim() || "",
+          event: g.event?.trim() || g.name?.trim() || "",
+          description: g.description?.trim() || "",
+          inverse: Boolean(g.inverse),
+          metricType: g.metricType === "numeric" ? "numeric" : "binary",
+          dataRows: Array.isArray(g.dataRows) ? g.dataRows : [],
+        }))
+        .filter((g) => g.name || g.event);
+      if (cleanedGuardrails.length > 0) {
+        // Strip dataRows from the UI-facing JSON — dataRows get merged into
+        // inputData.metrics instead, so the guardrails JSON stays lean.
+        guardrailsForExperiment = JSON.stringify(
+          cleanedGuardrails.map(({ dataRows, ...rest }) => {
+            void dataRows;
+            return rest;
+          }),
+        );
+        guardrailEventNames = cleanedGuardrails.map((g) => g.event).filter(Boolean);
+        guardrailDescriptions = cleanedGuardrails.reduce<Record<string, string>>((acc, g) => {
+          if (g.event && g.description) acc[g.event] = g.description;
+          return acc;
+        }, {});
+      }
+    }
+  } catch {/* ignore */}
+
+  // ── Priors & minimum sample ──────────────────────────────────────────────
+  const priorProper = priorMode === "proper";
+  const priorMean =
+    priorProper && priorMeanRaw && !isNaN(parseFloat(priorMeanRaw))
+      ? parseFloat(priorMeanRaw)
+      : null;
+  const priorStddev =
+    priorProper && priorStddevRaw && !isNaN(parseFloat(priorStddevRaw))
+      ? parseFloat(priorStddevRaw)
+      : null;
+  const minimumSample =
+    minimumSampleRaw && !isNaN(parseInt(minimumSampleRaw, 10))
+      ? Math.max(0, parseInt(minimumSampleRaw, 10))
+      : null;
+
+  // ── Observed data → inputData JSON in the shape runAnalysis() expects ────
+  //   metrics[event] = { [variant]: {n,k} | {n,sum,sum_squares}, inverse? }
+  type DataRowIn = { variant?: string; n?: string; s?: string; ss?: string };
+  function buildVariantMap(
+    rows: DataRowIn[] | undefined | null,
+    type: string,
+  ): Record<string, unknown> | null {
+    if (!Array.isArray(rows)) return null;
+    const variantMap: Record<string, unknown> = {};
+    for (const r of rows) {
+      const variant = r.variant?.trim();
+      const n = r.n != null && r.n !== "" ? Number(r.n) : NaN;
+      const s = r.s != null && r.s !== "" ? Number(r.s) : NaN;
+      const ss = r.ss != null && r.ss !== "" ? Number(r.ss) : NaN;
+      if (!variant || isNaN(n) || n <= 0) continue;
+      if (type === "binary") {
+        variantMap[variant] = { n, k: isNaN(s) ? 0 : s };
+      } else {
+        variantMap[variant] = {
+          n,
+          sum: isNaN(s) ? 0 : s,
+          sum_squares: isNaN(ss) ? 0 : ss,
+        };
+      }
+    }
+    return Object.keys(variantMap).length > 0 ? variantMap : null;
+  }
+
+  let inputData: string | null = null;
+  try {
+    const rows = JSON.parse(dataRowsRaw) as DataRowIn[];
+    const primaryMap = buildVariantMap(rows, metricType);
+    const metrics: Record<string, unknown> = {};
+    if (primaryMap) {
+      if (primaryInverse) primaryMap.inverse = true;
+      metrics[metricEvent] = primaryMap;
+    }
+    // Merge guardrail data
+    for (const g of cleanedGuardrails) {
+      if (!g.event) continue;
+      const gMap = buildVariantMap(g.dataRows, g.metricType);
+      if (!gMap) continue;
+      if (g.inverse) gMap.inverse = true;
+      metrics[g.event] = gMap;
+    }
+    if (Object.keys(metrics).length > 0) {
+      inputData = JSON.stringify({ metrics });
+    }
+  } catch {/* ignore */}
+
+  // ── Parse observation window dates (yyyy-mm-dd) ─────────────────────────
+  const observationStart =
+    observationStartRaw && !isNaN(new Date(observationStartRaw).getTime())
+      ? new Date(observationStartRaw)
+      : null;
+  const observationEnd =
+    observationEndRaw && !isNaN(new Date(observationEndRaw).getTime())
+      ? new Date(observationEndRaw)
+      : null;
+
+  // ── Persist ──────────────────────────────────────────────────────────────
+  await updateExperiment(experimentId, {
+    primaryMetric,
+    guardrails: guardrailsForExperiment,
+    entryMode: "expert",
+    stage: inputData ? "measuring" : "implementing",
+  });
+
+  const runFields = {
+    method,
+    primaryMetricEvent: metricEvent,
+    metricDescription,
+    guardrailEvents: guardrailEventNames.length > 0 ? JSON.stringify(guardrailEventNames) : null,
+    guardrailDescriptions: Object.keys(guardrailDescriptions).length > 0
+      ? JSON.stringify(guardrailDescriptions)
+      : null,
+    controlVariant,
+    treatmentVariant,
+    priorProper,
+    priorMean,
+    priorStddev,
+    minimumSample,
+    inputData,
+    primaryMetricType: metricType,
+    primaryMetricAgg: metricAgg,
+    observationStart,
+    observationEnd,
+    status: inputData ? "analyzing" : "draft",
+  };
+
+  if (existingRunId) {
+    await updateExperimentRun(existingRunId, runFields);
+  } else {
+    // Find a stable slug — reuse if a bare run already exists
+    const existing = await prisma.experimentRun.findFirst({
+      where: { experimentId },
+      orderBy: { createdAt: "asc" },
+    });
+    if (existing) {
+      await updateExperimentRun(existing.id, runFields);
+    } else {
+      await createExperimentRun(experimentId, {
+        slug: "run-1",
+        ...runFields,
+      });
+    }
+  }
+
+  await addActivity(experimentId, {
+    type: "note",
+    title: "Expert setup saved",
+    detail: `method=${method} · metric=${metricEvent}${inputData ? " · data provided" : ""}`,
   });
 
   revalidatePath(`/experiments/${experimentId}`);
