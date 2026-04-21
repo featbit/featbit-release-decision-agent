@@ -1,0 +1,15 @@
+{{- if and .Values.trackService.enabled .Values.trackService.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "trackService.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "featbit-rda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: track-service
+spec:
+  minAvailable: {{ .Values.trackService.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "featbit-rda.selectorLabels" (dict "root" . "component" "track-service") | nindent 6 }}
+{{- end }}

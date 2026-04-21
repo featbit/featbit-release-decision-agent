@@ -113,15 +113,13 @@ services:
     container_name: web
     restart: unless-stopped
     depends_on:
-      track-service:
-        condition: service_healthy
       agent-sandbox:
         condition: service_started
     ports:
       - "3000:3000"
     environment:
       DATABASE_URL:        ${DATABASE_URL}
-      TRACK_SERVICE_URL:   "http://track-service:8080"
+      TRACK_SERVICE_URL:   "https://track.featbit.ai"
       NODE_ENV:            production
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]

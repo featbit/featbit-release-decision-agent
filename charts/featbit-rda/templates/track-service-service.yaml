@@ -1,0 +1,23 @@
+{{- if .Values.trackService.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "trackService.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "featbit-rda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: track-service
+  {{- with .Values.trackService.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.trackService.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.trackService.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "featbit-rda.selectorLabels" (dict "root" . "component" "track-service") | nindent 4 }}
+{{- end }}

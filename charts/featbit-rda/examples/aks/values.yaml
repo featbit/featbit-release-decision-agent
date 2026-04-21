@@ -1,0 +1,101 @@
+# featbit-rda Helm values for Azure AKS
+# Architecture: Internet -> Azure LB -> NGINX Ingress (TLS, cert-manager) -> services
+#
+# Prereqs (once per cluster):
+#   - AKS cluster with ACR attached:    az aks update -n <cluster> -g <rg> --attach-acr <acr>
+#   - NGINX Ingress Controller installed (see README.md)
+#   - cert-manager installed + ClusterIssuer applied (see cluster-issuer.yaml)
+#   - (Optional) Azure Key Vault CSI driver enabled if using the KeyVault path
+#
+# Copy to values.local.yaml, fill the marked fields, then install:
+#
+#   helm install featbit-rda ../../ \
+#     -f values.local.yaml \
+#     --namespace featbit-rda --create-namespace
+
+global:
+  # CHANGE THIS to your ACR login server; each service will pull <acr>/<repository>:<tag>.
+  imageRegistry: your-acr.azurecr.io
+  # With `az aks update --attach-acr`, imagePullSecrets is not needed.
+  imagePullSecrets: []
+
+# ── track-service ──────────────────────────────────────────────────────────────
+trackService:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    # Inherits global.imageRegistry when empty.
+    registry: ""
+    repository: featbit/track-service
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # (A) Dev / staging — plain Secret generated from the value below:
+  clickHouse:
+    connectionString: ""
+    database: "featbit"
+
+  # (B) Production — Azure Key Vault via CSI driver.
+  #     Apply keyvault-secret-provider.yaml first (it projects a Secret named
+  #     "featbit-rda-clickhouse-secret" with key "connection-string"), then:
+  #
+  # clickHouse:
+  #   existingSecret: "featbit-rda-clickhouse-secret"
+  #   existingSecretKey: "connection-string"
+  #   database: "default"   # match the DB on your ClickHouse
+  #
+  # volumeMounts:
+  #   - name: ch-secrets
+  #     mountPath: "/mnt/secrets-store"
+  #     readOnly: true
+  # volumes:
+  #   - name: ch-secrets
+  #     csi:
+  #       driver: secrets-store.csi.k8s.io
+  #       readOnly: true
+  #       volumeAttributes:
+  #         secretProviderClass: "featbit-rda-clickhouse-kv"
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1500m"
+      memory: "2Gi"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+  # Spread pods across zones for resilience to AZ outages.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: track-service
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    # CHANGE THIS to your domain.
+    host: "track.example.com"
+    path: /
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    tls:
+      enabled: true
+      secretName: "track-service-tls"

@@ -1,0 +1,40 @@
+featbit-rda has been deployed in namespace "{{ .Release.Namespace }}".
+
+Enabled services:
+{{- if .Values.trackService.enabled }}
+  - track-service
+{{- end }}
+
+{{- if .Values.trackService.enabled }}
+
+───────────── track-service ─────────────
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/component=track-service
+
+  Health check (port-forward):
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "trackService.fullname" . }} 8080:{{ .Values.trackService.service.port }}
+    curl http://localhost:8080/health
+
+{{- if .Values.trackService.ingress.enabled }}
+
+  External endpoint (via NGINX Ingress):
+    {{- if .Values.trackService.ingress.tls.enabled }}
+    https://{{ .Values.trackService.ingress.host }}/health
+    {{- else }}
+    http://{{ .Values.trackService.ingress.host }}/health
+    {{- end }}
+
+  Make sure DNS for "{{ .Values.trackService.ingress.host }}" points to the
+  NGINX Ingress Controller's external IP:
+    kubectl get svc -n ingress-nginx ingress-nginx-controller
+
+{{- end }}
+
+{{- if and (not .Values.trackService.clickHouse.existingSecret) (not .Values.trackService.clickHouse.connectionString) }}
+
+  WARNING: trackService.clickHouse.connectionString is empty and existingSecret is unset.
+           The pod will crash on startup. Set `--set trackService.clickHouse.connectionString=...`
+           or point `trackService.clickHouse.existingSecret` at a pre-existing Secret.
+
+{{- end }}
+{{- end }}

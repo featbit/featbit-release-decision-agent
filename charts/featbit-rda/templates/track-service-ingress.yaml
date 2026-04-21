@@ -1,0 +1,35 @@
+{{- if and .Values.trackService.enabled .Values.trackService.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "trackService.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "featbit-rda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: track-service
+  {{- with .Values.trackService.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.trackService.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if and .Values.trackService.ingress.tls.enabled .Values.trackService.ingress.tls.secretName .Values.trackService.ingress.host }}
+  tls:
+    - secretName: {{ .Values.trackService.ingress.tls.secretName }}
+      hosts:
+        - {{ .Values.trackService.ingress.host }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.trackService.ingress.host }}
+      http:
+        paths:
+          - path: {{ .Values.trackService.ingress.path }}
+            pathType: {{ .Values.trackService.ingress.pathType }}
+            backend:
+              service:
+                name: {{ include "trackService.fullname" . }}
+                port:
+                  number: {{ .Values.trackService.service.port }}
+{{- end }}

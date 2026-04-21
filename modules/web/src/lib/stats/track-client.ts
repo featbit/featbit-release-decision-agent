@@ -7,7 +7,7 @@
  */
 
 const TRACK_SERVICE_URL =
-  process.env.TRACK_SERVICE_URL ?? "http://track-service:8080";
+  process.env.TRACK_SERVICE_URL ?? "https://track.featbit.ai";
 
 const TIMEOUT_MS = Number(process.env.TRACK_TIMEOUT_MS ?? 10000);
 

@@ -1,0 +1,64 @@
+# featbit-rda values for local Docker Desktop Kubernetes.
+# Differences from the AKS example:
+#   - No registry — image is built locally and loaded into Docker Desktop's shared daemon.
+#   - imagePullPolicy: Never — k8s won't try to pull from a remote registry.
+#   - No HPA (Docker Desktop has no metrics-server by default).
+#   - No PDB (single-node cluster, 2 replicas, maxUnavailable: 0 already keeps 2 up).
+#   - No TLS — http only (no cert-manager locally).
+#   - Uses track.localtest.me — *.localtest.me resolves to 127.0.0.1, no hosts edit needed.
+#
+# ClickHouse is NOT part of this chart. The chart assumes the target DB and tables
+# already exist — the DBA/operator is responsible for schema (see modules/track-service/sql/schema.sql
+# for a reference DDL). For local testing, point at any reachable ClickHouse that
+# already has the flag_evaluations / metric_events tables.
+#
+# The connection string carries a password, so pass it at install time via --set
+# rather than committing it to a file:
+#   helm upgrade --install featbit-rda charts/featbit-rda \
+#     -f charts/featbit-rda/examples/local/values.yaml \
+#     --set trackService.clickHouse.connectionString="Host=...;Port=8123;Username=default;Password=...;Protocol=http;Database=default" \
+#     --namespace featbit-rda
+
+trackService:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    registry: ""
+    repository: track-service
+    tag: "local"
+    pullPolicy: Never
+
+  clickHouse:
+    # Left empty — supply via --set. See header comment.
+    connectionString: ""
+    # Name of the database that contains flag_evaluations + metric_events.
+    # The repo's reference schema uses "featbit"; the Azure CH in modules/.env
+    # has the tables in "default" — override to match your target.
+    database: "default"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "200Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+  autoscaling:
+    enabled: false
+
+  podDisruptionBudget:
+    enabled: false
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    host: "track.localtest.me"
+    path: /
+    pathType: Prefix
+    annotations:
+      # No TLS redirect locally.
+      nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    tls:
+      enabled: false

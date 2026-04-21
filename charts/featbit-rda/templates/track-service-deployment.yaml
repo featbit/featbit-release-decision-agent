@@ -1,0 +1,106 @@
+{{- if .Values.trackService.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "trackService.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "featbit-rda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: track-service
+spec:
+  {{- if not .Values.trackService.autoscaling.enabled }}
+  replicas: {{ .Values.trackService.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "featbit-rda.selectorLabels" (dict "root" . "component" "track-service") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Restart pods when the ClickHouse Secret content changes.
+        checksum/clickhouse-secret: {{ include (print $.Template.BasePath "/track-service-clickhouse-secret.yaml") . | sha256sum }}
+        {{- with .Values.trackService.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "featbit-rda.selectorLabels" (dict "root" . "component" "track-service") | nindent 8 }}
+        {{- with .Values.trackService.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "trackService.serviceAccountName" . }}
+      {{- include "featbit-rda.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- toYaml .Values.trackService.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.trackService.terminationGracePeriodSeconds }}
+      containers:
+        - name: track-service
+          image: {{ include "trackService.image" . }}
+          imagePullPolicy: {{ .Values.trackService.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.trackService.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.trackService.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: {{ .Values.trackService.aspNetCoreEnvironment | quote }}
+            - name: ASPNETCORE_URLS
+              value: "http://+:{{ .Values.trackService.service.targetPort }}"
+            - name: CLICKHOUSE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "trackService.clickhouseSecretName" . }}
+                  key: {{ .Values.trackService.clickHouse.existingSecretKey | quote }}
+            - name: ClickHouse__Database
+              value: {{ .Values.trackService.clickHouse.database | quote }}
+            - name: ClickHouse__FlagEvaluationsTable
+              value: {{ .Values.trackService.clickHouse.flagEvaluationsTable | quote }}
+            - name: ClickHouse__MetricEventsTable
+              value: {{ .Values.trackService.clickHouse.metricEventsTable | quote }}
+            - name: Ingest__ChannelCapacity
+              value: {{ .Values.trackService.ingest.channelCapacity | quote }}
+            - name: Ingest__BatchSize
+              value: {{ .Values.trackService.ingest.batchSize | quote }}
+            - name: Ingest__FlushIntervalMs
+              value: {{ .Values.trackService.ingest.flushIntervalMs | quote }}
+            {{- with .Values.trackService.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.trackService.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.trackService.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.trackService.resources | nindent 12 }}
+          {{- with .Values.trackService.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.trackService.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trackService.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trackService.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trackService.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.trackService.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

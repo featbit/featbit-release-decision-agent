@@ -19,6 +19,8 @@ artifacts/
 .env
 .env.*
 *.local
+*.local.yaml
+*.local.yml
 secrets.json
 
 # Rider / VS Code

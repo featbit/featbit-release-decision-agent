@@ -1,0 +1,147 @@
+# Umbrella chart values for the FeatBit Release Decision Agent.
+# Each service gets its own top-level section and can be toggled with `<service>.enabled`.
+# Only trackService is wired up today; additional services (statsService, etc.)
+# follow the same shape.
+
+global:
+  # Registry applied to every service that does not override image.registry.
+  # Typically "<your-acr>.azurecr.io".
+  imageRegistry: ""
+  # imagePullSecrets applied to every deployment.
+  imagePullSecrets: []
+  # - name: acr-pull-secret
+
+# ── track-service ──────────────────────────────────────────────────────────────
+# modules/track-service — ingests SDK events, flushes to ClickHouse, serves the
+# /api/query/experiment endpoint.
+trackService:
+  enabled: true
+
+  replicaCount: 3
+
+  image:
+    # Falls back to global.imageRegistry if empty.
+    registry: ""
+    repository: featbit/track-service
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: false
+    capabilities:
+      drop:
+        - ALL
+
+  service:
+    type: ClusterIP
+    port: 80
+    # Matches EXPOSE in modules/track-service/Dockerfile.
+    targetPort: 8080
+    annotations: {}
+
+  aspNetCoreEnvironment: Production
+
+  # ClickHouse connection. Either set `connectionString` (chart generates a Secret)
+  # or set `existingSecret` to a pre-existing Secret (e.g. projected by the
+  # Azure Key Vault CSI driver — see examples/aks/keyvault-secret-provider.yaml).
+  clickHouse:
+    connectionString: ""
+    existingSecret: ""
+    existingSecretKey: "connection-string"
+    database: "featbit"
+    flagEvaluationsTable: "flag_evaluations"
+    metricEventsTable: "metric_events"
+
+  ingest:
+    channelCapacity: "100000"
+    batchSize: "1000"
+    flushIntervalMs: "5000"
+
+  extraEnv: []
+  # - name: FOO
+  #   value: "bar"
+
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+  # Grace period for the in-memory batch worker to flush before the pod dies.
+  terminationGracePeriodSeconds: 30
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+  volumeMounts: []
+  volumes: []
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    host: "track.example.com"
+    path: /
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      # /api/track payloads can be chunky; bump above the 1 MiB default.
+      nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    tls:
+      enabled: true
+      secretName: "track-service-tls"
+
+# ── future services ────────────────────────────────────────────────────────────
+# statsService:
+#   enabled: false
+#   ...
+#
+# webApp:
+#   enabled: false
+#   ...
