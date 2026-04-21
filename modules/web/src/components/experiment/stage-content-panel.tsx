@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { getStage } from "@/lib/stages";
 import { EditDecisionStateDialog } from "./decision-state-edit";
 import { MetricEditDialog } from "./metric-edit";
@@ -350,6 +351,24 @@ function FlagAndExperimentSection({
 
   return (
     <>
+      {/* ─── Integration docs pointer ─── */}
+      <Link
+        href="/data/apis-sdks"
+        className="group flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3 mb-4 hover:bg-muted/60 transition-colors"
+      >
+        <BookOpen className="size-4 mt-0.5 shrink-0 text-muted-foreground" />
+        <div className="flex-1 min-w-0 text-sm">
+          <div className="font-medium flex items-center gap-1.5">
+            How to instrument your app for this experiment
+            <ExternalLink className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            APIs &amp; SDKs guide — how to record flag evaluations and metric
+            events correctly so this experiment can be analyzed.
+          </div>
+        </div>
+      </Link>
+
       {/* ─── Section 1: Flag Integration & Rollout (summary) ─── */}
       <FlagIntegrationHeader
         experiment={experiment}
@@ -427,7 +446,7 @@ function MetricsIntegrationSection({
   const guardrails = parseGuardrails(experiment.guardrails);
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-2.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
         <Activity className="size-3.5" />
         <span>Metrics Integration</span>
@@ -441,187 +460,90 @@ function MetricsIntegrationSection({
         </button>
       </div>
 
-      <div className="space-y-3">
-        {/* Primary metric — prominent card */}
-        <div className="rounded-md border-2 border-blue-200 dark:border-blue-900/60 bg-blue-50/30 dark:bg-blue-950/20 px-4 py-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <Target className="size-3.5 text-blue-700 dark:text-blue-300" />
-            <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wider">
-              Primary Metric (North Star)
-            </span>
-          </div>
-          {primary ? (
-            <PrimaryMetricBody m={primary} />
-          ) : (
-            <p className="text-xs italic text-muted-foreground/50">Not set</p>
-          )}
-        </div>
-
-        {/* Guardrails — secondary, stacked cards */}
-        <div className="rounded-md border bg-muted/10 px-4 py-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="size-3.5 text-muted-foreground" />
-            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Guardrails
-            </span>
-            {guardrails.length > 0 && (
-              <Badge variant="outline" className="text-[10px] py-0 px-1.5">
-                {guardrails.length}
-              </Badge>
-            )}
-          </div>
-          {guardrails.length === 0 ? (
-            <p className="text-xs italic text-muted-foreground/50">None defined</p>
-          ) : (
-            <ul className="space-y-2">
+      {!primary && guardrails.length === 0 ? (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground/60 italic hover:text-muted-foreground cursor-pointer"
+        >
+          Not configured — click to set up
+          <Pencil className="size-3" />
+        </button>
+      ) : (
+        <div className="rounded-md border overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Role</th>
+                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Name</th>
+                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Event</th>
+                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Type</th>
+                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-28">Agg</th>
+                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Alarm</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {primary && (
+                <tr className="bg-blue-50/40 dark:bg-blue-950/20">
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                      <Target className="size-3 shrink-0" />
+                      Primary
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-semibold">{primary.name || <span className="italic text-muted-foreground/50">—</span>}</td>
+                  <td className="px-3 py-2">
+                    {primary.event
+                      ? <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">{primary.event}</code>
+                      : <span className="italic text-muted-foreground/50">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{primary.metricType ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatAgg(primary.metricAgg)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">—</td>
+                </tr>
+              )}
               {guardrails.map((g, i) => (
-                <li key={i}>
-                  <GuardrailBody g={g} />
-                </li>
+                <tr key={i}>
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                      <ShieldCheck className="size-3 shrink-0" />
+                      Guard
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-medium">{g.name || <span className="italic text-muted-foreground/50">—</span>}</td>
+                  <td className="px-3 py-2">
+                    {g.event
+                      ? <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">{g.event}</code>
+                      : <span className="italic text-muted-foreground/50">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{g.metricType ?? "—"}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatAgg(g.metricAgg)}</td>
+                  <td className="px-3 py-2">
+                    {g.direction === "increase_bad"
+                      ? <span className="text-rose-600 dark:text-rose-400 font-mono">↑ bad</span>
+                      : g.direction === "decrease_bad"
+                      ? <span className="text-rose-600 dark:text-rose-400 font-mono">↓ bad</span>
+                      : <span className="text-muted-foreground">—</span>}
+                  </td>
+                </tr>
               ))}
-            </ul>
-          )}
+            </tbody>
+          </table>
         </div>
+      )}
 
-        <div>
-          <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5">
-            <Pencil className="size-3.5" />
-            Edit Metrics
-          </Button>
-        </div>
+      <div>
+        <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5">
+          <Pencil className="size-3.5" />
+          Edit Metrics
+        </Button>
       </div>
     </section>
   );
 }
 
-function PrimaryMetricBody({ m }: { m: PrimaryMetric }) {
-  return (
-    <div className="space-y-1.5">
-      <LabelValue label="Name">
-        {m.name ? (
-          <span className="text-sm font-semibold">{m.name}</span>
-        ) : (
-          <span className="italic text-muted-foreground/50">unset</span>
-        )}
-      </LabelValue>
-      <LabelValue label="Event Key">
-        {m.event ? (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">
-            {m.event}
-          </span>
-        ) : (
-          <span className="italic text-muted-foreground/50 text-xs">unset</span>
-        )}
-      </LabelValue>
-      <LabelValue label="Type">
-        <span className="text-xs">{m.metricType ?? "—"}</span>
-      </LabelValue>
-      <LabelValue label="Aggregation">
-        <span className="text-xs">
-          {m.metricAgg === "once"
-            ? "once per user"
-            : m.metricAgg === "count"
-              ? "count all"
-              : m.metricAgg === "sum"
-                ? "sum values"
-                : "—"}
-        </span>
-      </LabelValue>
-      {m.description && (
-        <LabelValue label="Description">
-          <p className="text-[11px] text-muted-foreground/90 leading-relaxed">
-            {m.description}
-          </p>
-        </LabelValue>
-      )}
-    </div>
-  );
-}
-
-function GuardrailBody({ g }: { g: GuardrailMetric }) {
-  const dirLabel =
-    g.direction === "decrease_bad"
-      ? "alarm if ↓ decreases"
-      : g.direction === "increase_bad"
-        ? "alarm if ↑ increases"
-        : null;
-  return (
-    <div className="rounded border bg-background px-3 py-2 space-y-1.5">
-      <LabelValue label="Name">
-        {g.name ? (
-          <span className="text-xs font-semibold">{g.name}</span>
-        ) : (
-          <span className="italic text-muted-foreground/50 text-xs">unset</span>
-        )}
-      </LabelValue>
-      <LabelValue label="Event Key">
-        {g.event ? (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">
-            {g.event}
-          </span>
-        ) : (
-          <span className="italic text-muted-foreground/50 text-xs">unset</span>
-        )}
-      </LabelValue>
-      <div className="grid grid-cols-[6rem_1fr] gap-x-3 items-baseline">
-        <span className="text-[10px] font-medium text-muted-foreground uppercase">
-          Type
-        </span>
-        <span className="text-xs">{g.metricType ?? "—"}</span>
-      </div>
-      <div className="grid grid-cols-[6rem_1fr] gap-x-3 items-baseline">
-        <span className="text-[10px] font-medium text-muted-foreground uppercase">
-          Aggregation
-        </span>
-        <span className="text-xs">
-          {g.metricAgg === "once"
-            ? "once per user"
-            : g.metricAgg === "count"
-              ? "count all"
-              : g.metricAgg === "sum"
-                ? "sum values"
-                : "—"}
-        </span>
-      </div>
-      {dirLabel && (
-        <div className="grid grid-cols-[6rem_1fr] gap-x-3 items-baseline">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase">
-            Alarm
-          </span>
-          <span className="text-xs font-mono text-rose-600 dark:text-rose-400">
-            {dirLabel}
-          </span>
-        </div>
-      )}
-      {g.description && (
-        <div className="grid grid-cols-[6rem_1fr] gap-x-3 items-baseline">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase">
-            Description
-          </span>
-          <p className="text-[11px] text-muted-foreground/90 leading-relaxed">
-            {g.description}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LabelValue({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-[6rem_1fr] gap-x-3 items-baseline">
-      <span className="text-[10px] font-medium text-muted-foreground uppercase">
-        {label}
-      </span>
-      <div>{children}</div>
-    </div>
-  );
+function formatAgg(agg?: string): string {
+  return agg === "once" ? "once per user" : agg === "count" ? "count all" : agg === "sum" ? "sum values" : "—";
 }
 
 /* ── Single experiment run card ── */

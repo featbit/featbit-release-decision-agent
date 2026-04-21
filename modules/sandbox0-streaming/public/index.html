@@ -487,11 +487,21 @@ function switchSession(id) {
   setStatus("connected", "Ready");
 }
 
+async function safeFetch(url, init) {
+  const res = await fetch(url, init);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
+  if (!res.ok || (data && data.error)) {
+    const msg = (data && data.error) || text || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return data ?? {};
+}
+
 async function createNewSession() {
   setStatus("running", "Creating session...");
-  const res = await fetch("/chat/start", { method: "POST" });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  const data = await safeFetch("/chat/start", { method: "POST" });
   currentId = data.sessionId;
   seenEventIds.clear();
   addSession(currentId, "New chat");
@@ -660,7 +670,7 @@ async function send() {
     }
 
     setStatus("running", "Sending...");
-    await fetch("/chat/send", {
+    await safeFetch("/chat/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sessionId: currentId, message: text }),

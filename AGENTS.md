@@ -1,515 +1,430 @@
-# AGENTS.md — FeatBit Release Decision Services
+# AGENTS.md — FeatBit Release Decision Agent
 
-> Deployment and operation guide for three production services.
-
----
-
-## 🏗️ Three-Service Architecture
-
-```
-┌─────────────────────┐
-│   agent/web         │  Next.js + Prisma
-│   Cloudflare        │  Dashboard + REST API
-│   Containers        │  Analysis compute
-└──────────┬──────────┘
-           ↑ queries/results
-           ↓
-┌─────────────────────────────────────────┐           ┌──────────────────┐
-│  agent/tsdb-cloudflare                  │           │   agent/sandbox  │
-│  Cloudflare Workers                     │←────────→ │  Claude SDK      │
-│  - /api/track (ingest)                  │           │  Node.js SSE     │
-│  - /api/query (metrics)                 │           │  Worker          │
-│  - /api/stats (R2 info)                 │           │  [Optional]      │
-│  - Cron: compact + analyze (every 3h)   │           └──────────────────┘
-│  - R2 storage (segments + rollups)      │
-└─────────────────────────────────────────┘
-```
+> Architecture, service map, and operational guide. Everything runs in Docker.
 
 ---
 
-## 1️⃣ agent/web — Next.js Dashboard & API
+## 🏗️ Five-Service Architecture
 
-**Language**: TypeScript (Next.js 16)  
-**Platform**: Cloudflare Containers  
-**Port** (local): 3000  
-**URL** (production): `https://www.featbit.ai`
+```
+┌─────────────────────────────────────────────────────────────┐
+│  modules/web  (Next.js + Prisma)  :3000                     │
+│  Dashboard + REST API + Analysis Engine + Memory API        │
+└──────┬───────────────────────────┬──────────────────────────┘
+       │ TRACK_SERVICE_URL          │ MEMORY_API_BASE / SYNC_API_URL
+       ↓                           ↓
+┌─────────────────────┐   ┌──────────────────────┐   ┌────────────────────────┐
+│  modules/track-     │   │  modules/sandbox      │   │  modules/project-agent │
+│  service (.NET 10)  │   │  (Claude SDK, SSE)    │   │  (Codex, SSE)          │
+│  :5050 → :8080      │   │  :3100 → :3000        │   │  :3031 → :3031         │
+│  POST /api/track    │   │  POST /query          │   │  POST /query           │
+│  POST /api/query/   │   │  (experiment skills)  │   │  (project memory +     │
+│       experiment    │   │                       │   │   onboarding)          │
+│  GET  /health       │   │                       │   │                        │
+└──────────┬──────────┘   └──────────────────────┘   └────────────────────────┘
+           ↑
+┌──────────────────────┐
+│  modules/run-active- │
+│  test-worker         │
+│  (Cloudflare Worker) │
+│  Cron: every minute  │
+│  → POST /api/track   │
+└──────────────────────┘
+
+Storage:
+  PostgreSQL (Azure)  ← web/Prisma
+  ClickHouse          ← track-service read/write
+```
+
+All services are wired together in `modules/docker-compose.yml`.
+
+---
+
+## 1️⃣ modules/web — Next.js Dashboard & API
+
+**Language**: TypeScript (Next.js 16 App Router)  
+**Port** (docker): 3000  
+**DB**: PostgreSQL via Prisma ORM
 
 ### Responsibilities
 
-- **UI**: Experiment dashboard, workflow wizard (CF-01 through CF-08)
-- **REST API**: Experiment CRUD, project state, activity log
-- **Analysis Engine**: Bayesian A/B, Bandit analysis (in-process TypeScript)
-- **Database**: PostgreSQL (Prisma ORM)
+- **UI**: Experiment dashboard, wizard stages (intent → hypothesis → exposure → measurement → analysis → decision → learning)
+- **REST API**: Experiment / run CRUD, activity log, memory, agent-session proxy
+- **Analysis Engine**: Bayesian A/B + Bandit analysis (in-process TypeScript)
+- **Memory API**: Per-project and per-user AI memory storage (`/api/memory/`)
 
 ### Key Files
 
 ```
-src/
+modules/web/src/
 ├─ app/
-│  ├─ (dashboard)/experiments/          ← Experiments list
-│  ├─ (project)/experiments/[id]/       ← Experiment detail + workflow stages
+│  ├─ (dashboard)/experiments/       ← Experiments list + data warehouse pages
+│  ├─ (project)/experiments/[id]/    ← Experiment detail + workflow stages
 │  └─ api/
-│     ├─ experiments/[id]/analyze/route.ts   ← Analysis orchestrator
-│     ├─ experiments/[id]/state/route.ts     ← Experiment state CRUD
-│     ├─ experiments/running/route.ts        ← Running experiments list (for cron)
-│     └─ (other CRUD endpoints)
+│     ├─ experiments/[id]/analyze/   ← Analysis orchestrator (POST)
+│     ├─ experiments/[id]/stage/     ← Stage transitions
+│     ├─ experiments/[id]/state/     ← Full state CRUD
+│     ├─ experiments/[id]/activity/  ← Activity log append
+│     ├─ experiments/[id]/conflicts/ ← Conflict detection
+│     ├─ experiments/[id]/experiment-run/ ← Run CRUD
+│     ├─ experiments/running/        ← GET running runs (used by workers)
+│     ├─ memory/project/             ← Project-scoped AI memory
+│     ├─ memory/user/                ← User-scoped AI memory
+│     └─ agent-session/[projectKey]/ ← Agent session proxy
 ├─ lib/
 │  ├─ stats/
-│  │  ├─ analyze.ts          ← Bayesian A/B orchestrator
-│  │  ├─ bandit.ts           ← Thompson sampling
-│  │  ├─ bayesian.ts         ← Bayesian math (Beta-Binomial, Normal)
-│  │  ├─ tsdb-client.ts      ← TSDB HTTP client (metrics collection)
-│  │  └─ types.ts            ← Metric types
-│  ├─ prisma.ts              ← Prisma client singleton
-│  ├─ data.ts                ← Experiment queries + mutations
-│  └─ actions.ts             ← Server actions (revalidatePath calls)
-└─ components/experiment/     ← UI components
-   ├─ experiment-run-table.tsx   ← Experiment runs + analysis drawer
-   ├─ analysis-markdown.tsx      ← Renders analysis JSON
-   └─ (stage-specific components)
+│  │  ├─ analyze.ts        ← Bayesian A/B orchestrator
+│  │  ├─ bandit.ts         ← Thompson sampling (multi-armed bandit)
+│  │  ├─ bayesian.ts       ← Beta-Binomial + Normal math
+│  │  ├─ track-client.ts   ← track-service HTTP client
+│  │  └─ types.ts          ← Metric types
+│  ├─ memory/
+│  │  ├─ project-memory.ts ← Project memory read/write helpers
+│  │  └─ user-project-memory.ts
+│  ├─ prisma.ts            ← Prisma client singleton
+│  ├─ data.ts              ← Experiment queries + mutations
+│  ├─ actions.ts           ← Server actions (revalidatePath)
+│  └─ stages.ts            ← Stage definitions
+└─ components/             ← UI components (shadcn/ui based)
 ```
 
 ### Database Schema (Prisma)
 
 **Core entities**:
-- `Project` — top-level container (stage, goal, hypothesis, etc.)
-- `Experiment` — parent of runs (flags, metrics definition)
-- `ExperimentRun` — individual A/B test instance (variants, observation window, results)
-- `Activity` — append-only audit log per project
-- `Message` — chat history per project
+- `Experiment` — top-level record (flag, env, goal, hypothesis, stage, variants, metrics)
+- `ExperimentRun` — individual A/B test instance (method, observation window, results, decision, learning)
+- `Activity` — append-only audit log per experiment
+- `Message` — chat history per experiment
 
 ### Analysis Orchestration
 
 **Flow** (`POST /api/experiments/{id}/analyze`):
 1. Accept `runId` + optional `forceFresh`
-2. Fetch metrics from TSDB: `collectMetric()` or `collectManyMetrics()`
-   - `metricEvent`: primary metric
-   - `guardrailEvents`: array of guardrail metric names
-3. Run `runAnalysis()` or `runBanditAnalysis()` in-process
-   - Computes Bayesian posterior, credible intervals, P(win), verdicts
+2. Fetch metrics from track-service: `queryAllMetrics()`
+   - `primaryMetricEvent` + optional `guardrailEvents[]`
+3. Run `runAnalysis()` (Bayesian A/B) or `runBanditAnalysis()` in-process
 4. Store `inputData` + `analysisResult` in `ExperimentRun`
-5. Return JSON (can have `stale: true` if TSDB unavailable + DB fallback exists)
+5. Return JSON; if track-service is unreachable and `forceFresh=false`, return stale DB result with `stale: true`
 
-**If `forceFresh=true`**: Reject with 503 if TSDB unavailable (no fallback to stale DB result).
+**If `forceFresh=true`**: Reject with 503 if track-service unavailable.
 
 ### Environment Variables
 
-| Variable | Type | Required | Example |
-|---|---|---|---|
-| `DATABASE_URL` | Secret | Yes | `postgresql://user:pass@host:5432/release_decision` |
-| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | No | `http://localhost:3100` |
-| `TSDB_BASE_URL` | Code default | No | Defaults to `https://tsdb.featbit.ai` |
-
-### Deployment (Cloudflare Containers)
-
-```bash
-cd agent/web
-
-# Set PostgreSQL connection secret
-npx wrangler secret put DATABASE_URL
-
-# Deploy
-npx wrangler deploy
-```
-
-**Result**: Custom domain `https://www.featbit.ai` routes through Cloudflare to Next.js container.
-
-### Caching
-
-- No HTTP caching on `/api/experiments/{id}/analyze`
-- Page-level revalidation via `revalidatePath()` after state changes
-- Prisma client configured for PostgreSQL connection pooling
+| Variable | Required | Notes |
+|---|---|---|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `TRACK_SERVICE_URL` | No | Defaults to `http://track-service:8080` |
+| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | Browser-reachable sandbox URL (default: `http://localhost:3100`) |
+| `NEXT_PUBLIC_FEATBIT_API_URL` | Build arg | FeatBit backend for auth (default: `https://app-api.featbit.co`) |
 
 ---
 
-## 2️⃣ agent/tsdb-cloudflare — Time-Series Data & Cron
+## 2️⃣ modules/track-service — Event Ingest & Query (.NET 10)
 
-**Language**: TypeScript  
-**Platform**: Cloudflare Workers + R2  
-**URL** (production): `https://tsdb.featbit.ai`
+**Language**: C# (.NET 10 Web API)  
+**Port** (docker): 5050 → 8080  
+**Storage**: ClickHouse (`featbit.flag_evaluations` + `featbit.metric_events`)
 
 ### Responsibilities
 
-- **Data Ingestion**: `POST /api/track` → buffers → PartitionWriter DO → R2
-- **Metric Queries**: `POST /api/query/experiment` → scans R2 segments → aggregate statistics
-- **Storage Optimization**: Cron job (every 3h) compacts raw segments into daily rollups
-- **Experiment Analysis**: Cron job (every 3h) fetches running experiments, triggers analysis
+Replaces the old `cf-worker` + `rollup-service` combo:
+- **Ingest**: `POST /api/track` (batch) and `POST /api/track/event` (single) → in-memory `Channel<EventRecord>` → `BatchIngestWorker` flushes every 5s or 1 000 rows → ClickHouse
+- **Query**: `POST /api/query/experiment` → ClickHouse JOIN (flag_evaluations ⋈ metric_events by user_key) → per-variant aggregates
+- **Health**: `GET /health`
 
-### Architecture
-
-**Event Flow**:
-```
-POST /api/track (event payload)
-  ↓
-Worker (track.ts)
-  ├─ Group by partition: (table, envId, key, date)
-  └─ Dispatch to PartitionWriter DO
-       ↓
-PartitionWriter DO (durable-objects/partition-writer.ts)
-  ├─ Buffer records in memory
-  ├─ Flush on: size threshold OR time threshold
-  └─ Write compressed segment to R2
-       ↓
-R2 Bucket: featbit-tsdb/
-  ├─ flag-evals/{envId}/{flagKey}/{date}/seg-00000001.bin
-  ├─ flag-evals/{envId}/{flagKey}/{date}/seg-00000002.bin
-  ├─ metric-events/{envId}/{eventName}/{date}/seg-*.bin
-  └─ (daily) rollups/flag-evals/{envId}/{flagKey}/{date}.bin
-```
-
-**Query Flow**:
-```
-POST /api/query/experiment
-  ↓
-Worker (query.ts)
-  └─ Call queryExperiment(bucket, query)
-       ↓
-ExperimentEngine (query/experiment-engine.ts)
-  ├─ Step 1: Build exposure map
-  │    └─ flagEvalScanner: read flag-evals → filter by time/experiment_id/layer_id/audience
-  ├─ Step 2: Balance variants (bayesian_ab only)
-  ├─ Step 3: Aggregate metrics
-  │    └─ metricEventScanner: read metric-events → join on exposure map
-  └─ Return: VariantStats[] (n, k/mean, variance)
-       ↓
-Response JSON (Cache-Control: no-store)
-  {
-    "metricType": "binary" | "continuous",
-    "variants": {
-      "control": { "n": 2318, "k": 0 },
-      "treatment": { "n": 2318, "k": 0 }
-    }
-  }
-```
-
-### Cron Job Details
-
-**Schedule**: `0 */3 * * *` (every 3 hours)  
-**Location**: `src/scheduled/handler.ts`
-
-**Step 1: Compact R2**
-```
-For each running experiment run (fetched from web:3000/api/experiments/running):
-  1. Call compact(bucket, { envId, flagKey, metricEvents, startDate, endDate, force })
-  2. Idempotent: skips today (in-flight data)
-  3. Merges raw segments → daily rollups
-  4. Logs: e.g., "fe=3new/5skip, me=4new/2skip (1234ms)"
-```
-
-**Step 2: Analyze**
-```
-For each running experiment run:
-  1. Fetch fresh metrics: POST /api/query/experiment with metric events
-  2. Call web:3000/api/experiments/{id}/analyze with { runId, forceFresh: true }
-  3. Store result in Experiment.analysisResult
-  4. Logs: "Analyzed run {id} ({flagKey})"
-```
-
-### Key Files
+### Event Flow
 
 ```
-src/
-├─ index.ts                    ← Worker entry, route handlers
-├─ env.ts                      ← Env interface
-├─ endpoints/
-│  ├─ track.ts                 ← POST /api/track
-│  ├─ query.ts                 ← POST /api/query/experiment (with Cache-Control headers)
-│  ├─ stats.ts                 ← GET /api/stats
-│  └─ compact.ts               ← [internal]
-├─ scheduled/
-│  └─ handler.ts               ← Cron job (handleScheduled)
-├─ durable-objects/
-│  └─ partition-writer.ts      ← PartitionWriterDO (buffering)
-├─ query/
-│  ├─ experiment-engine.ts     ← Query orchestrator
-│  ├─ flag-eval-scanner.ts     ← Flag exposure aggregation
-│  └─ metric-event-scanner.ts  ← Metric aggregation
-├─ rollup/
-│  └─ compact.ts               ← Compaction logic
-└─ storage/
-   ├─ segment-writer.ts        ← Compress + write
-   ├─ segment-reader.ts        ← Decompress + read
-   └─ segment-format.ts        ← Binary format spec
+POST /api/track
+  → EventQueue (Channel, bounded 100k)
+  → BatchIngestWorker (flush every 5s or 1000 rows)
+  → ClickHouse: flag_evaluations / metric_events
+```
+
+### Query Response Shape
+
+```json
+{
+  "variants": [
+    { "variant": "control",   "users": 2318, "conversions": 45,
+      "sumValue": 0, "sumSquares": 0, "conversionRate": 0.019 },
+    { "variant": "treatment", "users": 2318, "conversions": 61,
+      "sumValue": 0, "sumSquares": 0, "conversionRate": 0.026 }
+  ]
+}
 ```
 
 ### Environment Variables
 
-| Variable | Type | Required | Purpose |
-|---|---|---|---|
-| `TSDB_BUCKET` | R2 binding | Yes | R2 bucket name: `featbit-tsdb` |
-| `WEB_API_URL` | Env var | Yes | Web service base URL: `https://www.featbit.ai` |
-| `TSDB_MAX_BATCH_SIZE` | Env var | No | Max records per flush (default: 10000) |
-| `TSDB_FLUSH_INTERVAL_MS` | Env var | No | Time-based flush trigger (default: 2000ms) |
-| `TSDB_MIN_FLUSH_ROWS` | Env var | No | Min rows to trigger flush (default: 200) |
-| `TSDB_MAX_BUFFER_AGE_MS` | Env var | No | Max age before force flush (default: 3000ms) |
+| Variable | Default | Notes |
+|---|---|---|
+| `CLICKHOUSE_CONNECTION_STRING` | — | Full ADO.NET connection string |
+| `ClickHouse:Database` | `featbit` | |
+| `Ingest:BatchSize` | `1000` | Rows before forced flush |
+| `Ingest:FlushIntervalMs` | `5000` | Time-based flush trigger |
 
-### Deployment (Cloudflare Workers)
+### One-time Schema Setup
 
 ```bash
-cd agent/tsdb-cloudflare
-
-# Verify R2 bucket exists
-wrangler r2 bucket list
-# If not: wrangler r2 bucket create featbit-tsdb
-
-# Deploy
-npx wrangler deploy
+clickhouse-client ... --queries-file modules/track-service/sql/schema.sql
 ```
-
-**Result**: Custom domain `https://tsdb.featbit.ai` routes through Cloudflare to Worker.
-
-### Monitoring
-
-- **Cron logs**: Cloudflare Workers Analytics → Cron Triggers
-- **Custom logging**: `console.log()` in handler visible in real-time logs
-- **R2 usage**: `GET /api/stats` returns segment counts and total bytes
 
 ---
 
-## 3️⃣ agent/sandbox — Claude Code Agent (Optional)
+## 3️⃣ modules/sandbox — Claude Code Agent (SSE)
 
-**Language**: TypeScript (Node.js)  
-**Platform**: Standalone or Cloud  
-**Port** (local): 3000  
-**Type**: SSE endpoint (Server-Sent Events)
+**Language**: TypeScript (Node.js + Express)  
+**Port** (docker): 3100 → 3000  
+**Type**: Server-Sent Events streaming
 
 ### Responsibilities
 
-- **Agent Hosting**: Runs Claude Code agent via `@anthropic-ai/claude-agent-sdk`
-- **Skill Integration**: Routes to satellite skills based on workflow stage (CF-01 through CF-08)
-- **SSE Streaming**: Real-time agent thoughts and actions to client
-- **Project Sync**: CLI script to persist experiment state to web DB
-
-### Architecture
-
-**Session Model**:
-- Each project gets a stable UUID → session ID mapping
-- New sessions begin with `/featbit-release-decision <projectId>` slash command
-- Resumed sessions pass user prompt directly, preserving agent memory
-
-**Skill Routing**:
-- Hub skill: `skills/featbit-release-decision/SKILL.md`
-- Satellite skills (in `skills/` directory):
-  - `intent-shaping/SKILL.md` (CF-01)
-  - `hypothesis-design/SKILL.md` (CF-02)
-  - `reversible-exposure-control/SKILL.md` (CF-03/04)
-  - `measurement-design/SKILL.md` (CF-05)
-  - `experiment-workspace/SKILL.md` (CF-05+)
-  - `evidence-analysis/SKILL.md` (CF-06/07)
-  - `learning-capture/SKILL.md` (CF-08)
-  - `project-sync/SKILL.md` (all stages)
+- Hosts the Claude Code agent via `@anthropic-ai/claude-agent-sdk`
+- Routes to release-decision skills (CF-01 through CF-08)
+- Syncs experiment state back to web via `SYNC_API_URL` (`http://web:3000`)
+- Reads project memory via `MEMORY_API_BASE` (`http://web:3000`)
 
 ### Key Files
 
 ```
-src/
-├─ server.ts         ← Express + SSE endpoint
-├─ agent.ts          ← agent-sdk query runner
-├─ prompt.ts         ← Builds effective prompt
-└─ session-id.ts     ← projectId ↔ UUID mapping
-
-scripts/
-└─ sync.ts           ← Project sync CLI (invoked by project-sync skill)
-
-data/                ← Local JSON for project state (optional)
+modules/sandbox/src/
+├─ server.ts        ← Express app, /query router, /health
+├─ agent.ts         ← claude-agent-sdk query runner
+├─ prompt.ts        ← Builds effective prompt per session
+├─ session-id.ts    ← projectId ↔ UUID session mapping
+├─ session-store.ts ← In-memory session state
+├─ sse.ts           ← SSE helpers
+└─ routes/query.ts  ← POST /query handler
 ```
 
-### Deployment (Standalone)
-
-```bash
-cd agent/sandbox
-
-npm install
-npm run build
-npm start
-```
-
-**Environment Variables**:
-- `GLM_API_KEY`: Zhipuai API key (for local testing)
-- `SYNC_API_URL`: Web service base URL (e.g., `http://localhost:3000`)
-- `PORT`: Server port (default: 3000)
+Skills mounted at runtime:
+- `../skills/` → `/root/.claude/skills/` (read-only volume mount)
 
 ### SSE Endpoint
 
 ```
-POST http://localhost:3000/query
-{
-  "projectId": "proj-123",
-  "message": "please analyze the results"
-}
+POST http://localhost:3100/query
+{ "projectId": "exp-123", "message": "analyze the results" }
 ```
 
-Response: Server-Sent Events stream with agent thoughts, actions, and final response.
+Response: SSE stream with agent thoughts, tool calls, and final answer.
+
+### Environment Variables
+
+| Variable | Notes |
+|---|---|
+| `GLM_API_KEY` | Zhipuai key (routes Claude through GLM) |
+| `SYNC_API_URL` | `http://web:3000` (inside docker network) |
+| `MEMORY_API_BASE` | `http://web:3000` |
+| `PORT` | Default: 3000 |
+| `CORS_ORIGINS` | Default: `*` |
+
+---
+
+## 4️⃣ modules/project-agent — Project-Level AI Assistant (SSE)
+
+**Language**: TypeScript (Node.js, Codex CLI)  
+**Port** (docker): 3031  
+**Type**: Server-Sent Events streaming
+
+### Responsibilities
+
+- Project onboarding assistant powered by OpenAI Codex CLI
+- Reads and writes shared project memory via `MEMORY_API_BASE`
+- Per-session env vars: `FEATBIT_PROJECT_KEY`, `FEATBIT_USER_ID`
+
+### Key Files
+
+```
+modules/project-agent/src/
+├─ server.ts        ← Express, /query route
+├─ agent.ts         ← Codex CLI wrapper
+├─ prompt.ts        ← Builds system prompt with project context
+├─ session-store.ts ← In-memory session tracking
+└─ sse.ts           ← SSE helpers
+```
+
+Skills in `modules/project-agent/skills/` — loaded on demand.
+
+### Environment Variables
+
+| Variable | Notes |
+|---|---|
+| `OPENAI_API_KEY` | Required for Codex |
+| `MEMORY_API_BASE` | `http://web:3000` |
+| `PORT` | Default: 3031 |
+| `CODEX_HOME` | `/app/codex-config` (volume-mounted) |
+
+---
+
+## 5️⃣ modules/run-active-test-worker — Synthetic Data Generator (Cloudflare Worker)
+
+**Language**: TypeScript (Cloudflare Workers)  
+**Trigger**: Cron, every minute  
+**Target**: `POST {WORKER_URL}/api/track`
+
+### Responsibilities
+
+Feeds synthetic flag evaluation + metric events to track-service for the `run-active-test` canary experiment. Also acts as an end-to-end health probe — if track-service is down, this worker surfaces fetch errors in Cloudflare logs.
+
+### What It Sends
+
+Each cron tick fires 12 bursts (5s apart). Each burst sends 0–10 `TrackPayload` objects:
+- 1 flag eval: `run-active-test` flag, control/treatment 50/50
+- Maybe a `checkout-completed` event (control 15%, treatment 20%)
+- Maybe a guardrail event (`page-load-error` / `rage-click` / `session-bounce`)
+
+### Environment Variables (wrangler.jsonc `vars`)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `WORKER_URL` | `https://data-process.featbit.ai` | Track-service public URL |
+| `ENV_ID` | `rat-env-v1` | Authorization header / envId |
+| `BURSTS_PER_INVOCATION` | `12` | |
+| `BURST_INTERVAL_MS` | `5000` | |
+| `MAX_EVENTS_PER_BURST` | `10` | |
+
+### Deploy
+
+```bash
+cd modules/run-active-test-worker
+npm run deploy
+```
+
+---
+
+## 🐳 Docker Compose
+
+All services (except the Cloudflare Worker) run via `modules/docker-compose.yml`.
+
+```
+modules/
+  docker-compose.yml
+  .env                ← DATABASE_URL, CLICKHOUSE_CONNECTION_STRING, GLM_API_KEY, OPENAI_API_KEY, …
+```
+
+### Service Map
+
+| Service | Image | Host port | Depends on |
+|---|---|---|---|
+| `track-service` | `featbit/track-service:local` | 5050 | ClickHouse |
+| `run-active-test` | `featbit/run-active-test:local` | — | track-service (healthy) |
+| `agent-sandbox` | `featbit/agent-sandbox:local` | 3100 | — |
+| `project-agent` | `featbit/project-agent:local` | 3031 | web (healthy) |
+| `web` | `featbit/web:local` | 3000 | track-service (healthy), agent-sandbox |
+
+### Start / Stop
+
+```bash
+cd modules
+
+# Start all services
+docker compose up -d
+
+# Rebuild a specific service after code changes
+docker compose build web && docker compose up -d web
+
+# Tail logs
+docker compose logs -f web
+docker compose logs -f track-service
+
+# Stop
+docker compose down
+```
 
 ---
 
 ## 📡 API Contracts
 
-### agent/web → agent/tsdb-cloudflare
+### web → track-service
 
 **Metrics Query** (from analysis API):
 ```bash
-POST https://tsdb.featbit.ai/api/query/experiment
-Authorization: {envId}
+POST http://track-service:8080/api/query/experiment
 Content-Type: application/json
 
 {
   "envId": "pricing-env-123",
   "flagKey": "pricing-page",
   "metricEvent": "page_view",
-  "metricType": "binary",
-  "metricAgg": "once",
-  "controlVariant": "original",
-  "treatmentVariant": "redesigned",
-  "start": "2026-04-01T00:00:00Z",
-  "end": "2026-04-14T23:59:59Z",
-  "experimentId": "exp-456",
-  "method": "bayesian_ab"
+  "startDate": "2026-04-01",
+  "endDate": "2026-04-14"
 }
 ```
 
-**Response**:
-```json
-{
-  "metricType": "binary",
-  "variants": {
-    "original": { "n": 2318, "k": 45 },
-    "redesigned": { "n": 2318, "k": 61 }
-  }
-}
-```
+### track-service → ClickHouse
 
-### agent/tsdb-cloudflare → agent/web
+Direct ADO.NET connection. Schema lives in `modules/track-service/sql/schema.sql`.
 
-**Fetch Running Experiments** (from cron):
+### sandbox / project-agent → web (Memory + Sync)
+
 ```bash
-GET https://www.featbit.ai/api/experiments/running
-```
+# Read project memory
+GET http://web:3000/api/memory/project/{projectKey}
 
-**Response**:
-```json
-[
-  {
-    "id": "run-789",
-    "experimentId": "exp-456",
-    "primaryMetricEvent": "page_view",
-    "guardrailEvents": "[\"bounce_rate\", \"timeout_errors\"]",
-    "observationStart": "2026-04-01T00:00:00Z",
-    "experiment": {
-      "id": "exp-456",
-      "flagKey": "pricing-page",
-      "envSecret": "pricing-env-123"
-    }
-  }
-]
-```
+# Write project memory
+POST http://web:3000/api/memory/project/{projectKey}
 
-**Trigger Analysis** (from cron):
-```bash
-POST https://www.featbit.ai/api/experiments/exp-456/analyze
-Content-Type: application/json
-
-{
-  "runId": "run-789",
-  "forceFresh": true
-}
-```
-
-**Response**:
-```json
-{
-  "inputData": "{\"metrics\": {...}}",
-  "analysisResult": "{\"type\": \"bayesian\", \"verdict\": \"...\"}"
-}
+# Sync experiment state
+POST http://web:3000/api/experiments/{id}/state
+POST http://web:3000/api/experiments/{id}/activity
 ```
 
 ---
 
 ## 🔍 Troubleshooting
 
-### TSDB `/api/query` returns empty data
+### Analysis returns no data
 
-**Symptoms**:
-- Web API analysis fails with "No data returned from TSDB"
-- Or falls back to stale DB result
+1. Check track-service health: `curl http://localhost:5050/health`
+2. Verify ClickHouse connection string in `.env`
+3. Check events were ingested: look for `[BatchIngestWorker]` log lines in `docker compose logs track-service`
+4. Verify `run-active-test` container is running and sending events
 
-**Diagnosis**:
-1. Check R2 bucket exists:
-   ```bash
-   npm run wrangler r2 bucket list
-   ```
-2. Check segment files exist:
-   ```bash
-   npm run wrangler r2 object list --bucket=featbit-tsdb
-   ```
-3. Check cron job logs:
-   - Cloudflare Dashboard → Workers → featbit-tsdb → Logs
-   - Look for "Found N running experiment run(s)"
+### track-service won't start
 
-**Fix**:
-- Verify `WEB_API_URL` is accessible from Cloudflare Workers
-- Ensure firewall rules allow outbound to web API
-- Check if events were actually ingested: `GET /api/stats`
+- Most likely cause: missing or wrong `CLICKHOUSE_CONNECTION_STRING`
+- Verify ClickHouse schema was applied: `sql/schema.sql`
+- Check Docker logs: `docker compose logs track-service`
 
-### Cron job not running
+### Agent sandbox not responding
 
-**Symptoms**:
-- Analysis results never update
-- R2 segments accumulate without compaction
+- Check `docker compose logs agent-sandbox`
+- Verify `GLM_API_KEY` is set in `.env`
+- Confirm the browser is hitting `http://localhost:3100` (not the internal docker name)
 
-**Diagnosis**:
-1. Verify trigger in `wrangler.jsonc`:
-   ```json
-   "triggers": {
-     "crons": ["0 */3 * * *"]
-   }
-   ```
-2. Check Cloudflare dashboard:
-   - Workers → Triggers → Check cron status
-3. Look at logs:
-   - Workers → Tail → Filter by `handleScheduled`
+### Analysis results show `stale: true`
 
-**Fix**:
-- Redeploy: `npx wrangler deploy`
-- Verify `WEB_API_URL` environment variable is set
-- Manually trigger for testing:
-   ```bash
-   # Not possible directly, but check logs after next cron window
-   ```
-
-### Analysis results show "stale: true"
-
-**Symptoms**:
-- UI displays old analysis with warning: "last successful analysis"
-- User wants latest results
-
-**Solution**:
-- Click "Refresh Latest Analysis" button in Full Analysis tab
-- Or wait up to 3 hours for next cron run
+- track-service is unreachable at query time
+- Check `docker compose ps` — all services should show `healthy` or `running`
+- Manually refresh: click "Refresh Latest Analysis" in the UI
 
 ---
 
-## 📊 Monitoring & Metrics
+## 📊 Monitoring
 
-**Key metrics to watch**:
-- **TSDB cron job success rate**: Should be 100%
-- **Web API `/analyze` latency**: <5s typical
-- **R2 segment size distribution**: Healthy if <100MB rollups
-- **PostgreSQL connection pool**: Monitor active connections
-
-**Logging**:
-- **agent/web**: Check application logs for `/api/experiments/{id}/analyze` calls
-- **agent/tsdb-cloudflare**: Cloudflare Dashboard → Logs
-- **agent/sandbox**: STDOUT in container or cloud logs
+- **track-service ingestion**: `docker compose logs -f track-service` — watch `[BatchIngestWorker] flushed N rows`
+- **web analysis latency**: Application logs for `POST /api/experiments/{id}/analyze`
+- **agent-sandbox**: `docker compose logs -f agent-sandbox`
+- **run-active-test worker**: Cloudflare Dashboard → Workers → Cron Triggers → Logs
 
 ---
 
-## 🚀 Scaling Considerations
+## ⚠️ After completing any task
 
-- **Concurrent experiments**: TSDB scales with R2 throughput; CPU limited by Cloudflare Workers
-- **Metric cardinality**: Each unique (envId, flagKey, metricEvent) creates separate R2 partition
-- **Query latency**: Inversely related to compaction frequency; every 3h is tunable
-- **PostgreSQL**: Ensure connection pooling configured for concurrent web requests
+All local debugging and testing happens inside Docker. After making code changes, always rebuild and restart the affected service:
+
+```bash
+cd modules
+
+# Rebuild + restart a single service (e.g., web)
+docker compose build web && docker compose up -d web
+
+# Or rebuild all and restart
+docker compose build && docker compose up -d
+```
+
+Skipping this step means the running container still has the old code.
 
 ---
 

@@ -10,9 +10,9 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarGroupContent,
+  SidebarSeparator,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { getExperiments } from "@/lib/data";
 import {
   FolderKanban,
   Plus,
@@ -21,12 +21,11 @@ import {
   ExternalLink,
   BrainCircuit,
   Code2,
+  FolderOpen,
 } from "lucide-react";
 import { UserMenu } from "@/components/auth/user-menu";
 
-export async function AppSidebar() {
-  const experiments = await getExperiments();
-
+export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
@@ -50,6 +49,7 @@ export async function AppSidebar() {
         </Link>
       </SidebarHeader>
       <SidebarContent>
+        {/* ─── Project / env-scoped items ─── */}
         <SidebarGroup>
           <SidebarGroupLabel>Experiments</SidebarGroupLabel>
           <SidebarGroupContent>
@@ -119,17 +119,29 @@ export async function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* ─── Separator between project/env-scoped and workspace-level items ─── */}
+        <SidebarSeparator className="my-2" />
+
+        {/* ─── Workspace-level items (not tied to the current project/env) ─── */}
         <SidebarGroup>
-          <SidebarGroupLabel>Recent</SidebarGroupLabel>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {experiments.slice(0, 10).map((experiment) => (
-                <SidebarMenuItem key={experiment.id}>
-                  <SidebarMenuButton render={<Link href={`/experiments/${experiment.id}`} />}>
-                    <span className="truncate">{experiment.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  render={
+                    <a
+                      href="https://app.featbit.co/en/workspace/projects"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  }
+                >
+                  <FolderOpen className="size-4" />
+                  <span>Projects</span>
+                  <ExternalLink className="size-3 ml-auto opacity-50" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

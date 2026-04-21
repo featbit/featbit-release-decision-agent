@@ -536,7 +536,7 @@ export function FlagIntegrationHeader({
   }
 
   return (
-    <section className="space-y-3">
+    <section className="space-y-2">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
         <Code className="size-3.5" />
         <span>Flag Integration & Rollout</span>
@@ -550,47 +550,31 @@ export function FlagIntegrationHeader({
         </button>
       </div>
 
-      <div className="rounded-md border bg-muted/10 px-4 py-4 space-y-4">
-        {/* Flag key — own line, bold, prominent */}
-        <div className="space-y-1">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase">
-            Flag Key
-          </span>
-          {isConfigured ? (
-            <div className="flex items-baseline gap-2">
-              <button
-                type="button"
-                onClick={onEdit}
-                className="group inline-flex items-baseline gap-1.5 cursor-pointer text-left"
-              >
-                <Flag className="size-4 text-blue-600 dark:text-blue-400 self-center shrink-0" />
-                <span className="font-mono text-base font-bold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                  {experiment.flagKey}
-                </span>
-                {featbitUrl && (
-                  <ExternalLink className="size-3.5 text-muted-foreground group-hover:text-blue-600 transition-colors shrink-0 self-center" />
-                )}
-              </button>
-            </div>
-          ) : (
+      <div className="rounded-md border bg-background px-3 py-2.5 flex items-center gap-2.5 flex-wrap min-h-[2.5rem]">
+        {isConfigured ? (
+          <>
+            {/* Flag key */}
             <button
               type="button"
               onClick={onEdit}
-              className="flex items-center gap-1.5 text-sm text-muted-foreground/60 italic hover:text-muted-foreground cursor-pointer"
+              className="group flex items-center gap-1.5 cursor-pointer text-left shrink-0"
             >
-              Not configured — click to set up
-              <Pencil className="size-3" />
+              <Flag className="size-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="font-mono text-sm font-bold text-foreground group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                {experiment.flagKey}
+              </span>
+              {featbitUrl && (
+                <ExternalLink className="size-3 text-muted-foreground/50 group-hover:text-blue-600 transition-colors shrink-0" />
+              )}
             </button>
-          )}
-        </div>
 
-        {/* Variations */}
-        {allVariants.length > 0 && (
-          <div className="space-y-1">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">
-              Variations
-            </span>
-            <div className="flex flex-wrap gap-1.5">
+            {/* Divider */}
+            {allVariants.length > 0 && (
+              <span className="text-muted-foreground/30 select-none shrink-0">·</span>
+            )}
+
+            {/* Variations inline */}
+            <div className="flex flex-wrap gap-1 flex-1">
               {allVariants.map(({ key, description }) => {
                 const isControl = description?.toLowerCase().includes("control");
                 const isUsed = usedInRuns.has(key);
@@ -598,7 +582,7 @@ export function FlagIntegrationHeader({
                   <Badge
                     key={key}
                     variant="outline"
-                    className={`font-mono text-xs px-2 py-0.5 ${
+                    className={`font-mono text-xs px-2 py-0 ${
                       isControl
                         ? "border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300"
                         : isUsed
@@ -617,18 +601,28 @@ export function FlagIntegrationHeader({
                 );
               })}
             </div>
-          </div>
+
+            {/* Edit link — far right */}
+            <button
+              type="button"
+              onClick={onEdit}
+              className="ml-auto shrink-0 flex items-center gap-1 text-xs text-muted-foreground/50 hover:text-foreground transition-colors"
+            >
+              <Pencil className="size-3" />
+              Edit
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground/60 italic hover:text-muted-foreground cursor-pointer"
+          >
+            Not configured — click to set up
+            <Pencil className="size-3" />
+          </button>
         )}
-
-        {/* Primary CTA — full inline editor */}
-        <div className="pt-1">
-          <Button variant="outline" size="sm" onClick={onEdit} className="gap-1.5">
-            <Pencil className="size-3.5" />
-            {isConfigured ? "Edit Rollout Config" : "Connect & Configure Flag"}
-          </Button>
-        </div>
       </div>
-
     </section>
   );
 }

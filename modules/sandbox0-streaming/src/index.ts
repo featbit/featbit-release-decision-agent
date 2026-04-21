@@ -65,45 +65,57 @@ app.get("/health", (c) => c.json({ status: "ok" }));
 // ── Chat API ─────────────────────────────────────────────────────────────────
 
 app.post("/chat/start", async (c) => {
-  await ensureManagedAgentTable();
-  await ensureVaultTable();
+  try {
+    await ensureManagedAgentTable();
+    await ensureVaultTable();
 
-  const version = process.env.MANAGED_AGENT_VERSION ?? "default";
-  const agent = await getManagedAgent(version);
-  if (!agent) {
-    return c.json({ error: `No managed agent for version "${version}"` }, 500);
+    const version = process.env.MANAGED_AGENT_VERSION ?? "default";
+    const agent = await getManagedAgent(version);
+    if (!agent) {
+      return c.json({ error: `No managed agent for version "${version}"` }, 500);
+    }
+
+    const llmVault = await getVault("llm");
+    const vaultIds = llmVault ? [llmVault.vaultId] : [];
+
+    const session = await createChatSession(
+      agent.agentId,
+      agent.environmentId,
+      vaultIds,
+    );
+
+    // Send bootstrap message to activate the release-decision skill
+    await sendChatMessage(
+      session.sessionId,
+      `/featbit-release-decision\n\nActivate the FeatBit Release Decision framework. Greet the user and ask what they want to improve or learn.`,
+    );
+
+    return c.json({ sessionId: session.sessionId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[/chat/start]", message);
+    return c.json({ error: message }, 500);
   }
-
-  const llmVault = await getVault("llm");
-  const vaultIds = llmVault ? [llmVault.vaultId] : [];
-
-  const session = await createChatSession(
-    agent.agentId,
-    agent.environmentId,
-    vaultIds,
-  );
-
-  // Send bootstrap message to activate the release-decision skill
-  await sendChatMessage(
-    session.sessionId,
-    `/featbit-release-decision\n\nActivate the FeatBit Release Decision framework. Greet the user and ask what they want to improve or learn.`,
-  );
-
-  return c.json({ sessionId: session.sessionId });
 });
 
 app.post("/chat/send", async (c) => {
-  const { sessionId, message } = await c.req.json<{
-    sessionId: string;
-    message: string;
-  }>();
+  try {
+    const { sessionId, message } = await c.req.json<{
+      sessionId: string;
+      message: string;
+    }>();
 
-  if (!sessionId || !message) {
-    return c.json({ error: "sessionId and message are required" }, 400);
+    if (!sessionId || !message) {
+      return c.json({ error: "sessionId and message are required" }, 400);
+    }
+
+    await sendChatMessage(sessionId, message);
+    return c.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[/chat/send]", msg);
+    return c.json({ error: msg }, 500);
   }
-
-  await sendChatMessage(sessionId, message);
-  return c.json({ ok: true });
 });
 
 app.get("/chat/events", async (c) => {
