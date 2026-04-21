@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import {
   Beaker,
   Bot,
@@ -11,7 +18,9 @@ import {
   Loader2,
   MessageCircle,
   Pencil,
+  Plus,
   RefreshCw,
+  Trash2,
   ShieldCheck,
   Target,
   Users,
@@ -20,17 +29,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { AnalysisView } from "./analysis-markdown";
 import { ExperimentRunTrafficConfig } from "./experiment-run-traffic-config";
 import { useChatTrigger } from "./chat-trigger-context";
-import { updateExperimentRunObservationWindowAction } from "@/lib/actions";
+import {
+  createNewExperimentRunAction,
+  deleteExperimentRunAction,
+  updateExperimentRunObservationWindowAction,
+} from "@/lib/actions";
 import type { ExperimentRun } from "@/generated/prisma";
 
 /* ── Colour maps ── */
@@ -119,40 +126,6 @@ function DecisionBadge({ decision }: { decision: string | null }) {
 }
 
 /* ── Simple inline tab bar ── */
-
-type DrawerTab = "summary" | "traffic";
-
-const TAB_LABELS: { id: DrawerTab; label: string }[] = [
-  { id: "summary", label: "Analyze & Decision" },
-  { id: "traffic", label: "Audience & Traffic" },
-];
-
-function TabBar({
-  active,
-  onChange,
-}: {
-  active: DrawerTab;
-  onChange: (t: DrawerTab) => void;
-}) {
-  return (
-    <div className="flex border-b px-4 gap-1">
-      {TAB_LABELS.map(({ id, label }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          className={cn(
-            "py-2 px-1 text-xs font-medium border-b-2 -mb-px transition-colors",
-            active === id
-              ? "border-foreground text-foreground"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /* ── Helpers ── */
 
@@ -717,7 +690,7 @@ function TrafficTab({
   );
 }
 
-/* ── Main export: compact table + sheet drawer ── */
+/* ── Main export: inline run selector + merged content ──────────────────── */
 
 export function ExperimentRunTable({
   experimentRuns,
@@ -732,183 +705,225 @@ export function ExperimentRunTable({
   featbitEnvId: string | null;
   isSequential: boolean;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<DrawerTab>("summary");
   const triggerChat = useChatTrigger();
-  const selected = selectedId ? (experimentRuns.find((e) => e.id === selectedId) ?? null) : null;
-  const selectedIndex = selected
-    ? experimentRuns.findIndex((e) => e.id === selected.id)
-    : -1;
 
-  function openDetail(exp: ExperimentRun) {
-    setSelectedId(exp.id);
-    setActiveTab("summary");
-  }
+  // Tab order = **creation order** (Phase 1 = first created). The parent's
+  // sort-by-observationStart is load-bearing for sequential-design detection
+  // but misleads the UI when runs haven't set an observation window yet.
+  const ordered = useMemo(
+    () =>
+      [...experimentRuns].sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      ),
+    [experimentRuns],
+  );
+
+  const [selectedId, setSelectedId] = useState<string | null>(
+    ordered.at(-1)?.id ?? null,
+  );
+  const [creating, startCreate] = useTransition();
+  const [deleting, startDelete] = useTransition();
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  // Track previous run count so we can auto-focus the newly-created run when
+  // it appears in the list, rather than sticking to the old selection.
+  const prevRunCountRef = useRef(ordered.length);
+  useEffect(() => {
+    if (ordered.length > prevRunCountRef.current) {
+      setSelectedId(ordered.at(-1)?.id ?? null);
+    }
+    prevRunCountRef.current = ordered.length;
+  }, [ordered]);
+
+  // If selected run disappears (e.g., deleted), fall back to the last run.
+  useEffect(() => {
+    if (selectedId && ordered.some((r) => r.id === selectedId)) return;
+    setSelectedId(ordered.at(-1)?.id ?? null);
+  }, [selectedId, ordered]);
+
+  const selected = selectedId
+    ? ordered.find((e) => e.id === selectedId) ?? null
+    : null;
+  const selectedIndex = selected
+    ? ordered.findIndex((e) => e.id === selected.id)
+    : -1;
 
   function handleAnalyze(exp: ExperimentRun) {
     if (!triggerChat) return;
-
     const message = `请基于当前实验 run "${exp.slug}" 的现有分析结果，给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE），并说明：1) 主指标信号 2) guardrail 风险 3) 下一步行动。`;
     triggerChat(message);
   }
 
+  function createRun() {
+    const fd = new FormData();
+    fd.append("experimentId", experimentId);
+    startCreate(async () => {
+      await createNewExperimentRunAction(fd);
+    });
+  }
+
+  function deleteRun(runId: string) {
+    const fd = new FormData();
+    fd.append("experimentId", experimentId);
+    fd.append("experimentRunId", runId);
+    startDelete(async () => {
+      await deleteExperimentRunAction(fd);
+      setPendingDeleteId(null);
+    });
+  }
+
   return (
-    <>
-      {experimentRuns.length === 0 ? (
-        <div className="rounded-md border border-dashed p-3 text-center">
-          <p className="text-xs text-muted-foreground/60">No experiment runs yet</p>
-          <p className="text-[10px] text-muted-foreground/40 mt-1">
-            Experiment runs will appear here once the agent sets them up.
-          </p>
+    <div className="space-y-3">
+      {/* ── Run selector ── */}
+      <div className="flex items-end gap-1 border-b overflow-x-auto pb-0">
+        {ordered.map((exp, idx) => {
+          const active = exp.id === selectedId;
+          const confirming = pendingDeleteId === exp.id;
+          return (
+            <div key={exp.id} className="group flex items-stretch">
+              <button
+                type="button"
+                onClick={() => setSelectedId(exp.id)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-2 text-xs border-b-2 -mb-px transition-colors whitespace-nowrap",
+                  active
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <span className="font-medium">
+                  {isSequential ? `Phase ${idx + 1}` : `Run ${idx + 1}`}
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground/70">
+                  {exp.slug}
+                </span>
+                <RunStatusDot run={exp} />
+              </button>
+              {active && (
+                confirming ? (
+                  <div className="flex items-center gap-1 -mb-px border-b-2 border-foreground pb-2 pr-1">
+                    <button
+                      type="button"
+                      onClick={() => deleteRun(exp.id)}
+                      disabled={deleting}
+                      className="text-[10px] text-destructive font-medium hover:underline disabled:opacity-50"
+                    >
+                      {deleting ? "Deleting…" : "Confirm"}
+                    </button>
+                    <span className="text-muted-foreground/60">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteId(null)}
+                      disabled={deleting}
+                      className="text-[10px] text-muted-foreground hover:underline"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPendingDeleteId(exp.id)}
+                    className="flex items-center -mb-px border-b-2 border-foreground pb-2 pl-1 pr-1 text-muted-foreground/50 hover:text-destructive transition-colors"
+                    title="Delete this run"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                )
+              )}
+            </div>
+          );
+        })}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={createRun}
+          disabled={creating}
+          className="h-8 text-xs gap-1 ml-1 text-muted-foreground"
+        >
+          {creating ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <Plus className="size-3" />
+          )}
+          New run
+        </Button>
+      </div>
+
+      {/* ── Selected run content ── */}
+      {selected ? (
+        <div key={selected.id} className="-mx-4">
+          {/* Run header */}
+          <div className="px-4 pt-2 pb-3 flex items-center gap-2 flex-wrap">
+            {isSequential && selectedIndex >= 0 && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                Phase {selectedIndex + 1}
+              </Badge>
+            )}
+            <span className="font-mono text-sm font-medium">{selected.slug}</span>
+            <div className="flex items-center gap-1.5 ml-auto flex-wrap">
+              {selected.method && <MethodBadge method={selected.method} />}
+              <StatusBadge status={selected.status} />
+              {selected.decision && <DecisionBadge decision={selected.decision} />}
+            </div>
+          </div>
+
+          {/* Merged content: Analyze & Decision, then Audience & Traffic */}
+          <SummaryTab
+            exp={selected}
+            onAnalyze={
+              triggerChat ? () => handleAnalyze(selected) : undefined
+            }
+            analysisPanel={
+              <AnalysisTab
+                exp={selected}
+                experimentId={experimentId}
+                flagKey={flagKey}
+                featbitEnvId={featbitEnvId}
+                embedded
+              />
+            }
+          />
+          <TrafficTab exp={selected} experimentId={experimentId} />
         </div>
       ) : (
-        /* Horizontal scroll wrapper */
-        <div className="rounded-md border overflow-x-auto">
-          <table className="min-w-full text-xs whitespace-nowrap">
-            <thead>
-              <tr className="border-b bg-muted/40 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                <th className="px-3 py-2 text-left w-8">#</th>
-                <th className="px-3 py-2 text-left">Experiment Run</th>
-                <th className="px-3 py-2 text-left">Metrics</th>
-                <th className="px-3 py-2 text-left">Status</th>
-                <th className="px-3 py-2 text-left">Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {experimentRuns.map((exp, idx) => (
-                <tr
-                  key={exp.id}
-                  className="border-b last:border-0 hover:bg-muted/20 transition-colors"
-                >
-                  {/* # */}
-                  <td className="px-3 py-2.5 text-muted-foreground tabular-nums align-top">
-                    {isSequential ? (
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] px-1.5 py-0"
-                      >
-                        P{idx + 1}
-                      </Badge>
-                    ) : (
-                      `${idx + 1}`
-                    )}
-                  </td>
-
-                  {/* Experiment run name + method */}
-                  <td className="px-3 py-2.5 align-top">
-                    <button
-                      className="font-mono font-medium text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:hover:text-blue-200 transition-colors text-left whitespace-normal"
-                      onClick={() => openDetail(exp)}
-                    >
-                      {exp.slug}
-                    </button>
-                    {exp.method && (
-                      <div className="mt-1">
-                        <MethodBadge method={exp.method} />
-                      </div>
-                    )}
-                  </td>
-
-                  {/* Primary Metric */}
-                  <td className="px-3 py-2.5 align-top">
-                    {exp.primaryMetricEvent ? (
-                      <span className="font-mono text-[11px]">{exp.primaryMetricEvent}</span>
-                    ) : (
-                      <span className="text-muted-foreground/40">—</span>
-                    )}
-                    {(() => {
-                      const gEvents = parseGuardrailEvents(exp.guardrailEvents);
-                      return gEvents.length > 0 ? (
-                        <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <ShieldCheck className="size-3 shrink-0" />
-                          <span className="font-mono">{gEvents.join(", ")}</span>
-                        </div>
-                      ) : null;
-                    })()}
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-3 py-2.5 align-top">
-                    <StatusBadge status={exp.status} />
-                  </td>
-
-                  {/* Decision */}
-                  <td className="px-3 py-2.5 align-top">
-                    <DecisionBadge decision={exp.decision} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-md border border-dashed p-6 text-center">
+          <p className="text-sm text-muted-foreground/70">
+            No experiment runs yet.
+          </p>
+          <p className="text-xs text-muted-foreground/50 mt-1">
+            Click &ldquo;+ New run&rdquo; above to create one.
+          </p>
         </div>
       )}
+    </div>
+  );
+}
 
-      <Sheet
-        open={!!selected}
-        onOpenChange={(open) => {
-          if (!open) setSelectedId(null);
-        }}
-      >
-        <SheetContent
-          side="right"
-          hideOverlay
-          className="w-[56rem] min-w-[68vw] sm:max-w-[56rem] p-0 flex flex-col gap-0"
-        >
-          {selected && (
-            <>
-              {/* Header */}
-              <SheetHeader className="pl-4 pr-12 pt-4 pb-3 border-b shrink-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {isSequential && selectedIndex >= 0 && (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      Phase {selectedIndex + 1}
-                    </Badge>
-                  )}
-                  <SheetTitle className="font-mono text-sm">
-                    {selected.slug}
-                  </SheetTitle>
-                  <div className="flex items-center gap-1.5 ml-auto flex-wrap">
-                    {selected.method && (
-                      <MethodBadge method={selected.method} />
-                    )}
-                    <StatusBadge status={selected.status} />
-                    {selected.decision && (
-                      <DecisionBadge decision={selected.decision} />
-                    )}
-                  </div>
-                </div>
-              </SheetHeader>
-
-              {/* Tab bar */}
-              <TabBar active={activeTab} onChange={setActiveTab} />
-
-              {/* Tab content */}
-              <div className="flex-1 overflow-y-auto pt-3">
-                {activeTab === "summary" && (
-                  <SummaryTab
-                    exp={selected}
-                    onAnalyze={
-                      triggerChat ? () => handleAnalyze(selected) : undefined
-                    }
-                    analysisPanel={
-                      <AnalysisTab
-                        exp={selected}
-                        experimentId={experimentId}
-                        flagKey={flagKey}
-                        featbitEnvId={featbitEnvId}
-                        embedded
-                      />
-                    }
-                  />
-                )}
-                {activeTab === "traffic" && (
-                  <TrafficTab exp={selected} experimentId={experimentId} />
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-    </>
+function RunStatusDot({ run }: { run: ExperimentRun }) {
+  if (run.decision) {
+    // Decided: green check for CONTINUE, red for ROLLBACK, amber for PAUSE.
+    const d = run.decision.toUpperCase();
+    const cls =
+      d.includes("CONTINUE")
+        ? "bg-emerald-500"
+        : d.includes("ROLLBACK")
+          ? "bg-rose-500"
+          : d.includes("PAUSE")
+            ? "bg-amber-500"
+            : "bg-slate-400";
+    return <span className={`size-1.5 rounded-full ${cls}`} title={`Decision: ${run.decision}`} />;
+  }
+  if (run.status === "running" || run.status === "active") {
+    return (
+      <span
+        className="size-1.5 rounded-full bg-blue-500 animate-pulse"
+        title="Running"
+      />
+    );
+  }
+  return (
+    <span className="size-1.5 rounded-full bg-muted-foreground/40" title={run.status} />
   );
 }

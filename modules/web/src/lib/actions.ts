@@ -6,6 +6,7 @@ import {
   createExperiment,
   createExperimentRun,
   deleteExperiment,
+  deleteExperimentRun,
   updateExperiment,
   updateExperimentStage,
   addActivity,
@@ -263,6 +264,82 @@ export async function updateExperimentRunAudienceAction(formData: FormData) {
   });
 
   revalidatePath(`/experiments/${experimentId}`);
+}
+
+export async function deleteExperimentRunAction(formData: FormData) {
+  const experimentId = formData.get("experimentId") as string;
+  const experimentRunId = formData.get("experimentRunId") as string;
+  if (!experimentId || !experimentRunId)
+    throw new Error("experimentId and experimentRunId are required");
+
+  const run = await prisma.experimentRun.findUnique({
+    where: { id: experimentRunId },
+  });
+  await deleteExperimentRun(experimentRunId);
+
+  await addActivity(experimentId, {
+    type: "note",
+    title: `Experiment run deleted${run ? `: ${run.slug}` : ""}`,
+  });
+
+  revalidatePath(`/experiments/${experimentId}`);
+}
+
+export async function createNewExperimentRunAction(formData: FormData) {
+  const experimentId = formData.get("experimentId") as string;
+  if (!experimentId) throw new Error("experimentId is required");
+
+  // Copy metric / variant config from the most recent run so the user has a
+  // sensible starting point; observation window stays blank (intentional).
+  const prev = await prisma.experimentRun.findFirst({
+    where: { experimentId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  // Pick a free slug: "run-1", "run-2", ...
+  const existing = await prisma.experimentRun.findMany({
+    where: { experimentId },
+    select: { slug: true },
+  });
+  const used = new Set(existing.map((r) => r.slug));
+  let n = existing.length + 1;
+  let slug = `run-${n}`;
+  while (used.has(slug)) {
+    n += 1;
+    slug = `run-${n}`;
+  }
+
+  const newRun = await createExperimentRun(experimentId, {
+    slug,
+    status: "draft",
+    method: prev?.method ?? "bayesian_ab",
+    methodReason: prev?.methodReason ?? null,
+    primaryMetricEvent: prev?.primaryMetricEvent ?? null,
+    metricDescription: prev?.metricDescription ?? null,
+    primaryMetricType: prev?.primaryMetricType ?? "binary",
+    primaryMetricAgg: prev?.primaryMetricAgg ?? "once",
+    guardrailEvents: prev?.guardrailEvents ?? null,
+    guardrailDescriptions: prev?.guardrailDescriptions ?? null,
+    controlVariant: prev?.controlVariant ?? null,
+    treatmentVariant: prev?.treatmentVariant ?? null,
+    trafficPercent: prev?.trafficPercent ?? 100,
+    trafficOffset: prev?.trafficOffset ?? 0,
+    layerId: prev?.layerId ?? null,
+    audienceFilters: prev?.audienceFilters ?? null,
+    minimumSample: prev?.minimumSample ?? null,
+    priorProper: prev?.priorProper ?? false,
+    priorMean: prev?.priorMean ?? null,
+    priorStddev: prev?.priorStddev ?? null,
+  });
+
+  await addActivity(experimentId, {
+    type: "note",
+    title: `New experiment run created: ${slug}`,
+    detail: prev ? `Copied config from ${prev.slug}` : "Empty template",
+  });
+
+  revalidatePath(`/experiments/${experimentId}`);
+  return { runId: newRun.id, slug: newRun.slug };
 }
 
 export async function updateExperimentRunObservationWindowAction(

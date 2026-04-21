@@ -98,6 +98,10 @@ export async function updateExperimentRun(
   return prisma.experimentRun.update({ where: { id }, data });
 }
 
+export async function deleteExperimentRun(id: string) {
+  return prisma.experimentRun.delete({ where: { id } });
+}
+
 export async function addActivity(
   experimentId: string,
   data: { type: string; title: string; detail?: string }

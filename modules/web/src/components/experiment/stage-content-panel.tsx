@@ -731,33 +731,15 @@ function MeasuringContent({
     <>
       {/* Metrics are defined in Implementing — not duplicated here. */}
 
-      {/* Experiment run cards */}
-      <section className="space-y-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-          <FlaskConical className="size-3.5" />
-          <span>Experiment Runs</span>
-          <span className="ml-auto text-[10px] tabular-nums">
-            {sorted.length}
-          </span>
-        </div>
-        {sorted.length === 0 ? (
-          <div className="rounded-md border border-dashed p-3 text-center">
-            <p className="text-xs text-muted-foreground/60">
-              No experiment runs yet
-            </p>
-            <p className="text-[10px] text-muted-foreground/40 mt-1">
-              Experiment runs will appear here once the agent sets them up.
-            </p>
-          </div>
-        ) : (
-          <ExperimentRunTable
-            experimentRuns={sorted}
-            experimentId={experiment.id}
-            flagKey={experiment.flagKey}
-            featbitEnvId={experiment.featbitEnvId}
-            isSequential={isSequential}
-          />
-        )}
+      {/* Run tabs already carry the label — no separate heading needed. */}
+      <section>
+        <ExperimentRunTable
+          experimentRuns={sorted}
+          experimentId={experiment.id}
+          flagKey={experiment.flagKey}
+          featbitEnvId={experiment.featbitEnvId}
+          isSequential={isSequential}
+        />
       </section>
     </>
   );
