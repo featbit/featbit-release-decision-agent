@@ -31,11 +31,8 @@ services:
     image: featbit/run-active-test:local
     container_name: run-active-test
     restart: unless-stopped
-    depends_on:
-      track-service:
-        condition: service_healthy
     environment:
-      WORKER_URL: "http://track-service:8080"
+      WORKER_URL: "https://track.featbit.ai"
       ENV_ID:     "rat-env-v1"
       TICK_MS:    "5000"
       MAX_EVENTS: "8"

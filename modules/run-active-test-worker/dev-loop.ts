@@ -6,7 +6,7 @@
  * bundle. On each tick we generate events for every entry in parallel.
  */
 
-const WORKER_URL = process.env.WORKER_URL ?? "http://track-service:8080";
+const WORKER_URL = process.env.WORKER_URL ?? "https://track.featbit.ai";
 const TICK_MS    = parseInt(process.env.TICK_MS    ?? "5000", 10);
 const MAX_EVENTS = parseInt(process.env.MAX_EVENTS ?? "8",    10);
 
@@ -54,6 +54,24 @@ const EXPERIMENTS: ExperimentConfig[] = [
     guardrailFireRate:  0.5, // averaged across the two; sampled below
     userKeyPrefix:      "hero-user",
     userKeySpace:       50_000,
+  },
+  // "jd" experiment (3c30d880-…) — env 66cf64af-… / flag gsaafsd.
+  // Rates chosen to match the stored inputData totals (2% vs 3.5% primary,
+  // ~10–12% guardrail) so live results line up with what the expert setup
+  // originally pasted.
+  {
+    envId:              "66cf64af-7cdd-4779-9434-4ae5b4df20f3",
+    flagKey:            "gsaafsd",
+    experimentId:       "3c30d880-c3f6-4a9a-9210-93cb48ca7116",
+    variants: [
+      { name: "control",   trafficWeight: 0.5, convRate: 0.020 },
+      { name: "treatment", trafficWeight: 0.5, convRate: 0.035 },
+    ],
+    primaryMetric:      "test",
+    guardrails:         ["testg"],
+    guardrailFireRate:  0.11,
+    userKeyPrefix:      "jd-user",
+    userKeySpace:       100_000,
   },
 ];
 
