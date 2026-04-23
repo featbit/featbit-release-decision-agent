@@ -23,12 +23,15 @@ export function ActivityPopover({ activities }: { activities: Activity[] }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+        className="flex items-center gap-1.5 h-7 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground hover:bg-muted transition-colors"
         title="Recent activity"
       >
-        <ScrollText className="size-3.5" />
+        <ScrollText className="size-3" />
+        <span>Audit log</span>
         {activities.length > 0 && (
-          <span className="text-[10px] tabular-nums">{activities.length}</span>
+          <span className="text-[10px] tabular-nums rounded bg-muted px-1">
+            {activities.length}
+          </span>
         )}
       </button>
 

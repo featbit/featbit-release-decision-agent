@@ -22,6 +22,7 @@ import {
   BrainCircuit,
   Code2,
   FolderOpen,
+  KeyRound,
 } from "lucide-react";
 import { UserMenu } from "@/components/auth/user-menu";
 
@@ -113,6 +114,12 @@ export function AppSidebar() {
                 <SidebarMenuButton render={<Link href="/data/apis-sdks" />}>
                   <Code2 className="size-4" />
                   <span>APIs & SDKs</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton render={<Link href="/data/env-settings" />}>
+                  <KeyRound className="size-4" />
+                  <span>Env Settings</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

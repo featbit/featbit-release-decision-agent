@@ -22,8 +22,9 @@ spec:
   template:
     metadata:
       annotations:
-        # Restart pods when the ClickHouse Secret content changes.
+        # Restart pods when the ClickHouse / signing-key Secret content changes.
         checksum/clickhouse-secret: {{ include (print $.Template.BasePath "/track-service-clickhouse-secret.yaml") . | sha256sum }}
+        checksum/signing-key-secret: {{ include (print $.Template.BasePath "/track-service-signing-key-secret.yaml") . | sha256sum }}
         {{- with .Values.trackService.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -58,6 +59,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "trackService.clickhouseSecretName" . }}
                   key: {{ .Values.trackService.clickHouse.existingSecretKey | quote }}
+            {{- if or .Values.trackService.envSecret.existingSecret .Values.trackService.envSecret.signingKey }}
+            - name: TRACK_SERVICE_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "trackService.signingKeySecretName" . }}
+                  key: {{ .Values.trackService.envSecret.existingSecretKey | quote }}
+            {{- end }}
             - name: ClickHouse__Database
               value: {{ .Values.trackService.clickHouse.database | quote }}
             - name: ClickHouse__FlagEvaluationsTable

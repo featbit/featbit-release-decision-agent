@@ -6,6 +6,8 @@
  * metrics dict format that runAnalysis() / runBanditAnalysis() expect.
  */
 
+import { signEnvSecret } from "@/lib/track/env-secret";
+
 const TRACK_SERVICE_URL =
   process.env.TRACK_SERVICE_URL ?? "https://track.featbit.ai";
 
@@ -58,9 +60,13 @@ export async function queryMetric(
   try {
     const resp = await fetch(`${TRACK_SERVICE_URL}/api/query/experiment`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Signed env secret — track-service resolves envId from this token.
+        // Falls back to raw envId when TRACK_SERVICE_SIGNING_KEY is unset.
+        Authorization: signEnvSecret(params.envId),
+      },
       body: JSON.stringify({
-        envId:       params.envId,
         flagKey:     params.flagKey,
         metricEvent: params.metricEvent,
         startDate:   params.startDate,

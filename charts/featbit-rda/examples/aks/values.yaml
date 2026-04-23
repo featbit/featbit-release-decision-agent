@@ -37,25 +37,31 @@ trackService:
     database: "featbit"
 
   # (B) Production — Azure Key Vault via CSI driver.
-  #     Apply keyvault-secret-provider.yaml first (it projects a Secret named
-  #     "featbit-rda-clickhouse-secret" with key "connection-string"), then:
+  #     Apply keyvault-secret-provider.yaml first. The single SPC
+  #     `featbit-rda-secrets-kv` projects three Secrets used across services.
+  #     The CSI volume mount below triggers the projection — pods that do not
+  #     mount the SPC see the Secret as empty.
   #
   # clickHouse:
   #   existingSecret: "featbit-rda-clickhouse-secret"
   #   existingSecretKey: "connection-string"
   #   database: "default"   # match the DB on your ClickHouse
   #
+  # envSecret:
+  #   existingSecret: "featbit-rda-signing-key-secret"
+  #   existingSecretKey: "signing-key"
+  #
   # volumeMounts:
-  #   - name: ch-secrets
+  #   - name: featbit-secrets
   #     mountPath: "/mnt/secrets-store"
   #     readOnly: true
   # volumes:
-  #   - name: ch-secrets
+  #   - name: featbit-secrets
   #     csi:
   #       driver: secrets-store.csi.k8s.io
   #       readOnly: true
   #       volumeAttributes:
-  #         secretProviderClass: "featbit-rda-clickhouse-kv"
+  #         secretProviderClass: "featbit-rda-secrets-kv"
 
   resources:
     requests:
@@ -99,3 +105,98 @@ trackService:
     tls:
       enabled: true
       secretName: "track-service-tls"
+
+# ── web ────────────────────────────────────────────────────────────────────────
+# NOTE: NEXT_PUBLIC_SANDBOX_URL and NEXT_PUBLIC_FEATBIT_API_URL are baked at
+# `next build` time. Build the image in CI with:
+#   docker build modules/web \
+#     --build-arg NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai \
+#     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
+#     -t your-acr.azurecr.io/featbit/web:0.1.0
+web:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    registry: ""           # inherits global.imageRegistry
+    repository: featbit/web
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # (A) Dev / staging — chart generates a Secret from the value below:
+  database:
+    connectionString: ""   # postgresql://user:pass@host:5432/dbname?sslmode=require
+
+  # (B) Production — pre-existing Secret projected via Azure Key Vault CSI.
+  #     Requires the volumeMounts/volumes block below to actually trigger the
+  #     projection. Same SPC as track-service, just a different Secret name.
+  # database:
+  #   existingSecret: "featbit-rda-web-database-secret"
+  #   existingSecretKey: "database-url"
+  #
+  # envSecret:
+  #   existingSecret: "featbit-rda-signing-key-secret"
+  #   existingSecretKey: "signing-key"
+  #
+  # volumeMounts:
+  #   - name: featbit-secrets
+  #     mountPath: "/mnt/secrets-store"
+  #     readOnly: true
+  # volumes:
+  #   - name: featbit-secrets
+  #     csi:
+  #       driver: secrets-store.csi.k8s.io
+  #       readOnly: true
+  #       volumeAttributes:
+  #         secretProviderClass: "featbit-rda-secrets-kv"
+
+  # Defaults to in-cluster track-service service. Override only if web should
+  # talk to a different track-service deployment.
+  trackService:
+    url: ""
+
+  # Defaults to reusing the trackService signing-key Secret in this release.
+  envSecret:
+    existingSecret: ""
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: web
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    host: "www.featbit.ai"
+    path: /
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    tls:
+      enabled: true
+      secretName: "web-tls"

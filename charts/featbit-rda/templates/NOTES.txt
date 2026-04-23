@@ -4,6 +4,9 @@ Enabled services:
 {{- if .Values.trackService.enabled }}
   - track-service
 {{- end }}
+{{- if .Values.web.enabled }}
+  - web
+{{- end }}
 
 {{- if .Values.trackService.enabled }}
 
@@ -35,6 +38,40 @@ Enabled services:
   WARNING: trackService.clickHouse.connectionString is empty and existingSecret is unset.
            The pod will crash on startup. Set `--set trackService.clickHouse.connectionString=...`
            or point `trackService.clickHouse.existingSecret` at a pre-existing Secret.
+
+{{- end }}
+{{- end }}
+
+{{- if .Values.web.enabled }}
+
+───────────── web ─────────────
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/component=web
+
+  Local check (port-forward):
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "web.fullname" . }} 3000:{{ .Values.web.service.port }}
+    open http://localhost:3000
+
+{{- if .Values.web.ingress.enabled }}
+
+  External endpoint (via NGINX Ingress):
+    {{- if .Values.web.ingress.tls.enabled }}
+    https://{{ .Values.web.ingress.host }}/
+    {{- else }}
+    http://{{ .Values.web.ingress.host }}/
+    {{- end }}
+
+  DNS for "{{ .Values.web.ingress.host }}" must point to the NGINX Ingress
+  Controller's external IP:
+    kubectl get svc -n ingress-nginx ingress-nginx-controller
+
+{{- end }}
+
+{{- if and (not .Values.web.database.existingSecret) (not .Values.web.database.connectionString) }}
+
+  WARNING: web.database.connectionString is empty and existingSecret is unset.
+           The pod will crash on startup. Set `--set web.database.connectionString=...`
+           or point `web.database.existingSecret` at a pre-existing Secret.
 
 {{- end }}
 {{- end }}

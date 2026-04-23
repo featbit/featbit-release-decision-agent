@@ -59,9 +59,38 @@ clickhouse-client --host <your-host> --secure --user default --password '...' \
 | `ClickHouse:Database` | `featbit` | DB 名 |
 | `ClickHouse:FlagEvaluationsTable` | `flag_evaluations` | 表名 |
 | `ClickHouse:MetricEventsTable` | `metric_events` | 表名 |
+| `TRACK_SERVICE_SIGNING_KEY` / `Auth:SigningKey` | — | HMAC-SHA256 key 用来校验 env secret（下文）。未设置则进入 legacy 模式，`Authorization` header 直接当 envId 用 |
 | `Ingest:ChannelCapacity` | `100000` | 内存队列容量；满了之后丢最新 |
 | `Ingest:BatchSize` | `1000` | 攒够这个数量立刻 flush |
 | `Ingest:FlushIntervalMs` | `5000` | 不到 batch size 也最多等这么久就 flush |
+
+### Env secret 鉴权
+
+所有 `/api/*` 端点都要求在 `Authorization` 头里带一个 **env secret**——一个
+签名 token，track-service 从里面解出 envId 并验证签名：
+
+```
+fbes.<b64url(envId)>.<b64url(HMAC-SHA256(envId, SIGNING_KEY)[0..16])>
+```
+
+- 签名 key（`TRACK_SERVICE_SIGNING_KEY`）只在 track-service 和负责签发的服务
+  （web / CLI）两边持有，绝不暴露给客户端或浏览器。
+- ClickHouse 存的是**解出来的明文 envId**，token 本身不落盘。
+- 验证走 128-bit HMAC + constant-time 比较，每请求 ~1μs，和 JSON 解析比可忽略。
+- `/health` 不走这一层，k8s 探针零成本。
+- 没配 signing key → 启动打一条 warning，回退到老行为（任意 `Authorization`
+  字符串都当 envId）。便于本地开发和滚动升级。
+
+签发 token：用 web 模块里的 CLI
+
+```bash
+cd modules/web
+TRACK_SERVICE_SIGNING_KEY=<same-key-as-track-service> \
+  npx tsx scripts/generate-env-secret.ts rat-env-v1
+# → fbes.cmF0LWVudi12MQ.xxxxxxxxxxxxxxxxxxxxxx
+```
+
+把输出粘到 SDK / worker 的 `ENV_SECRET` 环境变量里即可。
 
 ClickHouse 连接串示例（HTTPS）：
 

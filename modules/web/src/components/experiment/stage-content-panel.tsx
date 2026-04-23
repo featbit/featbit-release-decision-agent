@@ -354,6 +354,8 @@ function FlagAndExperimentSection({
       {/* ─── Integration docs pointer ─── */}
       <Link
         href="/data/apis-sdks"
+        target="_blank"
+        rel="noopener noreferrer"
         className="group flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3 mb-4 hover:bg-muted/60 transition-colors"
       >
         <BookOpen className="size-4 mt-0.5 shrink-0 text-muted-foreground" />

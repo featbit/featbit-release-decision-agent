@@ -28,6 +28,21 @@ export interface ExperimentRow {
   accessToken: string | null;
 }
 
+export interface ExperimentListItem {
+  id: string;
+  name?: string;
+}
+
+export async function listExperiments(): Promise<ExperimentListItem[]> {
+  const result = await getPool().query<{ id: string; name: string | null }>(
+    `SELECT id, name FROM experiment ORDER BY COALESCE(updated_at, created_at) DESC NULLS LAST, id`,
+  );
+  return result.rows.map((r) => ({
+    id: r.id,
+    name: r.name ?? undefined,
+  }));
+}
+
 export async function getExperiment(experimentId: string): Promise<ExperimentRow | null> {
   const result = await getPool().query<{
     id: string;

@@ -34,10 +34,12 @@ interface ExperimentDetailLayoutProps {
 }
 
 export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutProps) {
-  const [activeTab, setActiveTab] = useState(
-    // Map legacy "intent" stage to merged "hypothesis" tab
-    experiment.stage === "intent" ? "hypothesis" : experiment.stage
-  );
+  const defaultTab =
+    experiment.stage === "intent" ? "hypothesis" : experiment.stage;
+  const [activeTab, setActiveTab] = useState(defaultTab);
+  // Remember the stage we were on before hopping into Settings, so the
+  // toggle on the Settings button can take us back.
+  const [prevTab, setPrevTab] = useState<string | null>(null);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
   const [expertEditOpen, setExpertEditOpen] = useState(false);
@@ -82,7 +84,33 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
         </Link>
         <span className="text-muted-foreground/40">|</span>
         <h1 className="text-sm font-semibold truncate">{experiment.name}</h1>
-        <div className="ml-auto flex items-center gap-2">
+
+        {/* Experiment-scoped actions — grouped next to the name so they stay
+            out of the workspace-switcher territory on the right. */}
+        <div className="flex items-center gap-2 ml-2 pl-3 border-l border-border/60">
+          <button
+            type="button"
+            onClick={() => {
+              if (activeTab === "settings") {
+                setActiveTab(prevTab ?? defaultTab);
+                setPrevTab(null);
+              } else {
+                setPrevTab(activeTab);
+                setActiveTab("settings");
+              }
+            }}
+            title={activeTab === "settings" ? "Close settings" : "Experiment settings"}
+            className={cn(
+              "flex items-center gap-1.5 h-7 rounded-md border px-2 text-xs transition-colors cursor-pointer",
+              activeTab === "settings"
+                ? "bg-foreground text-background border-foreground"
+                : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+          >
+            <Settings className="size-3" />
+            <span>Settings</span>
+          </button>
+          <ActivityPopover activities={experiment.activities} />
           {entryMode !== null && (
             <Button
               size="sm"
@@ -106,21 +134,10 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
               Edit setup
             </Button>
           )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
           <WorkspaceSwitcher readOnly />
-          <ActivityPopover activities={experiment.activities} />
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            title="Settings"
-            className={cn(
-              "flex items-center justify-center size-7 rounded-md transition-colors cursor-pointer",
-              activeTab === "settings"
-                ? "bg-foreground text-background"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-          >
-            <Settings className="size-3.5" />
-          </button>
         </div>
       </div>
     </header>
@@ -163,7 +180,10 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
               />
             )}
             <div className="flex-1 min-w-0 min-h-0">
-              <StageContentPanel experiment={experiment} activeTab={activeTab} />
+              <StageContentPanel
+                experiment={experiment}
+                activeTab={activeTab}
+              />
             </div>
           </div>
         }

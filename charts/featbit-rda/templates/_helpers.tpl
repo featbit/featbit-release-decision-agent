@@ -103,3 +103,90 @@ existingSecret, or a Secret this chart generates.
 {{- printf "%s-clickhouse" (include "trackService.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Secret name holding the env-secret HMAC signing key. Either a user-provided
+existingSecret or the chart-generated one.
+*/}}
+{{- define "trackService.signingKeySecretName" -}}
+{{- if .Values.trackService.envSecret.existingSecret -}}
+{{- .Values.trackService.envSecret.existingSecret -}}
+{{- else -}}
+{{- printf "%s-signing-key" (include "trackService.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* ─────────────────────────────── web helpers ────────────────────────────────── */}}
+
+{{- define "web.fullname" -}}
+{{- printf "%s-%s" (include "featbit-rda.fullname" .) "web" | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "web.serviceAccountName" -}}
+{{- if .Values.web.serviceAccount.create -}}
+{{- default (include "web.fullname" .) .Values.web.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.web.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "web.image" -}}
+{{- $reg := .Values.web.image.registry | default .Values.global.imageRegistry -}}
+{{- $repo := .Values.web.image.repository -}}
+{{- $tag := .Values.web.image.tag | default .Chart.AppVersion -}}
+{{- if $reg -}}
+{{- printf "%s/%s:%s" $reg $repo $tag -}}
+{{- else -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Secret holding the Prisma DATABASE_URL. User-provided existingSecret or the
+chart-generated one (only created when database.connectionString is set).
+*/}}
+{{- define "web.databaseSecretName" -}}
+{{- if .Values.web.database.existingSecret -}}
+{{- .Values.web.database.existingSecret -}}
+{{- else -}}
+{{- printf "%s-database" (include "web.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolve the Secret holding the HMAC signing key for web. Precedence:
+  1. web.envSecret.existingSecret (explicit override)
+  2. trackService signing-key Secret in the same release (auto-share when
+     both services are enabled and trackService has a signing key configured)
+  3. empty string (caller should skip the env var)
+*/}}
+{{- define "web.signingKeySecretName" -}}
+{{- if .Values.web.envSecret.existingSecret -}}
+{{- .Values.web.envSecret.existingSecret -}}
+{{- else if and .Values.trackService.enabled (or .Values.trackService.envSecret.existingSecret .Values.trackService.envSecret.signingKey) -}}
+{{- include "trackService.signingKeySecretName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "web.signingKeySecretKey" -}}
+{{- if .Values.web.envSecret.existingSecret -}}
+{{- .Values.web.envSecret.existingSecretKey -}}
+{{- else if and .Values.trackService.enabled (or .Values.trackService.envSecret.existingSecret .Values.trackService.envSecret.signingKey) -}}
+{{- .Values.trackService.envSecret.existingSecretKey -}}
+{{- else -}}
+{{- .Values.web.envSecret.existingSecretKey -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Resolve TRACK_SERVICE_URL for web. Explicit web.trackService.url wins,
+otherwise default to the in-cluster track-service Service (only valid when
+trackService is enabled in the same release).
+*/}}
+{{- define "web.trackServiceUrl" -}}
+{{- if .Values.web.trackService.url -}}
+{{- .Values.web.trackService.url -}}
+{{- else if .Values.trackService.enabled -}}
+{{- printf "http://%s" (include "trackService.fullname" .) -}}
+{{- end -}}
+{{- end -}}

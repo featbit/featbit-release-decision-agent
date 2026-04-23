@@ -23,7 +23,7 @@ trackService:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/track-service
-    tag: "0.1.0"
+    tag: "0.2.0"
     pullPolicy: IfNotPresent
 
   serviceAccount:
@@ -64,6 +64,20 @@ trackService:
     database: "featbit"
     flagEvaluationsTable: "flag_evaluations"
     metricEventsTable: "metric_events"
+
+  # HMAC signing key for env-secret validation. The same value MUST be set on
+  # every service that mints tokens for this cluster (web, run-active-test,
+  # SDK-minting CLIs). Rotating this key invalidates all previously-minted
+  # tokens — plan rotation alongside client rollouts.
+  #
+  # Precedence matches clickHouse: `signingKey` makes the chart generate a
+  # Secret; `existingSecret` points at one you projected yourself (e.g. via
+  # Azure Key Vault CSI). Leave both blank to run in legacy mode (warning
+  # logged; any Authorization header is trusted as plaintext envId).
+  envSecret:
+    signingKey: ""
+    existingSecret: ""
+    existingSecretKey: "signing-key"
 
   ingest:
     channelCapacity: "100000"
@@ -137,11 +151,146 @@ trackService:
       enabled: true
       secretName: "track-service-tls"
 
+# ── web ────────────────────────────────────────────────────────────────────────
+# modules/web — Next.js dashboard (experiment management + agent console).
+# Connects to a remote PostgreSQL (Azure) over DATABASE_URL and to track-service
+# over TRACK_SERVICE_URL (defaults to the in-cluster Service when trackService.enabled).
+#
+# NOTE: NEXT_PUBLIC_SANDBOX_URL and NEXT_PUBLIC_FEATBIT_API_URL are baked into the
+# bundle at `next build` time and CANNOT be changed by this chart. Pass them as
+# Docker --build-arg in CI when producing the image listed in image.tag below.
+web:
+  enabled: true
+
+  replicaCount: 2
+
+  image:
+    # Falls back to global.imageRegistry if empty.
+    registry: ""
+    repository: featbit/web
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  podAnnotations: {}
+  podLabels: {}
+
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    capabilities:
+      drop:
+        - ALL
+
+  service:
+    type: ClusterIP
+    port: 80
+    # Matches EXPOSE in modules/web/Dockerfile.
+    targetPort: 3000
+    annotations: {}
+
+  nodeEnv: production
+
+  # PostgreSQL connection string for Prisma. Either set `connectionString`
+  # (chart generates a Secret) or `existingSecret` to reference one you
+  # projected yourself (e.g. via Azure Key Vault CSI driver).
+  database:
+    connectionString: ""
+    existingSecret: ""
+    existingSecretKey: "database-url"
+
+  # track-service endpoint. Leave url blank to default to the in-cluster Service
+  # of the trackService release (http://<release>-featbit-rda-track-service).
+  # Set to a public URL (e.g. https://track.featbit.ai) to use an external one.
+  trackService:
+    url: ""
+
+  # HMAC signing key. By default reuses the trackService signing-key Secret in
+  # the same release (zero-config when both are deployed together). Override
+  # `existingSecret` when web is deployed standalone or against a different
+  # track-service.
+  envSecret:
+    existingSecret: ""
+    existingSecretKey: "signing-key"
+
+  extraEnv: []
+  # - name: FOO
+  #   value: "bar"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  terminationGracePeriodSeconds: 30
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+  volumeMounts: []
+  volumes: []
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    host: "www.featbit.ai"
+    path: /
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      # Next.js streaming responses can be long; keep generous read timeouts.
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    tls:
+      enabled: true
+      secretName: "web-tls"
+
 # ── future services ────────────────────────────────────────────────────────────
 # statsService:
-#   enabled: false
-#   ...
-#
-# webApp:
 #   enabled: false
 #   ...

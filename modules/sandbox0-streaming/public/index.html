@@ -46,7 +46,38 @@
   #sidebar-header {
     padding: 16px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
+
+  #experiment-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #experiment-row label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  #experiment-select {
+    width: 100%;
+    padding: 8px 10px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: var(--mono);
+    cursor: pointer;
+  }
+
+  #experiment-select:focus { outline: 1px solid var(--accent); }
+  #experiment-select:disabled { opacity: 0.5; cursor: not-allowed; }
 
   #new-chat {
     width: 100%;
@@ -61,7 +92,8 @@
     transition: background 0.2s;
   }
 
-  #new-chat:hover { background: var(--accent-hover); }
+  #new-chat:hover:not(:disabled) { background: var(--accent-hover); }
+  #new-chat:disabled { opacity: 0.5; cursor: not-allowed; }
 
   #session-list {
     flex: 1;
@@ -336,7 +368,13 @@
 <!-- Sidebar -->
 <div id="sidebar">
   <div id="sidebar-header">
-    <button id="new-chat">+ New Chat</button>
+    <div id="experiment-row">
+      <label for="experiment-select">Experiment</label>
+      <select id="experiment-select" disabled>
+        <option value="">Loading...</option>
+      </select>
+    </div>
+    <button id="new-chat" disabled>+ New Chat</button>
   </div>
   <div id="session-list"></div>
   <div id="sidebar-footer">
@@ -373,8 +411,10 @@ const $sessionList = document.getElementById("session-list");
 const $newChat    = document.getElementById("new-chat");
 const $clearAll   = document.getElementById("clear-all");
 const $emptyState = document.getElementById("empty-state");
+const $expSelect  = document.getElementById("experiment-select");
 
 const STORAGE_KEY = "s0_sessions";
+const EXP_STORAGE_KEY = "s0_selected_experiment";
 
 let currentId = null;   // active session id
 let busy = false;
@@ -500,12 +540,60 @@ async function safeFetch(url, init) {
 }
 
 async function createNewSession() {
+  const experimentId = $expSelect.value;
+  if (!experimentId) throw new Error("Pick an experiment first");
   setStatus("running", "Creating session...");
-  const data = await safeFetch("/chat/start", { method: "POST" });
+  const data = await safeFetch("/chat/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ experimentId }),
+  });
   currentId = data.sessionId;
   seenEventIds.clear();
-  addSession(currentId, "New chat");
+  addSession(currentId, experimentId);
   renderSidebar();
+}
+
+async function loadExperiments() {
+  try {
+    const data = await safeFetch("/experiments");
+    const items = data.experiments || [];
+    const saved = localStorage.getItem(EXP_STORAGE_KEY) || "";
+    $expSelect.innerHTML = "";
+    if (items.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "(no experiments in DB)";
+      $expSelect.appendChild(opt);
+      $expSelect.disabled = true;
+      $newChat.disabled = true;
+      return;
+    }
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "— Pick an experiment —";
+    $expSelect.appendChild(placeholder);
+    for (const exp of items) {
+      const opt = document.createElement("option");
+      opt.value = exp.id;
+      opt.textContent = exp.name ? `${exp.name}  (${exp.id})` : exp.id;
+      $expSelect.appendChild(opt);
+    }
+    if (saved && items.some((e) => e.id === saved)) {
+      $expSelect.value = saved;
+    }
+    $expSelect.disabled = false;
+    $newChat.disabled = !$expSelect.value;
+  } catch (err) {
+    $expSelect.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Error loading experiments";
+    $expSelect.appendChild(opt);
+    $expSelect.disabled = true;
+    $newChat.disabled = true;
+    console.error("loadExperiments:", err);
+  }
 }
 
 async function startNewChat() {
@@ -703,14 +791,19 @@ $newChat.addEventListener("click", startNewChat);
 $clearAll.addEventListener("click", () => {
   if (confirm("Clear all chat history?")) {
     saveSessions([]);
-    startNewChat();
+    renderSidebar();
   }
+});
+$expSelect.addEventListener("change", () => {
+  localStorage.setItem(EXP_STORAGE_KEY, $expSelect.value);
+  $newChat.disabled = !$expSelect.value;
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 renderSidebar();
 setStatus("connected", "Ready");
+loadExperiments();
 </script>
 </body>
 </html>

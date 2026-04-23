@@ -6,9 +6,12 @@
  * bundle. On each tick we generate events for every entry in parallel.
  */
 
-const WORKER_URL = process.env.WORKER_URL ?? "https://track.featbit.ai";
-const TICK_MS    = parseInt(process.env.TICK_MS    ?? "5000", 10);
-const MAX_EVENTS = parseInt(process.env.MAX_EVENTS ?? "8",    10);
+import { signEnvSecret } from "./src/env-secret";
+
+const WORKER_URL   = process.env.WORKER_URL ?? "https://track.featbit.ai";
+const TICK_MS      = parseInt(process.env.TICK_MS    ?? "5000", 10);
+const MAX_EVENTS   = parseInt(process.env.MAX_EVENTS ?? "8",    10);
+const SIGNING_KEY  = process.env.TRACK_SERVICE_SIGNING_KEY;
 
 interface ExperimentConfig {
   envId:              string;
@@ -132,6 +135,13 @@ function buildPayload(cfg: ExperimentConfig): TrackPayload {
 const totals = new Map<string, number>();
 let totalTicks = 0;
 
+/**
+ * Pre-signed Authorization value per envId. Computed once at startup so the
+ * tick loop stays sync (no HMAC on the hot path). Falls back to raw envId when
+ * TRACK_SERVICE_SIGNING_KEY is unset — matches track-service's legacy mode.
+ */
+const authHeaders = new Map<string, string>();
+
 async function sendFor(cfg: ExperimentConfig): Promise<void> {
   const n = randInt(MAX_EVENTS);
   if (n === 0) return;
@@ -140,7 +150,10 @@ async function sendFor(cfg: ExperimentConfig): Promise<void> {
   try {
     const res = await fetch(`${WORKER_URL}/api/track`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", Authorization: cfg.envId },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization:  authHeaders.get(cfg.envId) ?? cfg.envId,
+      },
       body:    JSON.stringify(payloads),
     });
     if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
@@ -168,7 +181,22 @@ function shutdown() {
 process.on("SIGINT",  shutdown);
 process.on("SIGTERM", shutdown);
 
-console.log(
-  `[rat] started  tick=${TICK_MS}ms  maxEvents=${MAX_EVENTS}  experiments=${EXPERIMENTS.map(e => e.envId + "/" + e.flagKey).join(",")}`
-);
-setInterval(tick, TICK_MS);
+async function main() {
+  // Mint one token per envId up front so the tick loop is allocation-free.
+  for (const cfg of EXPERIMENTS) {
+    if (authHeaders.has(cfg.envId)) continue;
+    authHeaders.set(cfg.envId, await signEnvSecret(cfg.envId, SIGNING_KEY));
+  }
+
+  console.log(
+    `[rat] started  tick=${TICK_MS}ms  maxEvents=${MAX_EVENTS}` +
+    `  signed=${SIGNING_KEY ? "yes" : "no (legacy)"}` +
+    `  experiments=${EXPERIMENTS.map(e => e.envId + "/" + e.flagKey).join(",")}`
+  );
+  setInterval(tick, TICK_MS);
+}
+
+main().catch((e) => {
+  console.error(`[rat] failed to start: ${(e as Error).message}`);
+  process.exit(1);
+});

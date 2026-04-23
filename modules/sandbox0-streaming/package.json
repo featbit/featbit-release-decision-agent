@@ -6,6 +6,8 @@
   "scripts": {
     "setup-vaults": "tsx src/setup-vaults.ts",
     "setup-agent": "tsx src/setup-agent.ts",
+    "sync-skills": "tsx src/sync-skills.ts",
+    "rotate-llm-key": "tsx src/rotate-llm-key.ts",
     "test-console": "tsx src/test-console.ts",
     "dev": "tsx --watch src/index.ts",
     "build": "tsc",

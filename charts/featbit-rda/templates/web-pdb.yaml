@@ -1,0 +1,15 @@
+{{- if and .Values.web.enabled .Values.web.podDisruptionBudget.enabled -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "web.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "featbit-rda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  minAvailable: {{ .Values.web.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "featbit-rda.selectorLabels" (dict "root" . "component" "web") | nindent 6 }}
+{{- end }}

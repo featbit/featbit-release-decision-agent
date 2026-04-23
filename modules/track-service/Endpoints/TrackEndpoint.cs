@@ -15,9 +15,10 @@ public static class TrackEndpoint
             EventQueue queue,
             ILogger<EventQueue> log) =>
         {
-            var envId = ctx.Request.Headers.Authorization.ToString();
-            if (string.IsNullOrWhiteSpace(envId))
-                return Results.BadRequest("Authorization header (envId) is required");
+            // envId is resolved by EnvSecretMiddleware from the signed token
+            // (or from the raw header in legacy mode). Never read Authorization
+            // directly here — partition keys must go through the validator.
+            var envId = ctx.GetEnvId();
 
             var enq = EnqueuePayload(payload, envId, queue);
             if (enq.dropped > 0)
@@ -32,9 +33,7 @@ public static class TrackEndpoint
             EventQueue queue,
             ILogger<EventQueue> log) =>
         {
-            var envId = ctx.Request.Headers.Authorization.ToString();
-            if (string.IsNullOrWhiteSpace(envId))
-                return Results.BadRequest("Authorization header (envId) is required");
+            var envId = ctx.GetEnvId();
 
             List<TrackPayload>? payloads;
             try

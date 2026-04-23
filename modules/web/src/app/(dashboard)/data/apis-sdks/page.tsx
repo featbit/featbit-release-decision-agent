@@ -11,6 +11,23 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import {
+  EnvSecretCard,
+  useCurrentEnvSecret,
+} from "@/components/env-settings/env-secret-card";
+
+/**
+ * Rewrites the sample-code placeholders so the user can paste the snippet
+ * straight into their project with no edits. `ENV_ID` is a variable reference
+ * in the snippets, so it gets a quoted literal; `rat-env-v1` is already quoted
+ * at every call site, so it gets the bare token.
+ */
+function withEnvSecret(text: string, envSecret: string | null): string {
+  if (!envSecret) return text;
+  return text
+    .replaceAll("ENV_ID", JSON.stringify(envSecret))
+    .replaceAll("rat-env-v1", envSecret);
+}
 
 // ── Page TOC ─────────────────────────────────────────────────────────────────
 
@@ -242,6 +259,7 @@ export function useFlagForExpt(flagKey: string, experimentId?: string) {
 
 export default function ApisSdksPage() {
   const [active, setActive] = useState<SectionId>(SECTIONS[0].id);
+  const { envSecret } = useCurrentEnvSecret();
 
   return (
     // Concrete viewport-derived height — the dashboard layout's flex chain
@@ -278,8 +296,8 @@ export default function ApisSdksPage() {
       <div className="flex-1 min-w-0 overflow-y-auto">
         <div className="max-w-4xl p-6">
           {active === "get-started"   && <GetStartedSection   onNavigate={setActive} />}
-          {active === "apis"          && <ApisSection />}
-          {active === "sdks"          && <SdksSection />}
+          {active === "apis"          && <ApisSection          envSecret={envSecret} />}
+          {active === "sdks"          && <SdksSection          envSecret={envSecret} />}
           {active === "best-practice" && <BestPracticeSection />}
         </div>
       </div>
@@ -416,7 +434,7 @@ function GetStartedSection({ onNavigate }: { onNavigate: (id: SectionId) => void
 
 // ── Section: APIs ────────────────────────────────────────────────────────────
 
-function ApisSection() {
+function ApisSection({ envSecret }: { envSecret: string | null }) {
   return (
     <section className="space-y-4">
       <div>
@@ -427,6 +445,8 @@ function ApisSection() {
           transport — one payload shape, two endpoints.
         </p>
       </div>
+
+      <EnvSecretCard />
 
       <Card>
         <CardHeader>
@@ -453,14 +473,26 @@ function ApisSection() {
           <div className="space-y-1">
             <div className="text-muted-foreground">Header:</div>
             <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
-              Authorization: &lt;envId&gt;
+              Authorization: &lt;envSecret&gt;
             </code>
             <p className="text-xs text-muted-foreground">
-              The <code>Authorization</code> header value is taken as-is and
-              used as the ClickHouse partition key (<code>env_id</code>). It
-              is <strong>not</strong> verified today — any string works
-              locally. Examples below use <code>rat-env-v1</code>, the envId
-              the bundled run-active-test worker writes under.
+              The env secret is a signed token
+              (<code>fbes.&lt;b64url(envId)&gt;.&lt;b64url(hmac)&gt;</code>)
+              that track-service parses to recover the envId and verify the
+              caller holds the signing key. The plain envId is what lands in
+              ClickHouse as the partition key — tokens never touch storage.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Mint one with the CLI:
+            </p>
+            <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
+              TRACK_SERVICE_SIGNING_KEY=… npx tsx scripts/generate-env-secret.ts rat-env-v1
+            </code>
+            <p className="text-xs text-muted-foreground">
+              When the deployed track-service has no signing key configured
+              (local dev, legacy setups), the header is trusted as a plain
+              envId — snippets below that use <code>rat-env-v1</code> keep
+              working unchanged.
             </p>
           </div>
         </CardContent>
@@ -648,7 +680,7 @@ function ApisSection() {
               is users exposed; numerator is users who fired the event at
               least once post-exposure.
             </p>
-            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{`curl -X POST http://localhost:5050/api/track/event \\
+            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST http://localhost:5050/api/track/event \\
   -H "Authorization: rat-env-v1" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -657,7 +689,7 @@ function ApisSection() {
       "eventName": "checkout-completed",
       "timestamp": 1776300060000
     }]
-  }'`}</pre>
+  }'`, envSecret)}</pre>
           </div>
 
           <div className="space-y-2">
@@ -667,7 +699,7 @@ function ApisSection() {
               <code>numericValue</code>. Pick a consistent unit
               (cents, or primary currency unit) — stats-service sums as-is.
             </p>
-            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{`curl -X POST http://localhost:5050/api/track/event \\
+            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST http://localhost:5050/api/track/event \\
   -H "Authorization: rat-env-v1" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -677,7 +709,7 @@ function ApisSection() {
       "timestamp":    1776300060000,
       "numericValue": 42.50
     }]
-  }'`}</pre>
+  }'`, envSecret)}</pre>
           </div>
 
           <div className="space-y-2">
@@ -687,7 +719,7 @@ function ApisSection() {
               <code>numericValue</code> (milliseconds is the convention across
               stats-service).
             </p>
-            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{`curl -X POST http://localhost:5050/api/track/event \\
+            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST http://localhost:5050/api/track/event \\
   -H "Authorization: rat-env-v1" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -697,7 +729,7 @@ function ApisSection() {
       "timestamp":    1776300060000,
       "numericValue": 842
     }]
-  }'`}</pre>
+  }'`, envSecret)}</pre>
           </div>
         </CardContent>
       </Card>
@@ -735,7 +767,7 @@ function ApisSection() {
 
 // ── Section: SDKs ────────────────────────────────────────────────────────────
 
-function SdksSection() {
+function SdksSection({ envSecret }: { envSecret: string | null }) {
   return (
     <section className="space-y-4">
       <div>
@@ -746,6 +778,8 @@ function SdksSection() {
           language.
         </p>
       </div>
+
+      <EnvSecretCard />
 
       <Card>
         <CardHeader>
@@ -815,7 +849,7 @@ function SdksSection() {
                     project ({s.lang})
                   </div>
                   <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">
-                    {s.helper}
+                    {withEnvSecret(s.helper, envSecret)}
                   </pre>
                 </div>
                 <div>
@@ -824,7 +858,7 @@ function SdksSection() {
                     after evaluation
                   </div>
                   <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">
-                    {s.usage}
+                    {withEnvSecret(s.usage, envSecret)}
                   </pre>
                 </div>
               </Tabs.Panel>

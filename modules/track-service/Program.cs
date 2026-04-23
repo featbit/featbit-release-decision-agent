@@ -1,3 +1,4 @@
+using System.Text;
 using FeatBit.TrackService.Endpoints;
 using FeatBit.TrackService.Services;
 
@@ -34,6 +35,19 @@ builder.Services.Configure<IngestOptions>(o =>
     o.FlushIntervalMs = int.TryParse(cfg["Ingest:FlushIntervalMs"], out var f) ? f : 5_000;
 });
 
+// Env secret signing key (HMAC-SHA256). Shared with the web service that mints
+// tokens. Env var wins over appsettings so k8s Secrets / docker-compose env
+// override the image default without a rebuild.
+var envSecretOpts = new EnvSecretOptions();
+var rawSigningKey =
+    Environment.GetEnvironmentVariable("TRACK_SERVICE_SIGNING_KEY")
+    ?? cfg["Auth:SigningKey"];
+if (!string.IsNullOrWhiteSpace(rawSigningKey))
+{
+    envSecretOpts.SigningKey = Encoding.UTF8.GetBytes(rawSigningKey);
+}
+builder.Services.AddSingleton(envSecretOpts);
+
 // ── Services ──────────────────────────────────────────────────────────────────
 
 builder.Services.AddSingleton<EventQueue>();
@@ -44,6 +58,20 @@ builder.Services.AddHostedService<BatchIngestWorker>();
 // ── Build ─────────────────────────────────────────────────────────────────────
 
 var app = builder.Build();
+
+if (envSecretOpts.SigningKey is null)
+{
+    app.Logger.LogWarning(
+        "TRACK_SERVICE_SIGNING_KEY not set — /api/* trusts the Authorization " +
+        "header as a plaintext envId (legacy mode). Only safe for local dev.");
+}
+else
+{
+    app.Logger.LogInformation(
+        "Env secret validation enabled: fbes.<b64url(envId)>.<b64url(hmac)>");
+}
+
+app.UseMiddleware<EnvSecretMiddleware>();
 
 // ── Endpoints ─────────────────────────────────────────────────────────────────
 

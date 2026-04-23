@@ -5,10 +5,11 @@
  * ──────
  *   GET  /              web chat UI
  *   GET  /health        health check
- *   POST /chat/start    create a new chat session → { sessionId }
+ *   POST /chat/start    create/resume an experiment session → { sessionId }
+ *                       body: { experimentId, accessToken? }  — mirrors project-agent's projectKey contract
  *   POST /chat/send     send message → { ok }
  *   GET  /chat/events   poll events  → { events[], done }
- *   POST /query         (legacy) experiment-based SSE proxy
+ *   POST /query         experiment-based SSE proxy — body: { projectId, prompt? }
  */
 
 import "dotenv/config";
@@ -25,15 +26,8 @@ import {
   sendMessage,
   openStream,
 } from "./session.js";
+import { clearSandboxSession, listExperiments } from "./db.js";
 import {
-  clearSandboxSession,
-  ensureManagedAgentTable,
-  ensureVaultTable,
-  getManagedAgent,
-  getVault,
-} from "./db.js";
-import {
-  createChatSession,
   sendChatMessage,
   getSessionStatus,
   getSessionEvents,
@@ -62,35 +56,43 @@ app.get("/", (c) => c.html(readFileSync(htmlPath, "utf-8")));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
+// ── Experiments list (for UI selector) ───────────────────────────────────────
+
+app.get("/experiments", async (c) => {
+  try {
+    const items = await listExperiments();
+    return c.json({ experiments: items });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 500);
+  }
+});
+
 // ── Chat API ─────────────────────────────────────────────────────────────────
 
 app.post("/chat/start", async (c) => {
   try {
-    await ensureManagedAgentTable();
-    await ensureVaultTable();
-
-    const version = process.env.MANAGED_AGENT_VERSION ?? "default";
-    const agent = await getManagedAgent(version);
-    if (!agent) {
-      return c.json({ error: `No managed agent for version "${version}"` }, 500);
+    const body: {
+      experimentId?: string;
+      projectId?: string;
+      accessToken?: string;
+    } = await c.req.json().catch(() => ({}));
+    const experimentId = (body.experimentId ?? body.projectId ?? "").trim();
+    if (!experimentId) {
+      return c.json(
+        { error: "experimentId (or projectId) is required in request body" },
+        400,
+      );
     }
 
-    const llmVault = await getVault("llm");
-    const vaultIds = llmVault ? [llmVault.vaultId] : [];
-
-    const session = await createChatSession(
-      agent.agentId,
-      agent.environmentId,
-      vaultIds,
-    );
-
-    // Send bootstrap message to activate the release-decision skill
-    await sendChatMessage(
-      session.sessionId,
-      `/featbit-release-decision\n\nActivate the FeatBit Release Decision framework. Greet the user and ask what they want to improve or learn.`,
-    );
-
-    return c.json({ sessionId: session.sessionId });
+    const sessionInfo = await resolveSession(experimentId);
+    if (sessionInfo.isNew) {
+      await sendMessage(
+        sessionInfo.sessionId,
+        buildBootstrapMessage(sessionInfo, experimentId),
+      );
+    }
+    return c.json({ sessionId: sessionInfo.sessionId });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[/chat/start]", message);
@@ -100,15 +102,13 @@ app.post("/chat/start", async (c) => {
 
 app.post("/chat/send", async (c) => {
   try {
-    const { sessionId, message } = await c.req.json<{
-      sessionId: string;
-      message: string;
-    }>();
-
+    const body: { sessionId?: string; message?: string } = await c.req
+      .json()
+      .catch(() => ({}));
+    const { sessionId, message } = body;
     if (!sessionId || !message) {
       return c.json({ error: "sessionId and message are required" }, 400);
     }
-
     await sendChatMessage(sessionId, message);
     return c.json({ ok: true });
   } catch (err) {
@@ -138,8 +138,8 @@ app.get("/chat/events", async (c) => {
 // ── Legacy Query (SSE stream) ────────────────────────────────────────────────
 
 app.post("/query", async (c) => {
-  const body = await c.req
-    .json<{ projectId?: string; prompt?: string }>()
+  const body: { projectId?: string; prompt?: string } = await c.req
+    .json()
     .catch(() => ({}));
   const experimentId = body.projectId?.trim();
 

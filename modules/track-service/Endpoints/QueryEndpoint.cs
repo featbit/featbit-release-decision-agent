@@ -9,20 +9,31 @@ public static class QueryEndpoint
     public static IEndpointRouteBuilder MapQuery(this IEndpointRouteBuilder app)
     {
         // POST /api/query/experiment
-        // Body: { envId, flagKey, metricEvent, startDate, endDate }
-        // Returns per-variant aggregates ready for Bayesian / Bandit analysis.
+        // Body: { flagKey, metricEvent, startDate, endDate } — envId is taken
+        // from the validated Authorization token (not the body), so a caller
+        // signed for envA cannot query envB's data.
         app.MapPost("/api/query/experiment", async (
+            HttpContext ctx,
             ExperimentQueryRequest req,
             ClickHouseQueryClient ch,
             CancellationToken ct) =>
         {
-            if (string.IsNullOrWhiteSpace(req.EnvId) ||
-                string.IsNullOrWhiteSpace(req.FlagKey) ||
+            var envId = ctx.GetEnvId();
+
+            if (string.IsNullOrWhiteSpace(req.FlagKey) ||
                 string.IsNullOrWhiteSpace(req.MetricEvent) ||
                 string.IsNullOrWhiteSpace(req.StartDate) ||
                 string.IsNullOrWhiteSpace(req.EndDate))
             {
-                return Results.BadRequest("envId, flagKey, metricEvent, startDate, endDate are all required");
+                return Results.BadRequest("flagKey, metricEvent, startDate, endDate are all required");
+            }
+
+            // Back-compat: if the body also carries envId, require it to match
+            // the token's envId. Catches stale callers pointing at the wrong env.
+            if (!string.IsNullOrWhiteSpace(req.EnvId) &&
+                !string.Equals(req.EnvId, envId, StringComparison.Ordinal))
+            {
+                return Results.BadRequest("body envId does not match the authenticated envId");
             }
 
             if (!DateOnly.TryParseExact(req.StartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var start) ||
@@ -33,11 +44,11 @@ public static class QueryEndpoint
             if (end < start) return Results.BadRequest("endDate must be >= startDate");
 
             var variants = await ch.GetVariantStatsAsync(
-                req.EnvId, req.FlagKey, req.MetricEvent, start, end, ct);
+                envId, req.FlagKey, req.MetricEvent, start, end, ct);
 
             return Results.Ok(new ExperimentQueryResponse
             {
-                EnvId       = req.EnvId,
+                EnvId       = envId,
                 FlagKey     = req.FlagKey,
                 MetricEvent = req.MetricEvent,
                 Window      = new ExperimentQueryResponse.WindowInfo

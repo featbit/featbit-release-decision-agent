@@ -22,12 +22,20 @@ import {
   TREATMENT_CONV_RATE,
   GUARDRAIL_FIRE_RATE,
 } from "./config";
+import { signEnvSecret } from "./env-secret";
 
 // ── Env bindings (from wrangler.jsonc vars) ───────────────────────────────────
 
 interface Env {
   WORKER_URL:            string;
   ENV_ID:                string;
+  /**
+   * Optional: pre-minted `fbes.…` token. When unset, the worker signs
+   * ENV_ID with TRACK_SERVICE_SIGNING_KEY at invocation time. When both are
+   * unset, falls back to the raw ENV_ID (legacy track-service behavior).
+   */
+  ENV_SECRET?:                 string;
+  TRACK_SERVICE_SIGNING_KEY?:  string;
   BURSTS_PER_INVOCATION: string;
   BURST_INTERVAL_MS:     string;
   MAX_EVENTS_PER_BURST:  string;
@@ -93,14 +101,14 @@ function buildPayload(): TrackPayload {
   return payload;
 }
 
-async function sendBurst(env: Env, n: number): Promise<void> {
+async function sendBurst(env: Env, auth: string, n: number): Promise<void> {
   if (n === 0) return;
   const payloads: TrackPayload[] = Array.from({ length: n }, buildPayload);
   const res = await fetch(`${env.WORKER_URL}/api/track`, {
     method:  "POST",
     headers: {
       "Content-Type":  "application/json",
-      "Authorization": env.ENV_ID,
+      "Authorization": auth,
     },
     body: JSON.stringify(payloads),
   });
@@ -122,12 +130,18 @@ export default {
     const maxN    = parseInt(env.MAX_EVENTS_PER_BURST,  10) || 10;
 
     ctx.waitUntil((async () => {
+      // Resolve Authorization once: pre-minted ENV_SECRET wins; otherwise
+      // sign ENV_ID with the key; otherwise legacy raw envId.
+      const auth =
+        env.ENV_SECRET ??
+        (await signEnvSecret(env.ENV_ID, env.TRACK_SERVICE_SIGNING_KEY));
+
       let sent = 0;
       let fails = 0;
       for (let i = 0; i < bursts; i++) {
         const n = randInt(maxN);
         try {
-          await sendBurst(env, n);
+          await sendBurst(env, auth, n);
           sent += n;
         } catch (err) {
           fails++;
