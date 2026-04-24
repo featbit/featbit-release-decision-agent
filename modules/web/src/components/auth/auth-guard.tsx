@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/featbit-auth/auth-context";
@@ -26,6 +26,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Defer all auth-derived rendering until after the client has mounted so
+  // that SSR and the first client render agree (both show "Loading…"),
+  // preventing a hydration mismatch when useAuth resolves synchronously
+  // from localStorage.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const shouldRedirectToLogin =
     isReady && (!isAuthenticated || sessionStatus === "invalid");
 
@@ -40,7 +49,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   }, [shouldRedirectToLogin, pathname, router]);
 
-  if (!isReady) {
+  if (!mounted || !isReady) {
     return <ConnectingSplash message="Loading…" />;
   }
   if (shouldRedirectToLogin) {

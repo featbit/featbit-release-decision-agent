@@ -8,7 +8,19 @@ import {
   type ChatMessage,
   type ConnectionStatus,
 } from "@/hooks/use-sandbox-chat";
+import { useSandbox0Chat } from "@/hooks/use-sandbox0-chat";
 import { persistMessagesAction } from "@/lib/actions";
+
+/**
+ * Global agent-backend switch (compile-time, env-driven, never changes at
+ * runtime). Set `NEXT_PUBLIC_AGENT_BACKEND=sandbox0` to route chat through
+ * the Managed-Agents integration; anything else keeps the classic
+ * Claude-Agent-SDK server at `NEXT_PUBLIC_SANDBOX_URL`.
+ */
+const AGENT_BACKEND =
+  (process.env.NEXT_PUBLIC_AGENT_BACKEND ?? "classic") === "sandbox0"
+    ? ("sandbox0" as const)
+    : ("classic" as const);
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Send, Square, Bot, User, AlertCircle, WifiOff, Loader2, CheckCircle2 } from "lucide-react";
@@ -88,14 +100,22 @@ export function ChatPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initRef = useRef(false);
 
+  const chatOpts = {
+    experimentId,
+    initialMessages: initialMessages.map(toChat),
+    onStreamComplete: (userContent: string, assistantContent: string) => {
+      persistMessagesAction(experimentId, userContent, assistantContent);
+    },
+  };
+  // `AGENT_BACKEND` is a compile-time constant — the branch is stable for the
+  // lifetime of the app, which satisfies the rules-of-hooks invariant even
+  // though the static checker can't see it.
+  //
+  // eslint-disable-next-line react-hooks/rules-of-hooks
   const { messages: liveMessages, isStreaming, error, connectionStatus, activity, sendMessage, abort } =
-    useSandboxChat({
-      experimentId,
-      initialMessages: initialMessages.map(toChat),
-      onStreamComplete: (userContent, assistantContent) => {
-        persistMessagesAction(experimentId, userContent, assistantContent);
-      },
-    });
+    AGENT_BACKEND === "sandbox0"
+      ? useSandbox0Chat(chatOpts)
+      : useSandboxChat(chatOpts);
 
   // liveMessages already contains the DB history + any new messages
   const displayMessages = liveMessages;
@@ -211,7 +231,7 @@ export function ChatPanel({
                       <span className="group-open:rotate-90 transition-transform inline-block">▸</span>
                       {msg.content ? "Show thinking" : (activity ?? "Thinking…")}
                     </summary>
-                    <div className="mt-1.5 pl-3 border-l-2 border-border/60 whitespace-pre-wrap opacity-80 font-normal">
+                    <div className="mt-1.5 pl-3 border-l-2 border-border/60 whitespace-pre-wrap [overflow-wrap:anywhere] break-all max-h-64 overflow-y-auto opacity-80 font-normal text-[11px] leading-snug font-mono">
                       {msg.thinking}
                     </div>
                   </details>
@@ -341,7 +361,11 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
       ) : (
         <>
           <WifiOff className="size-3" />
-          <span>Agent server unavailable — start sandbox on port 3100 to enable chat</span>
+          <span>
+            {AGENT_BACKEND === "sandbox0"
+              ? "Agent unavailable — check /api/sandbox0 routes and sandbox0 credentials"
+              : "Agent server unavailable — start sandbox on port 3100 to enable chat"}
+          </span>
         </>
       )}
     </div>

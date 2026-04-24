@@ -144,6 +144,26 @@ model ProjectAgentSession {
   @@map("project_agent_session")
 }
 
+model ManagedAgent {
+  version       String   @id
+  agentId       String   @map("agent_id")
+  environmentId String   @map("environment_id")
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("managed_agent")
+}
+
+model Vault {
+  name      String   @id
+  vaultId   String   @map("vault_id")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("vault")
+}
+
 model UserProjectMemory {
   id                String   @id @default(uuid())
   featbitProjectKey String   @map("featbit_project_key")
