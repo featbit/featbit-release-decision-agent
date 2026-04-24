@@ -29,6 +29,11 @@ interface UseSandbox0ChatReturn {
   activity: string | null;
   sendMessage: (content: string) => void;
   abort: () => void;
+  /** sandbox0 session id once `/chat/start` has returned; null until then */
+  sessionId: string | null;
+  /** `true` if this session was freshly created on this connect,
+   *  `false` if resumed from an existing `experiment.sandbox_id`. */
+  sessionIsNew: boolean | null;
 }
 
 let msgCounter = 0;
@@ -58,6 +63,8 @@ export function useSandbox0Chat({
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connected");
   const [activity, setActivity] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionIsNew, setSessionIsNew] = useState<boolean | null>(null);
 
   const sessionIdRef = useRef<string | null>(null);
   const lastEventIdRef = useRef<string | undefined>(undefined);
@@ -258,14 +265,21 @@ export function useSandbox0Chat({
         // the loop to exit when we have seen the session become running
         // (or at least emit an agent.* event) since we started polling.
         let hasBegunProcessing = false;
-        const lifecycle = (text: string) => appendAssistantThinking(`● ${text}\n`);
+        // Buffer breadcrumbs so we can skip emitting them entirely for the
+        // pure-resume case — otherwise we'd leave a "Thinking…" ghost bubble
+        // with no agent.message to commit it.
+        const pendingBreadcrumbs: string[] = [];
+        const lifecycle = (text: string) => pendingBreadcrumbs.push(text);
+        const flushBreadcrumbs = () => {
+          for (const b of pendingBreadcrumbs) appendAssistantThinking(`● ${b}\n`);
+          pendingBreadcrumbs.length = 0;
+        };
 
         let sessionWasJustCreated = false;
         try {
           // 1. Ensure session exists.
           if (!sessionIdRef.current) {
             lifecycle("Connecting to managed agent…");
-            setActivity("Connecting…");
             const res = await fetch("/api/sandbox0/chat/start", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -281,6 +295,8 @@ export function useSandbox0Chat({
             };
             sessionIdRef.current = data.sessionId;
             sessionWasJustCreated = data.isNew === true;
+            setSessionId(data.sessionId);
+            setSessionIsNew(sessionWasJustCreated);
             lifecycle(
               sessionWasJustCreated
                 ? `Session created: ${data.sessionId}`
@@ -291,17 +307,46 @@ export function useSandbox0Chat({
             }
           }
 
-          // If we were auto-bootstrapping (empty prompt) and the session was
-          // already alive, there's nothing new to poll — exit early rather
-          // than rehydrate every past event into the chat.
+          // Pure resume (no new session, no user input): nothing more to do.
+          // Skip flushing breadcrumbs — the session banner at the top of the
+          // chat is already telling the user we're resumed.
           if (!trimmed && !sessionWasJustCreated) {
             return;
           }
+
+          // Resumed session + about to poll: mark every event that already
+          // happened in this session as "seen" so the upcoming poll loop
+          // only renders events produced by the turn we're about to start.
+          // Without this, the loop would re-play the entire session history
+          // into the chat and duplicate past agent messages.
+          if (!sessionWasJustCreated && lastEventIdRef.current === undefined) {
+            try {
+              const r = await fetch(
+                `/api/sandbox0/chat/events?sessionId=${sessionIdRef.current}`,
+              );
+              if (r.ok) {
+                const snap = (await r.json()) as { events: SandboxEvent[] };
+                for (const evt of snap.events ?? []) {
+                  seenEventIdsRef.current.add(evt.id);
+                  lastEventIdRef.current = evt.id;
+                }
+              }
+            } catch {
+              // Non-fatal: worst case we fall through and re-render a few
+              // historical events. The dots-animation keeps isStreaming true
+              // so the UI still reads as "working".
+            }
+          }
+
+          // We are going to poll — now it's safe to surface the breadcrumbs.
+          flushBreadcrumbs();
+          setActivity("Connecting…");
 
           // 2. If user typed something, send it. (Empty string just triggers
           // polling so the bootstrap/greeting flows through.)
           if (trimmed) {
             lifecycle("Sending message to agent…");
+            flushBreadcrumbs();
             const res = await fetch("/api/sandbox0/chat/send", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -376,6 +421,8 @@ export function useSandbox0Chat({
     lastEventIdRef.current = undefined;
     seenEventIdsRef.current = new Set();
     abortedRef.current = false;
+    setSessionId(null);
+    setSessionIsNew(null);
   }, [experimentId]);
 
   return {
@@ -386,5 +433,7 @@ export function useSandbox0Chat({
     activity,
     sendMessage,
     abort,
+    sessionId,
+    sessionIsNew,
   };
 }

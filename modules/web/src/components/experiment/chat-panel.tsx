@@ -112,10 +112,14 @@ export function ChatPanel({
   // though the static checker can't see it.
   //
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  const { messages: liveMessages, isStreaming, error, connectionStatus, activity, sendMessage, abort } =
+  const chat =
     AGENT_BACKEND === "sandbox0"
       ? useSandbox0Chat(chatOpts)
       : useSandboxChat(chatOpts);
+  const { messages: liveMessages, isStreaming, error, connectionStatus, activity, sendMessage, abort } = chat;
+  const sandbox0Extras = AGENT_BACKEND === "sandbox0" ? (chat as ReturnType<typeof useSandbox0Chat>) : null;
+  const sessionId: string | null = sandbox0Extras?.sessionId ?? null;
+  const sessionIsNew: boolean | null = sandbox0Extras?.sessionIsNew ?? null;
 
   // liveMessages already contains the DB history + any new messages
   const displayMessages = liveMessages;
@@ -144,7 +148,15 @@ export function ChatPanel({
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
-    // Only bootstrap if there are no persisted messages (new experiment)
+    // For sandbox0 backend, fire the empty-prompt path unconditionally so
+    // the hook resolves a session id (new or resumed) on open and the UI
+    // can display the session status. The hook early-returns on resume
+    // without any server-side side effects.
+    if (AGENT_BACKEND === "sandbox0" && !triggerMessage) {
+      sendMessage("");
+      return;
+    }
+    // Classic backend: only bootstrap if there are no persisted messages
     // AND no external trigger is about to fire (e.g. expert-setup priming
     // message) — otherwise we'd duplicate the greeting.
     if (initialMessages.length === 0 && !triggerMessage) {
@@ -180,6 +192,17 @@ export function ChatPanel({
     <div className="flex flex-col h-full">
       {/* Connection status bar */}
       <ConnectionStatusBar status={connectionStatus} />
+
+      {/* Sandbox0 session indicator — always rendered for the sandbox0
+          backend so the user always knows the current session state
+          (connecting / resumed / new / errored). */}
+      {AGENT_BACKEND === "sandbox0" && (
+        <Sandbox0SessionBar
+          sessionId={sessionId}
+          sessionIsNew={sessionIsNew}
+          error={error}
+        />
+      )}
 
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -369,6 +392,62 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
           </span>
         </>
       )}
+    </div>
+  );
+}
+
+/* ── sandbox0 session bar (always visible on sandbox0 backend) ── */
+function Sandbox0SessionBar({
+  sessionId,
+  sessionIsNew,
+  error,
+}: {
+  sessionId: string | null;
+  sessionIsNew: boolean | null;
+  error: string | null;
+}) {
+  // Error state: show red dot + message, takes priority over everything else.
+  if (error && !sessionId) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b bg-destructive/10 text-destructive">
+        <span className="inline-block size-1.5 rounded-full shrink-0 bg-destructive" />
+        <span className="font-medium">Session unavailable</span>
+        <span className="truncate">· {error}</span>
+      </div>
+    );
+  }
+
+  // Connecting state: no sessionId yet but no error either.
+  if (!sessionId) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b bg-muted/30 text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" />
+        <span>Connecting to session…</span>
+      </div>
+    );
+  }
+
+  // Connected: green for resumed, blue for new.
+  const isResumed = sessionIsNew === false;
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b bg-muted/30 text-muted-foreground">
+      <span
+        className={cn(
+          "inline-block size-1.5 rounded-full shrink-0",
+          isResumed ? "bg-emerald-500" : "bg-sky-500",
+        )}
+        title={isResumed ? "Resumed session" : "New session"}
+      />
+      <span className="font-medium">
+        {isResumed ? "Resumed session" : "New session"}
+      </span>
+      <span className="text-muted-foreground/60">·</span>
+      <span
+        className="font-mono truncate select-all cursor-text"
+        title={sessionId}
+      >
+        {sessionId}
+      </span>
     </div>
   );
 }
