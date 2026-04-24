@@ -48,12 +48,12 @@
  *  e.g. --guardrailEvents "checkout_abandoned,support_chat_open"
  *
  * Environment:
- *   SYNC_API_URL  — base URL of the web app (default: http://localhost:3000)
+ *   SYNC_API_URL  — base URL of the web app (default: https://www.featbit.ai)
  *   ACCESS_TOKEN  — Bearer token sent as Authorization header (optional; web API
  *                   does not validate today, but scaffolding is ready for when it does)
  */
 
-const API_BASE = process.env.SYNC_API_URL ?? "http://localhost:3000";
+const API_BASE = process.env.SYNC_API_URL ?? "https://www.featbit.ai";
 const ACCESS_TOKEN = process.env.ACCESS_TOKEN ?? "";
 
 // ── Canonical enums ───────────────────────────────────────────────────────────

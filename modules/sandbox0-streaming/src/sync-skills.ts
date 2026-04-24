@@ -1,9 +1,10 @@
 /**
  * sync-skills.ts
  *
- * Sync local skills (~/.claude/skills/<name>) → sandbox0 custom skill versions,
- * then create a fresh managed_agent pinned to version="latest" so future syncs
- * only need to upload new skill versions (no agent rebuild).
+ * Sync the repo's top-level /skills/<name> directories → sandbox0 custom skill
+ * versions, then bump the default agent in place (POST /v1/agents/{id}) so the
+ * agent_id stays stable and its version auto-increments. Sessions that reference
+ * the agent by plain id string automatically pick up the latest version.
  *
  * Usage:
  *   npx tsx src/sync-skills.ts
@@ -11,8 +12,8 @@
 
 import "dotenv/config";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
-import { join, relative } from "node:path";
-import { homedir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 const BASE_URL = process.env.SANDBOX0_BASE_URL ?? "https://agents.sandbox0.ai";
@@ -31,7 +32,10 @@ const HEADERS_MULTIPART: Record<string, string> = {
   "anthropic-beta": "managed-agents-2026-04-01",
 };
 
-const SKILLS_ROOT = join(homedir(), ".claude", "skills");
+// Canonical source: the repo's top-level /skills folder
+// (modules/sandbox0-streaming/src/sync-skills.ts  →  ../../../skills)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SKILLS_ROOT = resolve(__dirname, "..", "..", "..", "skills");
 
 const SKIP_DIRS = new Set(["node_modules", ".git"]);
 
@@ -97,33 +101,28 @@ async function uploadSkillVersion(
   return j.version as string;
 }
 
-async function createAgent(
-  name: string,
-  modelId: string,
-  system: string,
+async function updateAgent(
+  agentId: string,
+  currentVersion: number,
   skillRefs: { skillId: string; version: string }[],
-  tools: unknown[],
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; version: number; name: string }> {
   const body = {
-    name,
-    model: { id: modelId },
-    system,
+    version: currentVersion,
     skills: skillRefs.map((s) => ({
       type: "custom",
       skill_id: s.skillId,
       version: s.version,
     })),
-    tools,
   };
-  const res = await fetch(`${BASE_URL}/v1/agents`, {
+  const res = await fetch(`${BASE_URL}/v1/agents/${agentId}`, {
     method: "POST",
     headers: HEADERS_JSON,
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`create agent: ${res.status} ${await res.text()}`);
+    throw new Error(`update agent: ${res.status} ${await res.text()}`);
   }
-  return (await res.json()) as { id: string; name: string };
+  return (await res.json()) as { id: string; version: number; name: string };
 }
 
 async function main() {
@@ -173,44 +172,20 @@ async function main() {
     { headers: HEADERS_MULTIPART },
   ).then((r) => r.json());
   console.log(
-    `   current: ${currentAgent.id} (${currentAgent.name}, model=${currentAgent.model?.id})`,
+    `   current: ${currentAgent.id} (${currentAgent.name}, v${currentAgent.version}, model=${currentAgent.model?.id})`,
   );
 
-  console.log("\n4. Creating new agent pinned to version='latest' ...");
-  const dateTag = new Date().toISOString().slice(0, 10);
-  const newName = `FeatBit Release Decision Agent (synced ${dateTag})`;
-  const newAgent = await createAgent(
-    newName,
-    currentAgent.model?.id ?? "glm-5.1",
-    currentAgent.system ?? "You are a FeatBit Release Decision assistant.",
+  console.log("\n4. Bumping agent version with new skill references ...");
+  const bumped = await updateAgent(
+    currentAgent.id,
+    currentAgent.version,
     updates.map((u) => ({ skillId: u.skillId, version: u.newVersion })),
-    currentAgent.tools ?? [
-      {
-        type: "agent_toolset_20260401",
-        default_config: {
-          enabled: true,
-          permission_policy: { type: "always_allow" },
-        },
-      },
-    ],
   );
-  console.log(`   created: ${newAgent.id} (${newAgent.name})`);
-
-  console.log("\n5. Marking new agent as default in DB ...");
-  const nextVersion = `sync-${dateTag}-${Date.now().toString(36)}`;
-  await pool.query(
-    `UPDATE managed_agent SET is_default = false WHERE is_default = true`,
-  );
-  await pool.query(
-    `INSERT INTO managed_agent (version, agent_id, environment_id, is_default)
-     VALUES ($1, $2, $3, true)`,
-    [nextVersion, newAgent.id, currentRow.environment_id],
-  );
-  console.log(`   version="${nextVersion}"  agent_id=${newAgent.id}`);
+  console.log(`   ${bumped.id}  v${currentAgent.version} → v${bumped.version}`);
 
   await pool.end();
   console.log(
-    "\n✓ Sync complete. New chat sessions will use the updated agent and latest skill versions.",
+    "\n✓ Sync complete. New sessions use agent shorthand = latest version automatically.",
   );
   process.exit(0);
 }

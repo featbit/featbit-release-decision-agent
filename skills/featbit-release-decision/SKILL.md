@@ -95,7 +95,7 @@ All satellite skills use the `project-sync` skill to read and write state. The r
 4. **Log transition** — use `add-activity` to record what happened
 5. **Experiment data** — use run-level commands (`create-run`, `start-run`, `analyze-run`, `decide-run`, `archive-run`, `save-input`, `save-result`, `record-decision`, `save-learning`) when experiment run records change
 
-See the `project-sync` skill for full command reference. Set `SYNC_API_URL` if the web app is not at `http://localhost:3000`.
+See the `project-sync` skill for full command reference. Set `SYNC_API_URL` if the web app is not at `https://www.featbit.ai`.
 
 ---
 
@@ -296,13 +296,21 @@ Invocation pattern:
 
 Parse `project-id` and `access-token` from the starting prompt. If `project-id` is missing, ask the user before proceeding. If `access-token` is missing or empty, proceed without it — only ask for it later if a database write operation actually requires authentication.
 
+### Skill path bootstrap
+
+Once per session, before invoking any sub-skill script, run this bash command to make sure `$HOME/.claude/skills` resolves to the actual skills directory (needed on sandbox0 managed-agents VMs where skills live at `/workspace/.claude/skills`; on Docker/local it is a no-op because the path already exists):
+
+```bash
+[ -d "$HOME/.claude/skills" ] || { mkdir -p "$HOME/.claude" && ln -sfn /workspace/.claude/skills "$HOME/.claude/skills"; }
+```
+
 ### State loading
 
 Before asking or saying anything, read the current project state from the database using the `project-sync` skill's `get-experiment` command with the `project-id` parsed from the invocation arguments.
 
 If the command returns `"status": "unavailable"`, the database is unreachable. Retry the call **once** — transient container/network timing at session start is common. If the retry still fails, treat this exactly like a blank new project and proceed with the greeting — do not diagnose, do not mention the database.
 
-If the user later asserts that you *can* reach the database (e.g. "yes you can, you have the scripts"), run `get-experiment` again before telling them otherwise. The sandbox has `npx tsx scripts/sync.ts get-experiment <id>` available and `SYNC_API_URL` pre-wired — a single earlier failure is not a verdict.
+If the user later asserts that you *can* reach the database (e.g. "yes you can, you have the scripts"), run `get-experiment` again before telling them otherwise. The sandbox has `npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts get-experiment <id>` available and `SYNC_API_URL` pre-wired — a single earlier failure is not a verdict.
 
 Treat the project as a blank new project when the decision fields are empty and there are no meaningful experiments or learnings yet.
 
@@ -330,7 +338,7 @@ When `entryMode === "guided"` or null, use the original blank-project or state-r
 After `get-experiment` resolves `featbitProjectKey`, silently fetch `product_facts` so hypotheses and metrics can be grounded in what the product actually is and who uses it. Use the same `SYNC_API_URL` that `project-sync` uses (it points to the correct web-app host for this deployment — never hardcode `http://web:3000` or `localhost`):
 
 ```bash
-curl -s "${SYNC_API_URL:-http://localhost:3000}/api/memory/project/${featbit_project_key}?type=product_facts"
+curl -s "${SYNC_API_URL:-https://www.featbit.ai}/api/memory/project/${featbit_project_key}?type=product_facts"
 ```
 
 Keep the parsed JSON as internal context (`_productFacts`). Never mention this loading step to the user. Do **NOT** read `type=learnings` — cross-experiment conflict checking uses the dedicated `/conflicts` endpoint instead (see Pre-Start Conflict Check below).
@@ -340,7 +348,7 @@ Keep the parsed JSON as internal context (`_productFacts`). Never mention this l
 Before the user commits to starting an experiment run (i.e., before `experiment-workspace` invokes `start-run`), check whether the configured flag key, primary metric, audience, and observation window conflict with any already-active experiments:
 
 ```bash
-curl -s "${SYNC_API_URL:-http://localhost:3000}/api/experiments/${experiment_id}/conflicts"
+curl -s "${SYNC_API_URL:-https://www.featbit.ai}/api/experiments/${experiment_id}/conflicts"
 ```
 
 The response shape:
@@ -408,7 +416,7 @@ Identify which control lenses are relevant based on the project state and the us
 ## Execution Procedure
 
 ```python
-SYNC = env("SYNC_API_URL", default="http://localhost:3000")
+SYNC = env("SYNC_API_URL", default="https://www.featbit.ai")
 
 def on_session_start(argv, user_message):
     project_id, access_token = parse_args(argv)

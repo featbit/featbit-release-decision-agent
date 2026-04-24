@@ -10,16 +10,16 @@
  * spell out raw curl invocations.
  *
  * Usage:
- *   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id> [--no-fresh]
+ *   npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id> [--no-fresh]
  *
  * `--no-fresh` lets the server return a cached `analysisResult` if
  * track-service is temporarily unavailable. Default is `forceFresh: true`.
  *
  * Environment:
- *   SYNC_API_URL — base URL of the web app (default: http://localhost:3000)
+ *   SYNC_API_URL — base URL of the web app (default: https://www.featbit.ai)
  */
 
-const API_BASE = process.env.SYNC_API_URL ?? "http://localhost:3000";
+const API_BASE = process.env.SYNC_API_URL ?? "https://www.featbit.ai";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   const [experimentId, runId] = positional;
 
   if (!experimentId || !runId) {
-    console.error("Usage: npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id> [--no-fresh]");
+    console.error("Usage: npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id> [--no-fresh]");
     process.exit(1);
   }
 

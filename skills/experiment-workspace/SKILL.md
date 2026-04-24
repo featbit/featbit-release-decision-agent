@@ -94,7 +94,7 @@ The web `/analyze` route picks the algorithm automatically from the run's `metho
 
 **Key principle: Flag traffic ≠ Experiment traffic.** Developers instrument once (`variation()` + `track()`), never per-experiment. The PM configures experiment scope (traffic%, offset, audience, method) post-hoc via the web UI. The data server applies these filters at query time — the flag itself is unaware of the experiment.
 
-All experiment data lives in the shared PostgreSQL database, accessible via the web app's HTTP API (`SYNC_API_URL`, default `http://localhost:3000`). No local experiment files needed — the web UI, sandbox agent, and scripts all read/write the same database.
+All experiment data lives in the shared PostgreSQL database, accessible via the web app's HTTP API (`SYNC_API_URL`, default `https://www.featbit.ai`). No local experiment files needed — the web UI, sandbox agent, and scripts all read/write the same database.
 
 ---
 
@@ -170,7 +170,7 @@ The agent does not need to touch any online dashboard. Persisting the experiment
 
 1. Trigger a fresh analysis — this makes the web app query track-service for the latest metrics:
    ```bash
-   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+   npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
    The response contains either the analysis result, `{ "status": "no_data" }` (nothing in ClickHouse yet), or `{ "status": "no_data", "reason": "zero_users" }` (metric event present but no users).
 2. If `no_data`: instrumentation hasn't fired yet. Confirm with the user that `flag_evaluation` and the primary metric event are being sent with the correct `env_id` and `flag_key`.
@@ -180,7 +180,7 @@ The agent does not need to touch any online dashboard. Persisting the experiment
 
 1. Trigger the web app's analyze endpoint — it queries track-service for fresh metrics, runs the Bayesian algorithm, and writes both `inputData` and `analysisResult` back to the run record:
    ```bash
-   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+   npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
    Alternatively, opening the experiment's **Full Analysis** tab in the web UI auto-triggers the same call.
 2. Read the result back via `project-sync get-experiment <experiment-id>` and inspect the matching run's `analysisResult`.
@@ -207,7 +207,7 @@ See `references/analysis-bayesian.md` → "On Family-wise Error" for details.
 
 1. Re-run analysis (or click **Refresh Latest Analysis** in the UI). The web app re-queries track-service and re-runs the algorithm; both `inputData` and `analysisResult` are overwritten idempotently:
    ```bash
-   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+   npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
 2. Read the refreshed result via `get-experiment` and continue interpretation.
 3. Persist updated experiment status to the database (see Persist State section below).
@@ -224,7 +224,7 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 **Each reweighting cycle** (recommended every 6–24 hours):
 1. Trigger a fresh analysis via the web app (it picks bandit automatically from the run's `method` field):
    ```bash
-   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+   npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
 2. Read `analysisResult` from the run record via `get-experiment`:
    - If `enough_units: false` → burn-in not complete, do not apply weights yet (need ≥ 100 users per arm)
@@ -238,7 +238,7 @@ A bandit experiment replaces fixed 50/50 traffic with dynamic reweighting. It re
 1. Set winning arm to 100% in FeatBit
 2. Switch the run's `method` field to `bayesian_ab` (via the web UI experiment settings) and trigger a final analysis:
    ```bash
-   npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
+   npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <run-id>
    ```
 3. Hand off to `evidence-analysis` with the experiment record containing:
    - `analysisResult` (final Bayesian result — note: δ estimate may have wider uncertainty due to unequal traffic)
@@ -260,7 +260,7 @@ A/B and Bandit experiments measure short-term behavior. Transient effects — no
    - Create a new run with a time-stamped slug (e.g. `<slug>-holdout-30d`) via `project-sync create-run`
    - Trigger analysis on that run — the web app pulls fresh data from track-service and writes both `inputData` and `analysisResult`:
      ```bash
-     npx tsx skills/experiment-workspace/scripts/analyze.ts <experiment-id> <holdout-run-id>
+     npx tsx $HOME/.claude/skills/experiment-workspace/scripts/analyze.ts <experiment-id> <holdout-run-id>
      ```
 4. Compare P(win) and rel Δ across checkpoints — look for stability, decay, or growth
 5. When holdout analysis is complete, remove the holdout split from the feature flag
