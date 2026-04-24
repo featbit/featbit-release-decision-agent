@@ -251,10 +251,11 @@ export function ChatPanel({
           ))
         )}
 
-        {/* Streaming indicator */}
-        {isStreaming &&
-          (displayMessages.length === 0 ||
-            displayMessages[displayMessages.length - 1]?.role !== "assistant") && (
+        {/* Streaming indicator — shown whenever the agent is still working.
+            Kept visible even when a stream- bubble is growing or a message
+            was just committed: the bubbles describe *what* the agent is
+            doing, the dots say *it is still going*. */}
+        {isStreaming && (
             <div className="flex gap-3 text-sm">
               <div className="flex shrink-0 items-start pt-0.5">
                 <div className="flex size-7 items-center justify-center rounded-full bg-foreground/10">

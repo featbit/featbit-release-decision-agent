@@ -53,6 +53,18 @@ Ask: "If this experiment runs for 2 weeks and you had to make a go/no-go decisio
 
 The answer is the primary metric. One only.
 
+Then capture it as a structured object — NOT a paragraph. The five fields are:
+
+| Field | Purpose | Example |
+|---|---|---|
+| `name` | Short human-readable label (shows in the web UI's metric table) | `"Signup conversion"` |
+| `event` | Instrumented event key emitted from code (snake_case, no spaces) | `"signup_completed"` |
+| `metricType` | `binary` for conversion (fires 0/1) or `numeric` for a value (revenue, latency, count per user) | `"binary"` |
+| `metricAgg` | `once` (max 1 per user, for funnel conversion), `count` (tally all occurrences), or `sum` (add numeric payloads) | `"once"` |
+| `description` | One-sentence rationale — why this metric decides go/no-go | `"Proportion of visitors that sign up — directly measures the H1 change."` |
+
+If the user gives a vague metric name (e.g. "signup rate"), probe until the event key, metric type, and aggregation are concrete. Don't proceed with a half-defined metric.
+
 ### Define guardrails (2–3 maximum)
 
 Ask: "What other metrics would concern you if they degraded significantly, even if the primary metric improved?"
@@ -61,6 +73,12 @@ Common guardrails:
 - Error rate / p99 latency for the candidate variant
 - User satisfaction score or support ticket volume
 - A downstream conversion step after the primary metric
+
+Each guardrail has the same five fields as the primary metric, **plus**:
+
+| Field | Purpose | Example |
+|---|---|---|
+| `direction` | `increase_bad` (e.g. error rate, abandonment) or `decrease_bad` (e.g. downstream retention) | `"increase_bad"` |
 
 ### Design the event
 
@@ -87,15 +105,23 @@ Check: can the current codebase emit this event? If not, instrumentation must be
 
 Use `Skill("project-sync", ...)` to sync state. All three writes are required, and instrumentation must be confirmed before writing:
 
-```python
-assert Skill("project-sync", f'update-state {experiment_id} --primaryMetric "{metric_event} — {rationale}" --guardrails "{guardrail_list}" --lastAction "Metrics defined"').ok
-assert Skill("project-sync", f"set-stage {experiment_id} measuring").ok
-assert Skill("project-sync", f'add-activity {experiment_id} --type stage_update --title "Metrics defined"').ok
+```bash
+PRIMARY='{"name":"Signup conversion","event":"signup_completed","metricType":"binary","metricAgg":"once","description":"Proportion of visitors that sign up."}'
+GUARDRAILS='[{"name":"Checkout abandonment","event":"checkout_abandoned","metricType":"binary","metricAgg":"once","direction":"increase_bad","description":"must not rise"}]'
+
+npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts update-state <experiment-id> \
+  --primaryMetric "$PRIMARY" \
+  --guardrails "$GUARDRAILS" \
+  --lastAction "Metrics defined"
+npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts set-stage <experiment-id> measuring
+npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts add-activity <experiment-id> --type stage_update --title "Metrics defined"
 ```
 
-**`primaryMetric` field format:** plain-text prose — event name + rationale for choosing it.  
-Example: `"purchase_completed — chosen as north star because it directly measures the revenue impact of the checkout redesign."`  
-Downstream skills extract the bare event name by splitting on ` — ` and taking the left token.
+**`primaryMetric` must be a JSON object** with `{name, event, metricType, metricAgg, description?}`. The web UI renders each field as its own column (NAME / EVENT / TYPE / AGG) — do NOT jam a paragraph into `name`. Rationale goes in `description`.
+
+**`guardrails` must be a JSON array** of objects with the primary-metric shape plus `direction` (`increase_bad` or `decrease_bad`). One entry per guardrail, never a single string or newline-separated text.
+
+`sync.ts update-state` validates both fields' JSON shape and enums; if validation fails it will print what's missing and exit non-zero.
 
 ## Execution Procedure
 
@@ -117,7 +143,25 @@ def design_measurement(project_id, user_message):
     if not instrumentation_confirmed:
         say("Instrumentation must be confirmed before exposure begins.")
         return  # do not advance stage until confirmed
-    assert Skill("project-sync", f'update-state {project_id} --primaryMetric "{primary_metric.event} — {primary_metric.rationale}" --guardrails "{guardrails_text}" --lastAction "Metrics defined"').ok
+    primary_json = json.dumps({
+        "name": primary_metric.name,
+        "event": primary_metric.event,
+        "metricType": primary_metric.metric_type,       # binary | numeric
+        "metricAgg":  primary_metric.metric_agg,        # once | count | sum
+        "description": primary_metric.rationale,
+    })
+    guardrails_json = json.dumps([
+        {
+            "name":        g.name,
+            "event":       g.event,
+            "metricType":  g.metric_type,
+            "metricAgg":   g.metric_agg,
+            "direction":   g.direction,                  # increase_bad | decrease_bad
+            "description": g.rationale,
+        }
+        for g in guardrails
+    ])
+    assert Skill("project-sync", f'update-state {project_id} --primaryMetric {shlex.quote(primary_json)} --guardrails {shlex.quote(guardrails_json)} --lastAction "Metrics defined"').ok
     assert Skill("project-sync", f"set-stage {project_id} measuring").ok
     assert Skill("project-sync", f'add-activity {project_id} --type stage_update --title "Metrics defined"').ok
     Skill("reversible-exposure-control", project_id)

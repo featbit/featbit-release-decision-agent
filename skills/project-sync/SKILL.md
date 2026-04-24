@@ -18,15 +18,13 @@ All release-decision skills call this script to persist state changes. **No skil
 
 ## Script Location
 
-```
-scripts/sync.ts
-```
-
-Run with:
+**Always invoke with the absolute path** — the bash tool's cwd on sandbox0 VMs is `/workspace`, not the skill directory, so a relative `scripts/sync.ts` will fail with `Cannot find module`.
 
 ```bash
 npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts <command> [args]
 ```
+
+> All flag arguments require the `--` prefix (e.g. `--primaryMetric '{...}'`, never bare `primaryMetric '{...}'`). The script will reject or ignore bare-name pairs.
 
 ## Environment
 
@@ -62,8 +60,11 @@ These are the only valid values for each enum field. The script and server API *
 | `run status` | `draft` \| `collecting` \| `analyzing` \| `decided` \| `archived` — **NEVER use `running`, `paused`, `completed` or any other value.** Each status has its own dedicated CLI command — the command name *is* the status. |
 | `method` | `bayesian_ab` \| `frequentist` \| `bandit` |
 | `decision` | `CONTINUE` \| `PAUSE` \| `ROLLBACK` \| `INCONCLUSIVE` |
-| `primaryMetricType` | `binary` \| `continuous` |
-| `primaryMetricAgg` | `once` \| `sum` \| `last` |
+| `primaryMetricType` (on **run**: `--primaryMetricType`) | `binary` \| `continuous` |
+| `primaryMetricAgg` (on **run**: `--primaryMetricAgg`) | `once` \| `sum` \| `last` |
+| `metricType` (inside **state** `primaryMetric`/`guardrails` JSON) | `binary` \| `numeric` |
+| `metricAgg` (inside **state** `primaryMetric`/`guardrails` JSON) | `once` \| `count` \| `sum` |
+| `direction` (inside **state** `guardrails` JSON entry) | `increase_bad` \| `decrease_bad` |
 
 ---
 
@@ -72,8 +73,8 @@ These are the only valid values for each enum field. The script and server API *
 | Field | Format | Example |
 |---|---|---|
 | `variants` (on project state) | Pipe-separated `"key (annotation)\|key (annotation)"` | `"standard (control)\|streamlined (treatment)"` |
-| `primaryMetric` (on project state) | Plain text paragraph — metric event name + rationale | `"purchase_completed — chosen as north star because it directly measures the revenue impact of the checkout redesign."` |
-| `guardrails` (on project state) | Newline-separated plain text descriptions | `"checkout_abandoned must not increase\nsupport_chat_open must stay below 5%"` |
+| `primaryMetric` (on project state) | **JSON object** with `{name, event, metricType, metricAgg, description?}` — the web UI renders each field as its own column | `'{"name":"Signup conversion","event":"signup_completed","metricType":"binary","metricAgg":"once","description":"Proportion of visitors that complete a signup — chosen because it directly measures the H1 change."}'` |
+| `guardrails` (on project state) | **JSON array** of `{name, event, metricType, metricAgg, direction, description?}` — one object per guardrail metric | `'[{"name":"Checkout abandonment","event":"checkout_abandoned","metricType":"binary","metricAgg":"once","direction":"increase_bad","description":"must not rise"},{"name":"Support load","event":"support_chat_open","metricType":"numeric","metricAgg":"count","direction":"increase_bad"}]'` |
 | `guardrailEvents` (on run) | **Comma-separated** event names — sync.ts converts to JSON array | `"checkout_abandoned,support_chat_open"` |
 | `inputData` | Valid JSON string — raw metrics snapshot | `'{"metrics":{"control":{"n":1000},"treatment":{"n":1020}}}'` |
 | `analysisResult` | Valid JSON string — Bayesian output | `'{"decision":"CONTINUE","probability":0.87}'` |
@@ -103,8 +104,8 @@ npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts update-state <experime
   --hypothesis "..." \
   --change "..." \
   --variants "standard (control)|streamlined (treatment)" \
-  --primaryMetric "purchase_completed — north star metric because ..." \
-  --guardrails "checkout_abandoned must not increase" \
+  --primaryMetric '{"name":"Signup conversion","event":"signup_completed","metricType":"binary","metricAgg":"once","description":"Proportion of visitors that sign up."}' \
+  --guardrails '[{"name":"Checkout abandonment","event":"checkout_abandoned","metricType":"binary","metricAgg":"once","direction":"increase_bad"}]' \
   --constraints "..." \
   --flagKey "my-flag-key"
 ```
@@ -112,6 +113,10 @@ npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts update-state <experime
 **Allowed fields:** `goal`, `intent`, `hypothesis`, `change`, `variants`, `primaryMetric`, `guardrails`, `constraints`, `openQuestions`, `lastAction`, `lastLearning`, `flagKey`
 
 > **variants format**: must be pipe-separated strings — NOT JSON. Use `"key (annotation)|key (annotation)"`.
+>
+> **primaryMetric format**: must be a valid JSON object with fields `name` (short display name), `event` (the instrumented event key, snake_case), `metricType` (`binary` or `numeric`), `metricAgg` (`once`, `count`, or `sum`), and optional `description` (rationale). The web UI renders `name`/`event`/`metricType`/`metricAgg` as separate table columns — do NOT dump the whole description into `name`.
+>
+> **guardrails format**: must be a valid JSON array; each entry is a guardrail object with the same shape as `primaryMetric` plus `direction` (`increase_bad` or `decrease_bad`). Use one entry per guardrail metric, never a single string.
 
 ---
 

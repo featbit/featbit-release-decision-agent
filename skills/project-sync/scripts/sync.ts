@@ -95,6 +95,29 @@ const ALLOWED_STATE_FIELDS = new Set([
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Recognise flags. Primarily expects `--key value` pairs, but tolerates
+ * `key value` pairs when the bare name matches one of the known fields
+ * (union of all field sets used across commands). LLMs have a habit of
+ * dropping the `--` prefix; this safety net keeps calls from silently
+ * doing nothing.
+ */
+const KNOWN_BARE_FIELDS = new Set<string>([
+  ...ALLOWED_STATE_FIELDS,
+  "type", "title", "detail",
+  "hypothesis", "method", "methodReason",
+  "primaryMetricEvent", "primaryMetricType", "primaryMetricAgg",
+  "metricDescription", "guardrailEvents", "guardrailDescriptions",
+  "controlVariant", "treatmentVariant", "trafficAllocation",
+  "minimumSample", "observationStart", "observationEnd",
+  "priorProper", "priorMean", "priorStddev",
+  "trafficPercent", "trafficOffset", "layerId", "audienceFilters",
+  "inputData", "analysisResult",
+  "decision", "decisionSummary", "decisionReason",
+  "whatChanged", "whatHappened", "confirmedOrRefuted",
+  "whyItHappened", "nextHypothesis",
+]);
+
 function parseArgs(args: string[]): Record<string, string> {
   const result: Record<string, string> = {};
   for (let i = 0; i < args.length; i++) {
@@ -107,6 +130,18 @@ function parseArgs(args: string[]): Record<string, string> {
         i++;
       } else {
         result[key] = "true";
+      }
+      continue;
+    }
+    // Lenient mode: bare `<fieldName> <value>` with no `--` prefix.
+    if (KNOWN_BARE_FIELDS.has(arg)) {
+      const next = args[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        console.error(
+          `[warn] flag "${arg}" was given without the required "--" prefix; accepted for safety. Always use "--${arg}".`,
+        );
+        result[arg] = next;
+        i++;
       }
     }
   }
@@ -183,6 +218,57 @@ async function getExperiment(experimentId: string) {
   console.log(JSON.stringify(experiment, null, 2));
 }
 
+const METRIC_TYPES = new Set(["binary", "numeric"]);
+const METRIC_AGGS = new Set(["once", "count", "sum"]);
+const GUARDRAIL_DIRECTIONS = new Set(["increase_bad", "decrease_bad"]);
+
+/**
+ * Validate the shape of a primaryMetric / guardrail JSON object. The web UI
+ * renders name/event/metricType/metricAgg as separate columns, so all four
+ * fields are required. `description` is optional free text.
+ */
+function validateMetricObject(
+  obj: unknown,
+  kind: "primaryMetric" | "guardrail entry",
+  requireDirection: boolean,
+): string[] {
+  const errs: string[] = [];
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    errs.push(`${kind} must be a JSON object, not ${typeof obj}.`);
+    return errs;
+  }
+  const o = obj as Record<string, unknown>;
+  for (const key of ["name", "event"]) {
+    if (typeof o[key] !== "string" || !o[key]) {
+      errs.push(`${kind}.${key} is required (non-empty string).`);
+    }
+  }
+  if (typeof o.metricType !== "string" || !METRIC_TYPES.has(o.metricType)) {
+    errs.push(
+      `${kind}.metricType must be one of: ${[...METRIC_TYPES].join(" | ")}`,
+    );
+  }
+  if (typeof o.metricAgg !== "string" || !METRIC_AGGS.has(o.metricAgg)) {
+    errs.push(
+      `${kind}.metricAgg must be one of: ${[...METRIC_AGGS].join(" | ")}`,
+    );
+  }
+  if (requireDirection) {
+    if (
+      typeof o.direction !== "string" ||
+      !GUARDRAIL_DIRECTIONS.has(o.direction)
+    ) {
+      errs.push(
+        `${kind}.direction must be one of: ${[...GUARDRAIL_DIRECTIONS].join(" | ")}`,
+      );
+    }
+  }
+  if (o.description !== undefined && typeof o.description !== "string") {
+    errs.push(`${kind}.description must be a string if provided.`);
+  }
+  return errs;
+}
+
 async function updateState(experimentId: string, flags: Record<string, string>) {
   if (Object.keys(flags).length === 0) {
     console.error("No state fields provided. Use --goal, --intent, --hypothesis, etc.");
@@ -194,6 +280,54 @@ async function updateState(experimentId: string, flags: Record<string, string>) 
     console.error('variants must be pipe-separated: "key1 (annotation1)|key2 (annotation2)"');
     console.error('Example: --variants "standard (control)|streamlined (treatment)"');
     process.exit(1);
+  }
+  // Validate primaryMetric JSON shape if provided
+  if (flags.primaryMetric !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(flags.primaryMetric);
+    } catch {
+      console.error(
+        `--primaryMetric must be a JSON object with fields {name, event, metricType, metricAgg, description?}.`,
+      );
+      console.error(
+        `Example: --primaryMetric '{"name":"Signup conversion","event":"signup_completed","metricType":"binary","metricAgg":"once","description":"..."}'`,
+      );
+      process.exit(1);
+    }
+    const errs = validateMetricObject(parsed, "primaryMetric", false);
+    if (errs.length > 0) {
+      for (const e of errs) console.error(e);
+      process.exit(1);
+    }
+  }
+  // Validate guardrails JSON array shape if provided
+  if (flags.guardrails !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(flags.guardrails);
+    } catch {
+      console.error(
+        `--guardrails must be a JSON array of objects: [{name, event, metricType, metricAgg, direction, description?}, ...]`,
+      );
+      console.error(
+        `Example: --guardrails '[{"name":"Checkout abandonment","event":"checkout_abandoned","metricType":"binary","metricAgg":"once","direction":"increase_bad"}]'`,
+      );
+      process.exit(1);
+    }
+    if (!Array.isArray(parsed)) {
+      console.error("--guardrails must be a JSON array (use [] for no guardrails).");
+      process.exit(1);
+    }
+    const allErrs: string[] = [];
+    parsed.forEach((entry, i) => {
+      const errs = validateMetricObject(entry, `guardrail[${i}]`, true);
+      allErrs.push(...errs);
+    });
+    if (allErrs.length > 0) {
+      for (const e of allErrs) console.error(e);
+      process.exit(1);
+    }
   }
   // Filter to only allowed fields
   const body: Record<string, unknown> = {};
