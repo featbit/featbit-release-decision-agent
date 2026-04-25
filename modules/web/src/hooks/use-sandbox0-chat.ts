@@ -276,10 +276,16 @@ export function useSandbox0Chat({
         };
 
         let sessionWasJustCreated = false;
+        // Bootstrap events (symlink / get-experiment / memory load) are
+        // system plumbing, not conversation. Hide their tool traces from
+        // the thinking bubble until the first agent.message commits —
+        // that first message is the real greeting the user cares about.
+        const bootstrapState = { suppressing: false, done: false };
         try {
           // 1. Ensure session exists.
           if (!sessionIdRef.current) {
             lifecycle("Connecting to managed agent…");
+            setActivity("Connecting to session…");
             const res = await fetch("/api/sandbox0/chat/start", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -338,9 +344,33 @@ export function useSandbox0Chat({
             }
           }
 
-          // We are going to poll — now it's safe to surface the breadcrumbs.
-          flushBreadcrumbs();
-          setActivity("Connecting…");
+          // Silent-resume detection: if a new VM was just spun up for an
+          // experiment that already has persisted chat history in the DB,
+          // the user's UI already shows the full conversation above. The
+          // only reason we're polling is so the managed agent can finish
+          // its get-experiment + product_facts bootstrap quietly in the
+          // background. Don't splash lifecycle breadcrumbs into a thinking
+          // bubble that will never commit — that just leaves a "Thinking…"
+          // ghost. The session banner at the top is enough UI feedback.
+          const isSilentResume =
+            sessionWasJustCreated && initialMessages.length > 0;
+
+          if (!isSilentResume) {
+            flushBreadcrumbs();
+          } else {
+            // Drop the buffered lines; we won't surface them.
+            pendingBreadcrumbs.length = 0;
+          }
+          // Bootstrap suppression handles tool_use/thinking events — kept on
+          // for every new session regardless of silent-vs-first-greet.
+          bootstrapState.suppressing = sessionWasJustCreated;
+          setActivity(
+            isSilentResume
+              ? "Syncing session…"
+              : sessionWasJustCreated
+                ? "Loading project state…"
+                : "Waiting for agent…",
+          );
 
           // 2. If user typed something, send it. (Empty string just triggers
           // polling so the bootstrap/greeting flows through.)
@@ -386,6 +416,29 @@ export function useSandbox0Chat({
                 evt.type.startsWith("agent.")
               ) {
                 hasBegunProcessing = true;
+              }
+              // Bootstrap noise suppression: a brand-new session always has
+              // to symlink skills, call get-experiment, and load memory
+              // before it can answer. Those tool traces are plumbing, not
+              // conversation — swallow them until the first agent.message
+              // (the agent's real opening line) arrives. Subsequent turns
+              // render traces normally.
+              if (bootstrapState.suppressing && evt.type !== "agent.message") {
+                if (
+                  evt.type === "agent.thinking" ||
+                  evt.type === "agent.tool_use" ||
+                  evt.type === "agent.tool_result" ||
+                  evt.type === "span.tool_use_request" ||
+                  evt.type === "span.tool_use_result" ||
+                  evt.type === "span.model_thinking" ||
+                  evt.type === "span.model_request_start" ||
+                  evt.type === "span.model_request_end"
+                ) {
+                  continue;
+                }
+              }
+              if (evt.type === "agent.message") {
+                bootstrapState.suppressing = false;
               }
               handleEvent(evt, assistantAcc);
             }

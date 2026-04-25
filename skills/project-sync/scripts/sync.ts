@@ -494,8 +494,65 @@ async function saveLearning(experimentId: string, slug: string, flags: Record<st
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+function printHelp() {
+  const abs = "$HOME/.claude/skills/project-sync/scripts/sync.ts";
+  console.log(`project-sync / sync.ts — CLI bridge to the FeatBit web DB.
+
+INVOCATION (always absolute path — cwd on sandbox0 VMs is /workspace):
+  npx tsx ${abs} <command> [args]
+
+All flag arguments REQUIRE the "--" prefix. e.g. --primaryMetric, not bare primaryMetric.
+
+COMMANDS:
+  get-experiment  <experimentId>
+  update-state    <experimentId> [--goal "..."] [--intent "..."] [--hypothesis "..."]
+                                 [--change "..."] [--variants "key (ann)|key (ann)"]
+                                 [--primaryMetric '<json>'] [--guardrails '<json-array>']
+                                 [--constraints "..."] [--openQuestions "..."]
+                                 [--lastAction "..."] [--lastLearning "..."] [--flagKey "..."]
+  set-stage       <experimentId> <intent|hypothesis|implementing|measuring|learning>
+  add-activity    <experimentId> --type <activity-type> --title "..." [--detail "..."]
+  create-run      <experimentId> <slug> [--hypothesis "..."] [--method bayesian_ab|frequentist|bandit]
+                                        [--primaryMetricEvent <event>] [--primaryMetricType binary|continuous]
+                                        [--primaryMetricAgg once|sum|last]
+                                        [--controlVariant <v>] [--treatmentVariant <v>]
+                                        [--guardrailEvents "evt1,evt2"] [--minimumSample N]
+                                        [--trafficPercent N] [--priorProper true|false]
+                                        [--priorMean f] [--priorStddev f]
+                                        [--observationStart ISO] [--observationEnd ISO]
+  start-run       <experimentId> <slug>    (writes status=collecting)
+  analyze-run     <experimentId> <slug>    (writes status=analyzing)
+  decide-run      <experimentId> <slug>    (writes status=decided)
+  archive-run     <experimentId> <slug>    (writes status=archived)
+  save-input      <experimentId> <slug> --inputData '<json>'
+  save-result     <experimentId> <slug> --analysisResult '<json>'
+  record-decision <experimentId> <slug> --decision CONTINUE|PAUSE|ROLLBACK|INCONCLUSIVE
+                                        --decisionSummary "..." [--decisionReason "..."]
+  save-learning   <experimentId> <slug> --whatChanged "..." --whatHappened "..."
+                                        [--confirmedOrRefuted "..."] [--whyItHappened "..."]
+                                        [--nextHypothesis "..."]
+
+STATE FIELD FORMATS (on project state via update-state):
+  variants        pipe-separated string  — "standard (control)|streamlined (treatment)"
+  primaryMetric   JSON object            — {"name","event","metricType","metricAgg","description"?}
+                                           metricType: binary | numeric
+                                           metricAgg:  once | count | sum
+  guardrails      JSON array             — [{"name","event","metricType","metricAgg","direction","description"?}, ...]
+                                           direction: increase_bad | decrease_bad
+
+EXAMPLE:
+  npx tsx ${abs} update-state 84fbc6b8-5817-... \\
+    --primaryMetric '{"name":"Signup conversion","event":"signup_completed","metricType":"binary","metricAgg":"once","description":"Proportion of visitors that sign up."}'
+`);
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
+
+  if (command === "--help" || command === "-h" || command === "help" || !command) {
+    printHelp();
+    process.exit(command ? 0 : 1);
+  }
 
   switch (command) {
     case "get-experiment": {

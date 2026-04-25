@@ -399,13 +399,19 @@ Preferred opening for a blank new project:
 
 If the user is resuming the same conversation but asks to start again, and the project is still blank, apply the same concise opening instead of recapping state again.
 
-If the project already has meaningful state:
+If the project already has meaningful state **AND the `messages` array from `get-experiment` is non-empty** (the user is rejoining an existing conversation — its history is already visible in the UI above):
+
+- **Do not produce any greeting, recap, or opening question.** The user can see the prior conversation; re-stating it is noise.
+- Load state silently (get-experiment + product_facts) and then emit no user-visible output at all.
+- Wait for the user's next prompt before speaking.
+
+If the project already has meaningful state **AND `messages` is empty** (state was populated via expert-setup wizard or direct DB writes, not through a chat — the user has no prior conversation to look at):
 
 - Summarize only the non-empty fields that matter for the next decision.
 - Keep the recap to at most two short sentences.
 - Do not preface it with meta narration such as "Project state loaded".
 
-Example opening question for a non-empty project:
+Example opening question for a non-empty-state, no-messages project:
 
 > Please describe the experiment or feature change you'd like to work on, and I'll guide you through the process.
 
