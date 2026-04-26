@@ -73,6 +73,8 @@ Use `C:\Code\featbit\featbit-support` as the visual reference for layout rhythm,
 - Page subtitle/description: `mt-1 text-sm text-muted-foreground`.
 - Section/card title: `text-base font-bold tracking-tight` or the local `CardTitle` default when enough.
 - List item title: `text-[15px] font-bold tracking-tight`.
+- Experiment stage body content: use `text-sm leading-relaxed` for field values, learning notes, rationale, and analysis status messages.
+- Analysis tables: use at least `text-xs leading-relaxed` with `px-2 py-1` cells. Avoid `text-[10px]` for data tables, sample counts, conversion rates, or decision evidence.
 - Metadata/help text: `text-xs text-muted-foreground`, with `font-medium` for chips or labels.
 - Do not use negative letter spacing beyond Tailwind's normal `tracking-tight` utilities.
 

@@ -74,7 +74,7 @@ function SectionLabel({
   label: string;
 }) {
   return (
-    <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
+    <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
       {icon}
       <span>{label}</span>
     </div>
@@ -273,7 +273,7 @@ function SummaryTab({
         <div className="flex items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2.5 bg-muted/20">
           <div className="flex items-start gap-2 min-w-0">
             <MessageCircle className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed">
               {hasDecision
                 ? "当前已有决策。点击后会让 chat 结合当前分析结果，给出复核结论与建议。"
                 : "点击后会让 chat 基于当前分析数据，产出可执行的决策解释（继续/暂停/回滚候选/不确定）。"}
@@ -309,7 +309,7 @@ function SummaryTab({
             icon={<Target className="size-3" />}
             label="Technical Rationale"
           />
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {exp.decisionReason}
           </p>
         </div>
@@ -322,7 +322,7 @@ function SummaryTab({
             icon={<Info className="size-3" />}
             label="Why This Method"
           />
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {exp.methodReason}
           </p>
         </div>
@@ -343,11 +343,11 @@ function SummaryTab({
               .map((arm) => (
                 <span
                   key={arm}
-                  className="inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-mono bg-muted/40"
+                  className="inline-flex items-center rounded border px-1.5 py-0.5 text-sm font-mono bg-muted/40"
                 >
                   {arm}
                   {arm === exp.controlVariant && (
-                    <span className="ml-1 text-[10px] text-muted-foreground">
+                    <span className="ml-1 text-xs text-muted-foreground">
                       (baseline)
                     </span>
                   )}
@@ -356,7 +356,7 @@ function SummaryTab({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {exp.controlVariant && (
             <span>
               <Users className="inline size-3 mr-0.5" />
@@ -375,7 +375,7 @@ function SummaryTab({
 
       {/* Observation window — prominent block, drives analysis query range */}
       <div className="rounded-md border bg-muted/20 px-3 py-2 space-y-1">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           <Calendar className="size-3" />
           <span>Observation Window</span>
           <span className="text-[9px] font-normal italic text-muted-foreground/70 normal-case tracking-normal">
@@ -390,7 +390,7 @@ function SummaryTab({
 
       {/* Min sample */}
       {exp.minimumSample && (
-        <div className="text-xs text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           Min sample:{" "}
           <span className="tabular-nums font-medium text-foreground">
             {exp.minimumSample}
@@ -423,8 +423,8 @@ function RefreshAnalysisButton({
   if (confirming) {
     return (
       <div className="rounded-md border border-dashed px-3 py-2.5 space-y-2 bg-muted/20">
-        <p className="text-xs font-medium">Analyze Latest Data?</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm font-medium">Analyze Latest Data?</p>
+        <p className="text-sm text-muted-foreground">
           This will pull fresh metrics and recompute the latest analysis.
         </p>
         <div className="flex gap-2 pt-1">
@@ -568,11 +568,11 @@ function AnalysisTab({
   if (missingFields.length > 0 && !analysisResult) {
     return (
       <div className={cn("pb-6 pt-4 space-y-2", embedded ? "" : "px-4")}>
-        <p className="text-xs font-medium">Analysis not ready</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm font-medium">Analysis not ready</p>
+        <p className="text-sm text-muted-foreground">
           Set up {missingFields.join(", ")} before running analysis.
         </p>
-        <p className="text-[11px] text-muted-foreground/70">
+        <p className="text-xs text-muted-foreground/70">
           Ask the agent in the chat panel to configure these, or edit the
           experiment in the <code>Exposing</code> stage.
         </p>
@@ -584,10 +584,10 @@ function AnalysisTab({
     return (
       <div className={cn("pb-6 pt-8 flex flex-col items-center gap-3", embedded ? "" : "px-4")}>
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        <p className="text-xs text-muted-foreground">Running Bayesian analysis…</p>
+        <p className="text-sm text-muted-foreground">Running Bayesian analysis…</p>
         {isFreshRefresh && (
           <>
-            <p className="text-xs text-muted-foreground/70 text-center max-w-xs">
+            <p className="text-sm text-muted-foreground/70 text-center max-w-xs">
               Rolling up the latest data — this may take a moment. You can
               navigate away; results will appear automatically.
             </p>
@@ -603,7 +603,7 @@ function AnalysisTab({
   if (error) {
     return (
       <div className={cn("pb-6 pt-2 space-y-2", embedded ? "" : "px-4")}>
-        <p className="text-xs text-destructive">{error}</p>
+        <p className="text-sm text-destructive">{error}</p>
         <button
           className="text-xs text-blue-600 dark:text-blue-400 underline"
           onClick={() => runAnalysis(true)}
@@ -617,8 +617,8 @@ function AnalysisTab({
   if (noData) {
     return (
       <div className={cn("pb-6 pt-4 space-y-2", embedded ? "" : "px-4")}>
-        <p className="text-xs font-medium">Waiting for data</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm font-medium">Waiting for data</p>
+        <p className="text-sm text-muted-foreground">
           No events have arrived yet for this experiment. Once your instrumentation
           starts sending <code>flag_evaluation</code> and metric events for
           <code> env={featbitEnvId ?? "…"}</code> / <code>flag={flagKey ?? "…"}</code>,
@@ -638,7 +638,7 @@ function AnalysisTab({
     return (
       <div className={cn("pb-6 pt-2 space-y-2", embedded ? "" : "px-4")}>
         <RefreshAnalysisButton loading={loading} onConfirm={() => runAnalysis(true)} />
-        <p className="text-xs text-muted-foreground/60">No analysis available yet.</p>
+        <p className="text-sm text-muted-foreground/60">No analysis available yet.</p>
       </div>
     );
   }
@@ -649,7 +649,7 @@ function AnalysisTab({
         <RefreshAnalysisButton loading={loading} onConfirm={() => runAnalysis(true)} />
       </div>
       {warning && (
-        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">{warning}</p>
+        <p className="mb-2 text-sm text-amber-600 dark:text-amber-400">{warning}</p>
       )}
       <div className="rounded border bg-muted/20 px-3 py-2.5">
         <AnalysisView content={analysisResult} />
@@ -681,7 +681,7 @@ function TrafficTab({
             icon={<Flag className="size-3" />}
             label="Traffic Allocation"
           />
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {exp.trafficAllocation}
           </p>
         </div>

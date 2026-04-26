@@ -89,7 +89,7 @@ export function ExperimentRunList({
                   </div>
                 </div>
                 {exp.primaryMetricEvent && (
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-sm text-muted-foreground">
                     Primary metric:{" "}
                     <span className="font-mono">
                       {exp.primaryMetricEvent}
@@ -99,7 +99,7 @@ export function ExperimentRunList({
                 {(() => {
                   const gEvents = parseGuardrailEvents(exp.guardrailEvents);
                   return gEvents.length > 0 ? (
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-sm text-muted-foreground">
                       Guardrails:{" "}
                       {gEvents.map((evt, i) => (
                         <span key={evt}>
@@ -111,7 +111,7 @@ export function ExperimentRunList({
                   ) : null;
                 })()}
                 {(exp.decisionSummary || exp.decisionReason) && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-muted-foreground">
                     {exp.decisionSummary ?? exp.decisionReason}
                   </p>
                 )}

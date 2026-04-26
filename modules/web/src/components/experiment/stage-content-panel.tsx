@@ -113,7 +113,7 @@ export function StageContentPanel({
           <Badge className={`text-[10px] ${stage.color}`}>{stage.cf}</Badge>
           <span className="text-sm font-semibold">{stage.label}</span>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {stage.description}
         </p>
       </div>
@@ -153,7 +153,7 @@ function SettingsContent({
           <SettingsIcon className="size-4" />
           <span className="text-sm font-semibold">Settings</span>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Administrative actions for this experiment.
         </p>
       </div>
@@ -162,13 +162,13 @@ function SettingsContent({
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           Metadata
         </div>
-        <div className="rounded-md border bg-muted/10 px-3 py-3 space-y-2 text-xs">
+        <div className="rounded-md border bg-muted/10 px-3 py-3 space-y-2 text-sm">
           <div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Name</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase">Name</span>
             <p className="leading-relaxed">{experiment.name}</p>
           </div>
           <div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Description</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase">Description</span>
             <p className="leading-relaxed whitespace-pre-line">
               {experiment.description || (
                 <span className="italic text-muted-foreground/50">Not set (edit in Hypothesis stage)</span>
@@ -176,13 +176,13 @@ function SettingsContent({
             </p>
           </div>
           <div>
-            <span className="text-[10px] font-medium text-muted-foreground uppercase">Experiment ID</span>
-            <p className="font-mono text-[11px] text-muted-foreground">{experiment.id}</p>
+            <span className="text-xs font-medium text-muted-foreground uppercase">Experiment ID</span>
+            <p className="font-mono text-xs text-muted-foreground">{experiment.id}</p>
           </div>
           {experiment.featbitEnvId && (
             <div>
-              <span className="text-[10px] font-medium text-muted-foreground uppercase">FeatBit Env ID</span>
-              <p className="font-mono text-[11px] text-muted-foreground">{experiment.featbitEnvId}</p>
+              <span className="text-xs font-medium text-muted-foreground uppercase">FeatBit Env ID</span>
+              <p className="font-mono text-xs text-muted-foreground">{experiment.featbitEnvId}</p>
             </div>
           )}
         </div>
@@ -193,7 +193,7 @@ function SettingsContent({
           Danger zone
         </div>
         <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 space-y-3">
-          <p className="text-xs text-muted-foreground leading-relaxed">
+          <p className="text-sm text-muted-foreground leading-relaxed">
             Deleting an experiment permanently removes its runs, activity, and chat history. This cannot be undone.
           </p>
           <ExperimentActions experimentId={experiment.id} experimentName={experiment.name} />
@@ -205,7 +205,7 @@ function SettingsContent({
 
 /* ── Shared multi-line metric renderer ── */
 function MetricLines({ value }: { value: string | null | undefined }) {
-  if (!value) return <p className="text-xs italic text-muted-foreground/50">Not set</p>;
+  if (!value) return <p className="text-sm italic text-muted-foreground/50">Not set</p>;
 
   try {
     const parsed = JSON.parse(value);
@@ -215,7 +215,7 @@ function MetricLines({ value }: { value: string | null | undefined }) {
       return (
         <ul className="space-y-1">
           {parsed.map((g: { name?: string; event?: string; description?: string }, i: number) => (
-            <li key={i} className="text-xs">
+            <li key={i} className="text-sm">
               <span className="font-mono font-medium">{g.name ?? g.event ?? ""}</span>
               {g.description && (
                 <span className="text-muted-foreground"> — {g.description}</span>
@@ -235,12 +235,12 @@ function MetricLines({ value }: { value: string | null | undefined }) {
       ].filter(Boolean).join(" · ");
       return (
         <div className="space-y-0.5">
-          {parsed.name && <p className="text-xs leading-relaxed font-medium">{parsed.name}</p>}
+          {parsed.name && <p className="text-sm leading-relaxed font-medium">{parsed.name}</p>}
           {parsed.event && (
             <p className="text-xs font-mono text-muted-foreground">{technicalLine}</p>
           )}
           {parsed.description && (
-            <p className="text-[11px] text-muted-foreground/70 leading-relaxed">{parsed.description}</p>
+            <p className="text-xs text-muted-foreground/70 leading-relaxed">{parsed.description}</p>
           )}
         </div>
       );
@@ -248,11 +248,11 @@ function MetricLines({ value }: { value: string | null | undefined }) {
   } catch { /* plain text — fall through */ }
 
   const lines = value.split("\n").filter(Boolean);
-  if (lines.length === 1) return <p className="text-xs leading-relaxed">{lines[0]}</p>;
+  if (lines.length === 1) return <p className="text-sm leading-relaxed">{lines[0]}</p>;
   return (
     <ul className="space-y-0.5">
       {lines.map((line, i) => (
-        <li key={i} className="text-xs leading-relaxed">{line}</li>
+        <li key={i} className="text-sm leading-relaxed">{line}</li>
       ))}
     </ul>
   );
@@ -283,13 +283,13 @@ function FieldsSection({
           const value = (experiment[key] as string) ?? "";
           return (
             <div key={key}>
-              <span className="text-[10px] font-medium text-muted-foreground uppercase">
+              <span className="text-xs font-medium text-muted-foreground uppercase">
                 {label}
               </span>
               {key === "guardrails" ? (
                 <MetricLines value={value} />
               ) : (
-                <p className="text-xs leading-relaxed whitespace-pre-line">
+                <p className="text-sm leading-relaxed whitespace-pre-line">
                   {value || (
                     <span className="italic text-muted-foreground/50">
                       Not set
@@ -364,7 +364,7 @@ function FlagAndExperimentSection({
             How to instrument your app for this experiment
             <ExternalLink className="size-3 text-muted-foreground group-hover:text-foreground transition-colors" />
           </div>
-          <div className="text-xs text-muted-foreground mt-0.5">
+          <div className="text-sm text-muted-foreground mt-0.5">
             APIs &amp; SDKs guide — how to record flag evaluations and metric
             events correctly so this experiment can be analyzed.
           </div>
@@ -473,22 +473,22 @@ function MetricsIntegrationSection({
         </button>
       ) : (
         <div className="rounded-md border overflow-hidden">
-          <table className="w-full text-xs">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Role</th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Name</th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Event</th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Type</th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-28">Agg</th>
-                <th className="px-3 py-1.5 text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider w-20">Alarm</th>
+                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider w-20">Role</th>
+                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Name</th>
+                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Event</th>
+                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider w-20">Type</th>
+                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider w-28">Agg</th>
+                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider w-20">Alarm</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {primary && (
                 <tr className="bg-blue-50/40 dark:bg-blue-950/20">
                   <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300">
                       <Target className="size-3 shrink-0" />
                       Primary
                     </span>
@@ -496,7 +496,7 @@ function MetricsIntegrationSection({
                   <td className="px-3 py-2 font-semibold">{primary.name || <span className="italic text-muted-foreground/50">—</span>}</td>
                   <td className="px-3 py-2">
                     {primary.event
-                      ? <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">{primary.event}</code>
+                      ? <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">{primary.event}</code>
                       : <span className="italic text-muted-foreground/50">—</span>}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{primary.metricType ?? "—"}</td>
@@ -507,7 +507,7 @@ function MetricsIntegrationSection({
               {guardrails.map((g, i) => (
                 <tr key={i}>
                   <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 dark:text-amber-400">
                       <ShieldCheck className="size-3 shrink-0" />
                       Guard
                     </span>
@@ -515,7 +515,7 @@ function MetricsIntegrationSection({
                   <td className="px-3 py-2 font-medium">{g.name || <span className="italic text-muted-foreground/50">—</span>}</td>
                   <td className="px-3 py-2">
                     {g.event
-                      ? <code className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono">{g.event}</code>
+                      ? <code className="rounded bg-muted px-1.5 py-0.5 text-xs font-mono">{g.event}</code>
                       : <span className="italic text-muted-foreground/50">—</span>}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{g.metricType ?? "—"}</td>
@@ -567,15 +567,15 @@ function ExperimentRunCard({
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b">
         {isSequential ? (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+          <Badge variant="outline" className="text-xs px-1.5 py-0">
             Phase {idx + 1}
           </Badge>
         ) : (
-          <span className="text-xs font-medium text-muted-foreground">
+          <span className="text-sm font-medium text-muted-foreground">
             #{idx + 1}
           </span>
         )}
-        <span className="text-xs font-mono font-medium">{run.slug}</span>
+        <span className="text-sm font-mono font-medium">{run.slug}</span>
         <div className="ml-auto flex items-center gap-1.5">
           {run.method && <MethodBadge method={run.method} />}
           <StatusBadge status={run.status} />
@@ -584,7 +584,7 @@ function ExperimentRunCard({
 
       <div className="px-3 py-2 space-y-3">
         {/* Variants */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {run.controlVariant && (
             <span className="flex items-center gap-1">
               <span className="inline-block size-2 rounded-full bg-emerald-500" />
@@ -609,7 +609,7 @@ function ExperimentRunCard({
 
         {/* Schedule: Observation window + min sample */}
         {(run.observationStart || run.minimumSample) && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
             {run.minimumSample && (
               <span>
                 Min sample: <span className="tabular-nums font-medium text-foreground">{run.minimumSample}</span>/variant
@@ -627,12 +627,12 @@ function ExperimentRunCard({
         {/* Method reason — collapsible */}
         {run.methodReason && (
           <Collapsible>
-            <CollapsibleTrigger className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground">
+            <CollapsibleTrigger className="text-xs font-medium text-muted-foreground uppercase tracking-wider hover:text-foreground">
               <Info className="size-3" />
               Why This Method
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-1">
-              <p className="text-xs leading-relaxed text-muted-foreground pl-5">
+              <p className="text-sm leading-relaxed text-muted-foreground pl-5">
                 {run.methodReason}
               </p>
             </CollapsibleContent>
@@ -692,10 +692,10 @@ function LearningSection({
       </div>
       {withLearnings.length === 0 ? (
         <div className="rounded-md border border-dashed p-3 text-center">
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-sm text-muted-foreground/60">
             No learnings captured yet.
           </p>
-          <p className="text-[10px] text-muted-foreground/40 mt-1">
+          <p className="text-xs text-muted-foreground/40 mt-1">
             Learnings will be recorded after experiment runs are analyzed.
           </p>
         </div>
@@ -707,58 +707,58 @@ function LearningSection({
             <div key={exp.id} className="rounded border px-2 py-2 space-y-1">
               <div className="flex items-center gap-1.5">
                 {isSequential ? (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                  <Badge variant="outline" className="text-xs px-1.5 py-0">
                     Phase {phaseIdx + 1}
                   </Badge>
                 ) : (
-                  <span className="text-xs font-medium text-muted-foreground">
+                  <span className="text-sm font-medium text-muted-foreground">
                     #{phaseIdx + 1}
                   </span>
                 )}
-                <span className="text-xs font-mono font-medium">{exp.slug}</span>
+                <span className="text-sm font-mono font-medium">{exp.slug}</span>
               </div>
               {exp.whatChanged && (
                 <div>
-                  <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                  <span className="text-xs font-medium text-muted-foreground uppercase">
                     What Changed
                   </span>
-                  <p className="text-xs leading-relaxed">{exp.whatChanged}</p>
+                  <p className="text-sm leading-relaxed">{exp.whatChanged}</p>
                 </div>
               )}
               {exp.whatHappened && (
                 <div>
-                  <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                  <span className="text-xs font-medium text-muted-foreground uppercase">
                     What Happened
                   </span>
-                  <p className="text-xs leading-relaxed">{exp.whatHappened}</p>
+                  <p className="text-sm leading-relaxed">{exp.whatHappened}</p>
                 </div>
               )}
               {exp.confirmedOrRefuted && (
                 <div>
-                  <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                  <span className="text-xs font-medium text-muted-foreground uppercase">
                     Confirmed or Refuted
                   </span>
-                  <p className="text-xs leading-relaxed">
+                  <p className="text-sm leading-relaxed">
                     {exp.confirmedOrRefuted}
                   </p>
                 </div>
               )}
               {exp.whyItHappened && (
                 <div>
-                  <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                  <span className="text-xs font-medium text-muted-foreground uppercase">
                     Why It Happened
                   </span>
-                  <p className="text-xs leading-relaxed">
+                  <p className="text-sm leading-relaxed">
                     {exp.whyItHappened}
                   </p>
                 </div>
               )}
               {exp.nextHypothesis && (
                 <div>
-                  <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                  <span className="text-xs font-medium text-muted-foreground uppercase">
                     Next Hypothesis
                   </span>
-                  <p className="text-xs leading-relaxed">
+                  <p className="text-sm leading-relaxed">
                     {exp.nextHypothesis}
                   </p>
                 </div>
@@ -796,7 +796,7 @@ function ConflictAnalysisSection({
         <span>Experiment Conflict Check</span>
       </div>
       <div
-        className={`rounded-md border px-3 py-3 text-xs leading-relaxed whitespace-pre-line ${
+        className={`rounded-md border px-3 py-3 text-sm leading-relaxed whitespace-pre-line ${
           hasConflict
             ? "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20"
             : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/20"
@@ -814,7 +814,7 @@ function ConflictAnalysisSection({
 
 function SectionLabel({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
+    <div className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
       {icon}
       <span>{label}</span>
     </div>

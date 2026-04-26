@@ -199,7 +199,7 @@ function PosteriorChart({ section }: { section: MetricSection }) {
 
   return (
     <div className="space-y-1">
-      <span className="text-[10px] font-medium text-muted-foreground">
+      <span className="text-xs font-medium text-muted-foreground">
         Posterior Distribution of Relative Effect (δ)
       </span>
       <svg
@@ -220,21 +220,21 @@ function PosteriorChart({ section }: { section: MetricSection }) {
         {zeroX >= PAD_X && zeroX <= W - PAD_X && (
           <>
             <line x1={zeroX} y1={PAD_TOP} x2={zeroX} y2={baseline} stroke="currentColor" strokeWidth="0.5" strokeDasharray="3,2" className="text-muted-foreground" />
-            <text x={zeroX} y={H - 2} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 8 }}>0%</text>
+            <text x={zeroX} y={H - 2} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 9 }}>0%</text>
           </>
         )}
 
         {/* Mean line + label */}
         <line x1={muX} y1={PAD_TOP} x2={muX} y2={baseline} stroke="currentColor" strokeWidth="0.75" className="text-blue-600 dark:text-blue-400" />
-        <text x={muX} y={H - 2} textAnchor="middle" className="fill-blue-700 dark:fill-blue-300" style={{ fontSize: 8, fontWeight: 600 }}>
+        <text x={muX} y={H - 2} textAnchor="middle" className="fill-blue-700 dark:fill-blue-300" style={{ fontSize: 9, fontWeight: 600 }}>
           {mu >= 0 ? "+" : ""}{(mu * 100).toFixed(1)}%
         </text>
 
         {/* CI bounds labels */}
-        <text x={sx(ciLo)} y={H - 2} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 7 }}>
+        <text x={sx(ciLo)} y={H - 2} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 8 }}>
           {(ciLo * 100).toFixed(1)}%
         </text>
-        <text x={sx(ciHi)} y={H - 2} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 7 }}>
+        <text x={sx(ciHi)} y={H - 2} textAnchor="middle" className="fill-muted-foreground" style={{ fontSize: 8 }}>
           {(ciHi * 100).toFixed(1)}%
         </text>
 
@@ -250,7 +250,7 @@ function SrmBadge({ srm }: { srm: SrmCheck }) {
   const ok = srm.ok;
   const entries = Object.entries(srm.observed);
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
       <span className="font-medium text-muted-foreground">SRM</span>
       <span>
         p={srm.chi2_p_value.toFixed(4)}{" "}
@@ -345,17 +345,17 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold">{label}: {section.event}</span>
-        <span className="text-[10px] italic text-muted-foreground">{typeLabel}</span>
+        <span className="text-sm font-semibold">{label}: {section.event}</span>
+        <span className="text-xs italic text-muted-foreground">{typeLabel}</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[10px]">
+        <table className="w-full border-collapse text-xs leading-relaxed">
           <thead>
             <tr>
-              <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">variant</th>
-              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">n</th>
-              {isProp && <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">conv</th>}
-              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">
+              <th className="text-left font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">variant</th>
+              <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">n</th>
+              {isProp && <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">conv</th>}
+              <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">
                 <span className="inline-flex items-center gap-1 justify-end">
                   {valueColumn.label}
                   <Tooltip>
@@ -377,9 +377,9 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
                   </Tooltip>
                 </span>
               </th>
-              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">rel&nbsp;&Delta;</th>
-              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">95%&nbsp;CI</th>
-              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">signal</th>
+              <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">rel&nbsp;&Delta;</th>
+              <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">95%&nbsp;CI</th>
+              <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">signal</th>
             </tr>
           </thead>
           <tbody>
@@ -389,19 +389,19 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
               const isGood = row.p_win !== undefined;
               return (
                 <tr key={row.variant} className="hover:bg-muted/30">
-                  <td className="px-1.5 py-0.5 border-b border-border/50 font-semibold">{row.variant}</td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">{row.n.toLocaleString()}</td>
-                  {isProp && <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">{row.conversions?.toLocaleString() ?? "—"}</td>}
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">
+                  <td className="px-2 py-1 border-b border-border/50 font-semibold">{row.variant}</td>
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">{row.n.toLocaleString()}</td>
+                  {isProp && <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">{row.conversions?.toLocaleString() ?? "—"}</td>}
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">
                     {isProp ? pctPlain(row.rate) : row.mean?.toFixed(1) ?? "—"}
                   </td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">
                     {row.is_control ? "—" : pct(row.rel_delta)}
                   </td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">
                     {row.is_control ? "—" : `[${pct(row.ci_lower)}, ${pct(row.ci_upper)}]`}
                   </td>
-                  <td className={`px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right ${row.is_control ? "" : isGood ? pColor(signal, 0.95) : harmColor(signal)}`}>
+                  <td className={`px-2 py-1 border-b border-border/50 tabular-nums text-right ${row.is_control ? "" : isGood ? pColor(signal, 0.95) : harmColor(signal)}`}>
                     {row.is_control ? "—" : signal !== undefined ? `${signalLabel} ${pctPlain(signal)}` : "—"}
                   </td>
                 </tr>
@@ -410,7 +410,7 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
           </tbody>
         </table>
       </div>
-      <p className="text-[10px] text-muted-foreground italic">{section.verdict}</p>
+      <p className="text-xs text-muted-foreground italic">{section.verdict}</p>
     </div>
   );
 }
@@ -419,8 +419,8 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
 function BayesianView({ data }: { data: BayesianAnalysis }) {
   return (
     <TooltipProvider delay={150}>
-    <div className="space-y-3 text-xs">
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
+    <div className="space-y-3 text-sm">
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
         <span>Window: {data.window.start} → {data.window.end}</span>
         <span>Prior: {data.prior}</span>
         {data.computed_at && (
@@ -436,7 +436,7 @@ function BayesianView({ data }: { data: BayesianAnalysis }) {
         <MetricTable key={g.event} section={g} label="Guardrail" />
       ))}
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
         <span className="font-medium text-muted-foreground">Sample check</span>
         <span className={data.sample_check.ok ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400 font-semibold"}>
           {data.sample_check.ok ? "passed" : "BELOW MINIMUM"}
@@ -454,8 +454,8 @@ function BayesianView({ data }: { data: BayesianAnalysis }) {
 /* ── Bandit view ── */
 function BanditView({ data }: { data: BanditAnalysis }) {
   return (
-    <div className="space-y-3 text-xs">
-      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
+    <div className="space-y-3 text-sm">
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
         <span>Window: {data.window.start} → {data.window.end}</span>
         <span>Algorithm: {data.algorithm}</span>
         {data.computed_at && (
@@ -467,24 +467,24 @@ function BanditView({ data }: { data: BanditAnalysis }) {
 
       {/* Arm performance */}
       <div className="space-y-1">
-        <span className="text-xs font-semibold">Arm Performance</span>
+        <span className="text-sm font-semibold">Arm Performance</span>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[10px]">
+          <table className="w-full border-collapse text-xs leading-relaxed">
             <thead>
               <tr>
-                <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">arm</th>
-                <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">n</th>
-                <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">clicks</th>
-                <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">rate</th>
+                <th className="text-left font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">arm</th>
+                <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">n</th>
+                <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">clicks</th>
+                <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">rate</th>
               </tr>
             </thead>
             <tbody>
               {data.arms.map((arm) => (
                 <tr key={arm.arm} className="hover:bg-muted/30">
-                  <td className={`px-1.5 py-0.5 border-b border-border/50 ${arm.arm === data.stopping.best_arm ? "font-semibold" : ""}`}>{arm.arm}</td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">{arm.n.toLocaleString()}</td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">{arm.conversions.toLocaleString()}</td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">{pctPlain(arm.rate)}</td>
+                  <td className={`px-2 py-1 border-b border-border/50 ${arm.arm === data.stopping.best_arm ? "font-semibold" : ""}`}>{arm.arm}</td>
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">{arm.n.toLocaleString()}</td>
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">{arm.conversions.toLocaleString()}</td>
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">{pctPlain(arm.rate)}</td>
                 </tr>
               ))}
             </tbody>
@@ -494,24 +494,24 @@ function BanditView({ data }: { data: BanditAnalysis }) {
 
       {/* Thompson sampling */}
       <div className="space-y-1">
-        <span className="text-xs font-semibold">Thompson Sampling</span>
+        <span className="text-sm font-semibold">Thompson Sampling</span>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[10px]">
+          <table className="w-full border-collapse text-xs leading-relaxed">
             <thead>
               <tr>
-                <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">arm</th>
-                <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">P(best)</th>
-                <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">weight</th>
+                <th className="text-left font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">arm</th>
+                <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">P(best)</th>
+                <th className="text-right font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">weight</th>
               </tr>
             </thead>
             <tbody>
               {data.thompson_sampling.results.map((r) => (
                 <tr key={r.arm} className="hover:bg-muted/30">
-                  <td className={`px-1.5 py-0.5 border-b border-border/50 ${r.arm === data.stopping.best_arm ? "font-semibold" : ""}`}>{r.arm}</td>
-                  <td className={`px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right ${pColor(r.p_best, 0.95)}`}>
+                  <td className={`px-2 py-1 border-b border-border/50 ${r.arm === data.stopping.best_arm ? "font-semibold" : ""}`}>{r.arm}</td>
+                  <td className={`px-2 py-1 border-b border-border/50 tabular-nums text-right ${pColor(r.p_best, 0.95)}`}>
                     {r.p_best.toFixed(4)}
                   </td>
-                  <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums text-right">{pctPlain(r.recommended_weight)}</td>
+                  <td className="px-2 py-1 border-b border-border/50 tabular-nums text-right">{pctPlain(r.recommended_weight)}</td>
                 </tr>
               ))}
             </tbody>
@@ -520,7 +520,7 @@ function BanditView({ data }: { data: BanditAnalysis }) {
       </div>
 
       {/* Stopping */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
         <span className="font-medium text-muted-foreground">Stopping</span>
         <span className={data.stopping.met ? "text-green-700 dark:text-green-400 font-semibold" : "text-yellow-700 dark:text-yellow-400"}>
           {data.stopping.met ? "condition met" : "not yet met"}
@@ -537,23 +537,23 @@ function FlatJsonFallback({ data }: { data: Record<string, unknown> }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-medium text-yellow-700 dark:text-yellow-400">
+        <span className="text-xs font-medium text-yellow-700 dark:text-yellow-400">
           ⚠ Unrecognised analysis format — re-run the analysis script to get full rendering
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[10px]">
+        <table className="w-full border-collapse text-xs leading-relaxed">
           <thead>
             <tr>
-              <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">Field</th>
-              <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">Value</th>
+              <th className="text-left font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">Field</th>
+              <th className="text-left font-semibold text-muted-foreground px-2 py-1 border-b border-border bg-muted/50">Value</th>
             </tr>
           </thead>
           <tbody>
             {entries.map(([key, value]) => (
               <tr key={key} className="hover:bg-muted/30">
-                <td className="px-1.5 py-0.5 border-b border-border/50 font-semibold">{key}</td>
-                <td className="px-1.5 py-0.5 border-b border-border/50 tabular-nums">
+                <td className="px-2 py-1 border-b border-border/50 font-semibold">{key}</td>
+                <td className="px-2 py-1 border-b border-border/50 tabular-nums">
                   {typeof value === "number"
                     ? Number.isInteger(value) ? value.toLocaleString() : value.toFixed(4)
                     : typeof value === "boolean"
@@ -576,7 +576,7 @@ export function AnalysisView({ content }: { content: string }) {
     data = JSON.parse(content);
   } catch {
     // Fallback for legacy markdown strings
-    return <pre className="text-[10px] whitespace-pre-wrap text-muted-foreground">{content}</pre>;
+    return <pre className="text-xs whitespace-pre-wrap text-muted-foreground">{content}</pre>;
   }
 
   if (data.type === "bayesian") return <BayesianView data={data as BayesianAnalysis} />;
