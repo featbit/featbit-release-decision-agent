@@ -6,6 +6,13 @@
 "use client";
 
 import { useMemo } from "react";
+import { HelpCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /* ── JSON type definitions ── */
 
@@ -36,6 +43,7 @@ interface MetricRow {
 interface MetricSection {
   event: string;
   metric_type: string;
+  metric_agg?: "once" | "count" | "sum" | "average";
   inverse?: boolean;
   unit?: string;
   rows: MetricRow[];
@@ -257,10 +265,82 @@ function SrmBadge({ srm }: { srm: SrmCheck }) {
   );
 }
 
+/**
+ * Describe the per-variant value column shown in the analysis table.
+ * Bayesian numeric analysis always compares per-user means (sum/n), regardless
+ * of how the user aggregated events into `sum`. This helper makes the column
+ * label match the user's mental model and explains the math in a tooltip.
+ */
+function describeValueColumn(section: MetricSection): {
+  label: string;
+  help: React.ReactNode;
+} {
+  if (section.metric_type === "proportion") {
+    return {
+      label: "rate",
+      help: (
+        <>
+          Per-variant conversion rate = <code>k / n</code>. The Bayesian test
+          compares treatment&apos;s rate against control&apos;s.
+        </>
+      ),
+    };
+  }
+  // Continuous (numeric)
+  switch (section.metric_agg) {
+    case "count":
+      return {
+        label: "events / user",
+        help: (
+          <>
+            Mean events per user = <code>Σ x / n</code>, where each user&apos;s
+            <code> x</code> = number of events they fired. You picked
+            &ldquo;Count all&rdquo; aggregation. The Bayesian test compares
+            this per-user average across variants.
+          </>
+        ),
+      };
+    case "sum":
+      return {
+        label: "value / user (sum)",
+        help: (
+          <>
+            Mean per-user total = <code>Σ x / n</code>, where each user&apos;s
+            <code> x</code> = sum of their event values (LTV-style). You
+            picked &ldquo;Sum values&rdquo;.
+          </>
+        ),
+      };
+    case "average":
+      return {
+        label: "value / user (avg)",
+        help: (
+          <>
+            Mean per-user mean = <code>Σ x / n</code>, where each user&apos;s
+            <code> x</code> = mean of their event values (AOV-style). You
+            picked &ldquo;Average values per user&rdquo;.
+          </>
+        ),
+      };
+    case "once":
+    default:
+      return {
+        label: "mean",
+        help: (
+          <>
+            Per-user mean = <code>Σ x / n</code>. The Bayesian test compares
+            treatment&apos;s mean against control&apos;s.
+          </>
+        ),
+      };
+  }
+}
+
 /* ── Metric table (Bayesian) ── */
 function MetricTable({ section, label }: { section: MetricSection; label: string }) {
   const isProp = section.metric_type === "proportion";
   const typeLabel = section.metric_type + (section.inverse ? " · inverse" : "") + (section.unit ? ` (${section.unit})` : "");
+  const valueColumn = describeValueColumn(section);
 
   return (
     <div className="space-y-1">
@@ -275,7 +355,28 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
               <th className="text-left font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">variant</th>
               <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">n</th>
               {isProp && <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">conv</th>}
-              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">{isProp ? "rate" : "mean"}</th>
+              <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">
+                <span className="inline-flex items-center gap-1 justify-end">
+                  {valueColumn.label}
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span
+                          tabIndex={0}
+                          className="inline-flex cursor-help text-muted-foreground/50 hover:text-foreground focus:text-foreground transition-colors outline-none"
+                        >
+                          <HelpCircle className="size-3" />
+                        </span>
+                      }
+                    />
+                    <TooltipContent side="top" className="max-w-xs">
+                      <div className="text-left leading-snug whitespace-normal [&_code]:font-mono [&_code]:text-[0.95em]">
+                        {valueColumn.help}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </span>
+              </th>
               <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">rel&nbsp;&Delta;</th>
               <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">95%&nbsp;CI</th>
               <th className="text-right font-medium text-muted-foreground px-1.5 py-0.5 border-b border-border bg-muted/50">signal</th>
@@ -317,6 +418,7 @@ function MetricTable({ section, label }: { section: MetricSection; label: string
 /* ── Bayesian view ── */
 function BayesianView({ data }: { data: BayesianAnalysis }) {
   return (
+    <TooltipProvider delay={150}>
     <div className="space-y-3 text-xs">
       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
         <span>Window: {data.window.start} → {data.window.end}</span>
@@ -345,6 +447,7 @@ function BayesianView({ data }: { data: BayesianAnalysis }) {
         </span>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 

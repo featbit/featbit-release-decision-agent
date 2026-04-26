@@ -43,6 +43,7 @@ export interface MetricRow {
 export interface MetricSection {
   event: string;
   metric_type: "proportion" | "continuous";
+  metric_agg?: "once" | "count" | "sum" | "average";
   inverse?: boolean;
   rows: MetricRow[];
   verdict: string;

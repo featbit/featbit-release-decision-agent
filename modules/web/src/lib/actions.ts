@@ -414,6 +414,12 @@ export async function saveExpertSetupAction(formData: FormData) {
   const metricAgg = (formData.get("metricAgg") as string | null)?.trim() || "once";
   const metricDescription = (formData.get("metricDescription") as string | null)?.trim() || null;
   const primaryInverse = formData.get("primaryInverse") != null; // checkbox presence
+  const primaryDataSourceRaw = (formData.get("primaryDataSource") as string | null)?.trim();
+  const primaryDataSource =
+    primaryDataSourceRaw === "featbit" || primaryDataSourceRaw === "external"
+      ? primaryDataSourceRaw
+      : "manual";
+  const primaryDataSourceNote = (formData.get("primaryDataSourceNote") as string | null)?.trim() || null;
   const guardrailsRaw = (formData.get("guardrails") as string | null) ?? "[]";
   const priorMode = (formData.get("priorMode") as string | null)?.trim() || "flat";
   const priorMeanRaw = (formData.get("priorMean") as string | null)?.trim();
@@ -438,6 +444,8 @@ export async function saveExpertSetupAction(formData: FormData) {
     metricAgg,
     ...(metricDescription && { description: metricDescription }),
     ...(primaryInverse && { inverse: true }),
+    ...(primaryDataSource !== "manual" && { dataSource: primaryDataSource }),
+    ...(primaryDataSource === "external" && primaryDataSourceNote && { dataSourceNote: primaryDataSourceNote }),
   });
 
   // ── Normalise guardrails (Experiment.guardrails JSON for UI, plus a list
@@ -451,6 +459,8 @@ export async function saveExpertSetupAction(formData: FormData) {
     inverse?: boolean;
     metricType?: string;
     dataRows?: GuardrailDataRowIn[];
+    dataSource?: string;
+    dataSourceNote?: string;
   };
   type GuardrailParsed = {
     name: string;
@@ -459,6 +469,8 @@ export async function saveExpertSetupAction(formData: FormData) {
     inverse: boolean;
     metricType: string;
     dataRows: GuardrailDataRowIn[];
+    dataSource: "manual" | "featbit" | "external";
+    dataSourceNote: string;
   };
   let guardrailsForExperiment: string | null = null;
   let guardrailEventNames: string[] = [];
@@ -475,15 +487,24 @@ export async function saveExpertSetupAction(formData: FormData) {
           inverse: Boolean(g.inverse),
           metricType: g.metricType === "numeric" ? "numeric" : "binary",
           dataRows: Array.isArray(g.dataRows) ? g.dataRows : [],
+          dataSource:
+            g.dataSource === "featbit" || g.dataSource === "external"
+              ? (g.dataSource as "featbit" | "external")
+              : ("manual" as const),
+          dataSourceNote: g.dataSourceNote?.trim() || "",
         }))
         .filter((g) => g.name || g.event);
       if (cleanedGuardrails.length > 0) {
         // Strip dataRows from the UI-facing JSON — dataRows get merged into
-        // inputData.metrics instead, so the guardrails JSON stays lean.
+        // inputData.metrics instead. Keep dataSource so the wizard re-prefills.
         guardrailsForExperiment = JSON.stringify(
-          cleanedGuardrails.map(({ dataRows, ...rest }) => {
+          cleanedGuardrails.map(({ dataRows, dataSource, dataSourceNote, ...rest }) => {
             void dataRows;
-            return rest;
+            return {
+              ...rest,
+              ...(dataSource !== "manual" && { dataSource }),
+              ...(dataSource === "external" && dataSourceNote && { dataSourceNote }),
+            };
           }),
         );
         guardrailEventNames = cleanedGuardrails.map((g) => g.event).filter(Boolean);
@@ -540,16 +561,18 @@ export async function saveExpertSetupAction(formData: FormData) {
 
   let inputData: string | null = null;
   try {
-    const rows = JSON.parse(dataRowsRaw) as DataRowIn[];
-    const primaryMap = buildVariantMap(rows, metricType);
     const metrics: Record<string, unknown> = {};
-    if (primaryMap) {
-      if (primaryInverse) primaryMap.inverse = true;
-      metrics[metricEvent] = primaryMap;
+    if (primaryDataSource === "manual") {
+      const rows = JSON.parse(dataRowsRaw) as DataRowIn[];
+      const primaryMap = buildVariantMap(rows, metricType);
+      if (primaryMap) {
+        if (primaryInverse) primaryMap.inverse = true;
+        metrics[metricEvent] = primaryMap;
+      }
     }
-    // Merge guardrail data
+    // Merge guardrail data — only for manual-source guardrails
     for (const g of cleanedGuardrails) {
-      if (!g.event) continue;
+      if (!g.event || g.dataSource !== "manual") continue;
       const gMap = buildVariantMap(g.dataRows, g.metricType);
       if (!gMap) continue;
       if (g.inverse) gMap.inverse = true;

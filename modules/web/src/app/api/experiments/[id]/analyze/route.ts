@@ -184,6 +184,7 @@ export async function POST(
         priorStddev: run.priorStddev ?? 0.3,
         minimumSample: run.minimumSample ?? 0,
         guardrailEvents: guardrailEventNames.length > 0 ? guardrailEventNames : undefined,
+        primaryMetricAgg: run.primaryMetricAgg ?? undefined,
       });
 
   const analysisResultJson = JSON.stringify(analysisResult);

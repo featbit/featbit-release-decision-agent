@@ -37,8 +37,12 @@ function FieldHelp({ children }: { children: React.ReactNode }) {
           </span>
         }
       />
-      <TooltipContent side="top" className="max-w-xs text-left leading-snug whitespace-normal">
-        {children}
+      <TooltipContent side="top" className="max-w-xs">
+        {/* Single block child so the parent's inline-flex+gap doesn't turn each
+            text node and <br/> into its own column. */}
+        <div className="text-left leading-snug whitespace-normal [&_b]:font-semibold [&_code]:font-mono [&_code]:text-[0.95em]">
+          {children}
+        </div>
       </TooltipContent>
     </Tooltip>
   );
@@ -65,6 +69,7 @@ function LabelWithHelp({
 }
 
 /* ── Types ── */
+type DataSource = "manual" | "featbit" | "external";
 type GuardrailRow = {
   name: string;
   event: string;
@@ -72,13 +77,33 @@ type GuardrailRow = {
   inverse: boolean;
   metricType: string;          // "binary" | "numeric"
   dataRows: DataRow[];         // observed data per variant (optional)
+  dataSource: DataSource;      // where the numbers come from
+  dataSourceNote: string;      // free-text for "external"
 };
 type DataRow = { variant: string; n: string; s: string; ss: string };
+
+function asDataSource(v: unknown): DataSource {
+  return v === "featbit" || v === "external" ? v : "manual";
+}
+
+/**
+ * Force `metricAgg` to a value that's valid for the given `metricType`.
+ * - binary  → only "once" makes sense (yes/no per user)
+ * - numeric → "count" / "sum" / "average" (per-user pre-aggregation choice);
+ *             "once" doesn't apply
+ */
+function coerceAggForType(agg: string, type: string): string {
+  if (type === "binary") return "once";
+  // numeric
+  if (agg === "count" || agg === "sum" || agg === "average") return agg;
+  return "sum";
+}
 
 /* ── Parse helpers: reuse logic from metric-edit and analyze route ── */
 function parsePrimaryMetric(value: string | null | undefined) {
   if (!value) return {
     name: "", event: "", metricType: "binary", metricAgg: "once", description: "", inverse: false,
+    dataSource: "manual" as DataSource, dataSourceNote: "",
   };
   try {
     const p = JSON.parse(value);
@@ -90,10 +115,15 @@ function parsePrimaryMetric(value: string | null | undefined) {
         metricAgg: p.metricAgg ?? "once",
         description: p.description ?? "",
         inverse: Boolean(p.inverse),
+        dataSource: asDataSource(p.dataSource),
+        dataSourceNote: p.dataSourceNote ?? "",
       };
     }
   } catch {/* ignore */}
-  return { name: value, event: "", metricType: "binary", metricAgg: "once", description: "", inverse: false };
+  return {
+    name: value, event: "", metricType: "binary", metricAgg: "once", description: "", inverse: false,
+    dataSource: "manual" as DataSource, dataSourceNote: "",
+  };
 }
 
 function parseGuardrails(value: string | null | undefined): GuardrailRow[] {
@@ -115,6 +145,8 @@ function parseGuardrails(value: string | null | undefined): GuardrailRow[] {
               ss: r.ss ?? "",
             }))
           : [],
+        dataSource: asDataSource(g.dataSource),
+        dataSourceNote: g.dataSourceNote ?? "",
       }));
     }
   } catch {/* ignore */}
@@ -212,36 +244,52 @@ function buildChatSummary(formData: FormData): string {
   const control = get("controlVariant");
   const treatment = get("treatmentVariant");
 
-  type GuardrailIn = { name?: string; event?: string; inverse?: boolean; metricType?: string; dataRows?: unknown[] };
+  type GuardrailIn = {
+    name?: string; event?: string; inverse?: boolean; metricType?: string;
+    dataRows?: unknown[]; dataSource?: string; dataSourceNote?: string;
+  };
   let guardrails: GuardrailIn[] = [];
   try {
     const parsed = JSON.parse(get("guardrails") || "[]");
     if (Array.isArray(parsed)) guardrails = parsed;
   } catch {/* ignore */}
 
+  const primaryDataSource = get("primaryDataSource") || "manual";
+  const primaryDataSourceNote = get("primaryDataSourceNote");
+
   type DataRowIn = { variant?: string; n?: string; s?: string };
   let primaryRowCount = 0;
-  try {
-    const rows = JSON.parse(get("dataRows") || "[]") as DataRowIn[];
-    primaryRowCount = rows.filter(
-      (r) => r.variant?.trim() && r.n && Number(r.n) > 0,
-    ).length;
-  } catch {/* ignore */}
+  if (primaryDataSource === "manual") {
+    try {
+      const rows = JSON.parse(get("dataRows") || "[]") as DataRowIn[];
+      primaryRowCount = rows.filter(
+        (r) => r.variant?.trim() && r.n && Number(r.n) > 0,
+      ).length;
+    } catch {/* ignore */}
+  }
 
   const guardrailsWithData = guardrails.filter(
-    (g) => Array.isArray(g.dataRows) && g.dataRows.some((r: unknown) => {
+    (g) => (g.dataSource ?? "manual") === "manual" && Array.isArray(g.dataRows) && g.dataRows.some((r: unknown) => {
       const row = r as DataRowIn;
       return row.variant?.trim() && row.n && Number(row.n) > 0;
     }),
   ).length;
+  const nonManualGuardrails = guardrails.filter((g) => g.dataSource && g.dataSource !== "manual");
 
   const lines: string[] = [];
   lines.push("I just finished the expert setup wizard. Here's what I entered — please pull the experiment state and confirm you see the same thing:");
   lines.push("");
   lines.push(`- **Algorithm:** ${method}`);
+  const aggLabel = metricAgg === "average"
+    ? "averaged per user"
+    : metricAgg === "sum"
+      ? "summed per user"
+      : metricAgg === "count"
+        ? "counted per user"
+        : "once per user";
   lines.push(
     `- **Primary metric:** ${metricName || "(no name)"} — \`${metricEvent}\`` +
-    ` (${metricType}, counted ${metricAgg}${primaryInverse ? ", lower is better" : ""})`,
+    ` (${metricType}, ${aggLabel}${primaryInverse ? ", lower is better" : ""})`,
   );
   if (guardrails.length > 0) {
     lines.push(`- **Guardrails (${guardrails.length}):** ` +
@@ -259,38 +307,34 @@ function buildChatSummary(formData: FormData): string {
   if (obsStart || obsEnd) {
     lines.push(`- **Observation window:** ${obsStart || "—"} → ${obsEnd || "—"}`);
   }
+  const primarySourceLabel = primaryDataSource === "featbit"
+    ? "FeatBit + track-service (auto-pull)"
+    : primaryDataSource === "external"
+      ? `external${primaryDataSourceNote ? ` — ${primaryDataSourceNote}` : ""}`
+      : "manual paste";
+  lines.push(`- **Primary data source:** ${primarySourceLabel}`);
   if (primaryRowCount > 0) {
     lines.push(`- **Observed data:** pasted for ${primaryRowCount} primary variant row(s)` +
-      (guardrailsWithData > 0 ? ` + ${guardrailsWithData} guardrail(s)` : ""));
+      (guardrailsWithData > 0 ? ` + ${guardrailsWithData} guardrail(s) manually pasted` : ""));
+  } else if (primaryDataSource !== "manual") {
+    lines.push("- **Observed data:** to come from the configured source above (no totals pasted)");
   } else {
     lines.push("- **Observed data:** not provided yet");
+  }
+  if (nonManualGuardrails.length > 0) {
+    lines.push(`- **Guardrail data sources:** ${nonManualGuardrails.length} guardrail(s) configured to pull from non-manual sources`);
   }
   lines.push("");
   if (primaryRowCount > 0) {
     lines.push("Data is in — please run the Bayesian analysis on this run and walk me through what it means (signal, guardrail risk, what to do next).");
+  } else if (primaryDataSource === "featbit") {
+    lines.push("Data will come from track-service automatically. Can you trigger the pull and run the analysis? If not enough data yet, tell me when to retry.");
+  } else if (primaryDataSource === "external") {
+    lines.push("Data will come from an external source. What's the right next step — wait for me to import it, or set up the import pipeline now?");
   } else {
     lines.push("I haven't pasted data yet. What's the right next step — should I wait for data, or do you need more setup info first?");
   }
   return lines.join("\n");
-}
-
-function NativeSelect({
-  id, name, defaultValue, children,
-}: { id: string; name: string; defaultValue: string; children: React.ReactNode }) {
-  return (
-    <select
-      id={id}
-      name={name}
-      defaultValue={defaultValue}
-      className={cn(
-        "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm",
-        "transition-colors outline-none",
-        "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-      )}
-    >
-      {children}
-    </select>
-  );
 }
 
 /* ── Algorithm picker (radio cards) ── */
@@ -401,6 +445,68 @@ function PriorPicker({
   );
 }
 
+/* ── Data source picker — manual paste / FeatBit auto-pull / external ── */
+function DataSourcePicker({
+  value,
+  note,
+  onChange,
+  onNoteChange,
+  size = "md",
+}: {
+  value: DataSource;
+  note: string;
+  onChange: (v: DataSource) => void;
+  onNoteChange: (v: string) => void;
+  size?: "sm" | "md";
+}) {
+  const opts: { key: DataSource; label: string; desc: string }[] = [
+    { key: "manual",   label: "Paste manually",     desc: "Enter per-variant totals below." },
+    { key: "featbit",  label: "FeatBit + tracking", desc: "Auto-pull from track-service using flag + event." },
+    { key: "external", label: "External / other",   desc: "Coming from an outside API or warehouse." },
+  ];
+  const padding = size === "sm" ? "px-2.5 py-1.5" : "px-3 py-2";
+  const titleSize = size === "sm" ? "text-[11px]" : "text-xs";
+  const descSize = size === "sm" ? "text-[10px]" : "text-[10px]";
+  return (
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-3 gap-2">
+        {opts.map((opt) => (
+          <button
+            type="button"
+            key={opt.key}
+            onClick={() => onChange(opt.key)}
+            className={cn(
+              "rounded-md border text-left transition-colors",
+              padding,
+              value === opt.key ? "border-foreground bg-foreground/5" : "hover:bg-muted/40",
+            )}
+          >
+            <div className={cn("font-semibold", titleSize)}>{opt.label}</div>
+            <div className={cn("text-muted-foreground mt-0.5 leading-tight", descSize)}>
+              {opt.desc}
+            </div>
+          </button>
+        ))}
+      </div>
+      {value === "external" && (
+        <Textarea
+          value={note}
+          onChange={(e) => onNoteChange(e.target.value)}
+          rows={2}
+          placeholder="Where will the data come from? (e.g. Snowflake query, internal API, manual export)"
+          className="text-xs resize-none"
+        />
+      )}
+      {value === "featbit" && (
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          The analyzer will query <code>track.featbit.ai</code> using this experiment&apos;s
+          flag key, the event name above, and the observation window.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /* ── Guardrails editor (reuses metric-edit pattern, adds event name) ── */
 function GuardrailsEditor({
   initial,
@@ -421,6 +527,8 @@ function GuardrailsEditor({
         name: "", event: "", description: "", inverse: false,
         metricType: "binary",
         dataRows: defaultVariants.map((v) => ({ variant: v, n: "", s: "", ss: "" })),
+        dataSource: "manual",
+        dataSourceNote: "",
       },
     ]);
   }
@@ -534,14 +642,28 @@ function GuardrailsEditor({
             </FieldHelp>
           </label>
 
-          {/* Observed data for this guardrail */}
-          <GuardrailDataTable
-            metricType={row.metricType}
-            rows={row.dataRows.length > 0
-              ? row.dataRows
-              : defaultVariants.map((v) => ({ variant: v, n: "", s: "", ss: "" }))}
-            onChange={(next) => update(i, "dataRows", next)}
-          />
+          {/* Data source for this guardrail */}
+          <div className="space-y-1.5 rounded-md bg-muted/20 px-2 py-2">
+            <div className="text-[10px] uppercase text-muted-foreground font-medium">
+              Data source
+            </div>
+            <DataSourcePicker
+              size="sm"
+              value={row.dataSource}
+              note={row.dataSourceNote}
+              onChange={(v) => update(i, "dataSource", v)}
+              onNoteChange={(v) => update(i, "dataSourceNote", v)}
+            />
+            {row.dataSource === "manual" && (
+              <GuardrailDataTable
+                metricType={row.metricType}
+                rows={row.dataRows.length > 0
+                  ? row.dataRows
+                  : defaultVariants.map((v) => ({ variant: v, n: "", s: "", ss: "" }))}
+                onChange={(next) => update(i, "dataRows", next)}
+              />
+            )}
+          </div>
         </div>
       ))}
       <button
@@ -583,26 +705,34 @@ function GuardrailDataTable({
         Observed data <span className="text-muted-foreground/50">(optional)</span>
       </div>
       <div className={`grid ${gridCols} gap-2 text-[10px] uppercase text-muted-foreground/70 px-1`}>
-        <span>Variant</span>
-        <span>Users (n)</span>
-        <span>{isNumeric ? "Sum" : "k"}</span>
-        {isNumeric && <span>Sum of sq.</span>}
+        <span>Variant<RequiredStar /></span>
+        <span>Users (n)<RequiredStar /></span>
+        <span>{isNumeric ? <>Σ x<RequiredStar /></> : <>k<RequiredStar /></>}</span>
+        {isNumeric && <span>Σ x²<RequiredStar /></span>}
         <span />
       </div>
-      {rows.map((row, i) => (
+      {rows.map((row, i) => {
+        const rowHasData =
+          row.variant.trim().length > 0 ||
+          row.n.length > 0 ||
+          row.s.length > 0 ||
+          row.ss.length > 0;
+        return (
         <div key={i} className={`grid ${gridCols} gap-2 items-center`}>
           <Input
             value={row.variant}
             onChange={(e) => update(i, "variant", e.target.value)}
             placeholder="control"
             className="text-xs font-mono h-6"
+            required={rowHasData}
           />
           <Input
-            type="number" step="1" min="0"
+            type="number" step="1" min="1"
             value={row.n}
             onChange={(e) => update(i, "n", e.target.value)}
             placeholder="1000"
             className="text-xs h-6"
+            required={rowHasData}
           />
           <Input
             type="number" step="0.01" min="0"
@@ -610,6 +740,7 @@ function GuardrailDataTable({
             onChange={(e) => update(i, "s", e.target.value)}
             placeholder={isNumeric ? "4250.5" : "150"}
             className="text-xs h-6"
+            required={rowHasData}
           />
           {isNumeric && (
             <Input
@@ -618,6 +749,7 @@ function GuardrailDataTable({
               onChange={(e) => update(i, "ss", e.target.value)}
               placeholder="27500"
               className="text-xs h-6"
+              required={rowHasData}
             />
           )}
           <button
@@ -629,7 +761,8 @@ function GuardrailDataTable({
             <X className="size-3" />
           </button>
         </div>
-      ))}
+      );
+      })}
       <button
         type="button"
         onClick={add}
@@ -644,8 +777,8 @@ function GuardrailDataTable({
 
 /* ── Variant data table ── */
 function VariantsDataEditor({
-  initial, metricType,
-}: { initial: DataRow[]; metricType: string }) {
+  initial, metricType, metricAgg,
+}: { initial: DataRow[]; metricType: string; metricAgg: string }) {
   const base: DataRow[] = initial.length > 0
     ? initial
     : [
@@ -665,32 +798,44 @@ function VariantsDataEditor({
     ? "grid-cols-[1fr_1fr_1fr_1fr_auto]"
     : "grid-cols-[1fr_1fr_1fr_auto]";
 
+  const perUser = describePerUserValue(metricAgg);
+
   return (
     <div className="space-y-2">
       <input type="hidden" name="dataRows" value={JSON.stringify(rows)} />
       <div className={`grid ${gridCols} gap-2 text-[10px] uppercase text-muted-foreground px-1`}>
-        <span>Variant</span>
-        <span>Users (n)</span>
-        <span>{isNumeric ? "Sum of values" : "Conversions (k)"}</span>
-        {isNumeric && <span>Sum of squares</span>}
+        <span>Variant<RequiredStar /></span>
+        <span>Users (n)<RequiredStar /></span>
+        <span>
+          {isNumeric ? <>Σ x<RequiredStar /></> : <>Conversions (k)<RequiredStar /></>}
+        </span>
+        {isNumeric && <span>Σ x²<RequiredStar /></span>}
         <span />
       </div>
-      {rows.map((row, i) => (
+      {rows.map((row, i) => {
+        const rowHasData =
+          row.variant.trim().length > 0 ||
+          row.n.length > 0 ||
+          row.s.length > 0 ||
+          row.ss.length > 0;
+        return (
         <div key={i} className={`grid ${gridCols} gap-2 items-center`}>
           <Input
             value={row.variant}
             onChange={(e) => update(i, "variant", e.target.value)}
             placeholder="control"
             className="text-xs font-mono h-7"
+            required={rowHasData}
           />
           <Input
             type="number"
             step="1"
-            min="0"
+            min="1"
             value={row.n}
             onChange={(e) => update(i, "n", e.target.value)}
             placeholder="1000"
             className="text-xs h-7"
+            required={rowHasData}
           />
           <Input
             type="number"
@@ -700,6 +845,7 @@ function VariantsDataEditor({
             onChange={(e) => update(i, "s", e.target.value)}
             placeholder={isNumeric ? "4250.5" : "150"}
             className="text-xs h-7"
+            required={rowHasData}
           />
           {isNumeric && (
             <Input
@@ -710,6 +856,7 @@ function VariantsDataEditor({
               onChange={(e) => update(i, "ss", e.target.value)}
               placeholder="27500"
               className="text-xs h-7"
+              required={rowHasData}
             />
           )}
           <button
@@ -721,7 +868,8 @@ function VariantsDataEditor({
             <X className="size-3" />
           </button>
         </div>
-      ))}
+      );
+      })}
       <button
         type="button"
         onClick={add}
@@ -733,8 +881,11 @@ function VariantsDataEditor({
       <p className="text-[10px] text-muted-foreground leading-snug">
         {isNumeric ? (
           <>
-            For <b>numeric</b> metrics the analyzer needs <i>n</i>, <i>sum</i>,
-            and <i>sum of squares</i> to compute the per-variant variance.
+            For <b>numeric</b> metrics, first compute each user&apos;s
+            value <code>x</code> = <i>{perUser}</i>. Then for each variant fill:
+            <br />• <b>n</b> = distinct users
+            <br />• <b>Σ x</b> = sum of per-user values
+            <br />• <b>Σ x²</b> = sum of per-user values squared (needed for variance — can&apos;t be derived from n + Σ x)
           </>
         ) : (
           <>
@@ -742,10 +893,74 @@ function VariantsDataEditor({
             and the number of converters (<i>k</i>).
           </>
         )}{" "}
-        Live data pulls from third-party warehouses aren&apos;t supported yet —
-        paste totals here or skip and fill later.
+        Leave the whole row empty to skip and fill later — but partial rows
+        will be rejected.
       </p>
     </div>
+  );
+}
+
+function describePerUserValue(metricAgg: string): string {
+  switch (metricAgg) {
+    case "count":   return "the count of events that user fired";
+    case "average": return "the mean of that user's event values";
+    case "sum":
+    default:        return "the sum of that user's event values";
+  }
+}
+
+function RequiredStar() {
+  return <span className="text-destructive ml-0.5">*</span>;
+}
+
+/* ── Wizard steps ── */
+const STEPS = [
+  { key: "algorithm",   label: "Algorithm + variants", icon: Beaker },
+  { key: "observation", label: "Observation window",   icon: Calendar },
+  { key: "metric",      label: "Primary metric",       icon: Target },
+  { key: "prior",       label: "Prior & stopping",     icon: Sigma },
+  { key: "guardrails",  label: "Guardrails",           icon: ShieldCheck },
+] as const;
+type StepKey = (typeof STEPS)[number]["key"];
+
+function StepNav({
+  currentStep,
+  onSelect,
+}: {
+  currentStep: StepKey;
+  onSelect: (k: StepKey) => void;
+}) {
+  return (
+    <nav className="w-52 shrink-0 space-y-0.5 border-r pr-3">
+      {STEPS.map((s, i) => {
+        const Icon = s.icon;
+        const active = currentStep === s.key;
+        return (
+          <button
+            type="button"
+            key={s.key}
+            onClick={() => onSelect(s.key)}
+            className={cn(
+              "w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-left transition-colors",
+              active
+                ? "bg-foreground/10 text-foreground font-medium"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px]",
+                active ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {i + 1}
+            </span>
+            <Icon className="size-3.5 shrink-0" />
+            <span className="flex-1 leading-tight">{s.label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -787,12 +1002,12 @@ export function ExpertSetupDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-sm">Expert experiment setup</DialogTitle>
           <p className="text-[11px] text-muted-foreground">
-            Configure the algorithm, metrics, and priors directly. You can edit
-            any of this later.
+            Walk through each step, or jump around using the sidebar. Anything
+            you enter is preserved when you switch — and editable later.
           </p>
         </DialogHeader>
         {open && (
@@ -835,9 +1050,14 @@ function ExpertSetupForm({
 
   // Controlled state so nested sub-editors (variant hints for guardrails) react.
   const [metricType, setMetricType] = useState<string>(metric.metricType);
+  const [metricAgg, setMetricAgg] = useState<string>(
+    coerceAggForType(metric.metricAgg, metric.metricType),
+  );
   const [primaryInverse, setPrimaryInverse] = useState<boolean>(metric.inverse);
   const [controlName, setControlName] = useState<string>(controlVariant);
   const [treatmentNames, setTreatmentNames] = useState<string>(treatmentVariant);
+  const [primaryDataSource, setPrimaryDataSource] = useState<DataSource>(metric.dataSource);
+  const [primaryDataSourceNote, setPrimaryDataSourceNote] = useState<string>(metric.dataSourceNote);
   const defaultVariants = [
     controlName.trim() || "control",
     ...treatmentNames
@@ -845,6 +1065,11 @@ function ExpertSetupForm({
       .map((s) => s.trim())
       .filter(Boolean),
   ];
+
+  const [currentStep, setCurrentStep] = useState<StepKey>("algorithm");
+  const currentIdx = STEPS.findIndex((s) => s.key === currentStep);
+  const isFirst = currentIdx === 0;
+  const isLast = currentIdx === STEPS.length - 1;
 
   return (
     <TooltipProvider delay={150}>
@@ -854,14 +1079,19 @@ function ExpertSetupForm({
         onSaved?.(buildChatSummary(formData));
         onDone();
       }}
-      className="space-y-4 pt-1"
+      className="pt-1"
     >
       <input type="hidden" name="experimentId" value={experiment.id} />
       {existingRun && (
         <input type="hidden" name="experimentRunId" value={existingRun.id} />
       )}
 
-      {/* ── Algorithm ── */}
+      <div className="flex gap-4">
+      <StepNav currentStep={currentStep} onSelect={setCurrentStep} />
+      <div className="flex-1 min-w-0 space-y-4">
+
+      {/* ── Algorithm + variants ── */}
+      <div hidden={currentStep !== "algorithm"} className="space-y-4">
       <Section
         icon={<Beaker className="size-3.5" />}
         title="Algorithm"
@@ -875,8 +1105,53 @@ function ExpertSetupForm({
       >
         <AlgorithmPicker defaultValue={method} />
       </Section>
+      <Section
+        icon={<Database className="size-3.5" />}
+        title="Variants"
+        subtitle="Names must match the variant keys in your FeatBit flag, and the data rows you'll fill in later."
+      >
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <LabelWithHelp
+              htmlFor="controlVariant"
+              label="Control variant"
+              className="text-xs"
+              help="Variant name treated as the baseline. Must match the variant key in your FeatBit flag and in the data rows."
+            />
+            <Input
+              id="controlVariant"
+              name="controlVariant"
+              value={controlName}
+              onChange={(e) => setControlName(e.target.value)}
+              placeholder="control"
+              className="text-sm font-mono"
+            />
+          </div>
+          <div className="space-y-1">
+            <LabelWithHelp
+              htmlFor="treatmentVariant"
+              label="Treatment variant(s)"
+              className="text-xs"
+              help="Variant(s) being compared against control. Use a comma-separated list for multiple arms (bandit)."
+            />
+            <Input
+              id="treatmentVariant"
+              name="treatmentVariant"
+              value={treatmentNames}
+              onChange={(e) => setTreatmentNames(e.target.value)}
+              placeholder="treatment"
+              className="text-sm font-mono"
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Comma-separated for multiple arms (bandit).
+            </p>
+          </div>
+        </div>
+      </Section>
+      </div>
 
       {/* ── Primary metric (North Star) ── */}
+      <div hidden={currentStep !== "metric"}>
       <Section
         icon={<Target className="size-3.5" />}
         title="Primary Metric (North Star)"
@@ -936,7 +1211,11 @@ function ExpertSetupForm({
               id="metricType"
               name="metricType"
               value={metricType}
-              onChange={(e) => setMetricType(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setMetricType(next);
+                setMetricAgg(coerceAggForType(metricAgg, next));
+              }}
               className={cn(
                 "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm",
                 "transition-colors outline-none",
@@ -952,20 +1231,43 @@ function ExpertSetupForm({
               htmlFor="metricAgg"
               label="Aggregation"
               className="text-xs"
-              help={(
+              help={metricType === "binary" ? (
                 <>
-                  How events are counted per user:
-                  <br />• <b>Once</b> — at most one event per user counts (deduped).
-                  <br />• <b>Count</b> — total event count.
-                  <br />• <b>Sum</b> — sum of value attached to events (numeric only).
+                  Binary metrics are yes/no per user, so the only meaningful
+                  aggregation is <b>Once per user</b> — count each user at
+                  most once toward the conversion total.
+                </>
+              ) : (
+                <>
+                  Per-user value when a user fires the event multiple times:
+                  <br />• <b>Count all</b> — number of events the user fired (clicks per user).
+                  <br />• <b>Sum values</b> — total of the user&apos;s event values (revenue per user, LTV-style).
+                  <br />• <b>Average values</b> — mean of the user&apos;s event values (avg ticket size per user, AOV-style).
+                  <br />The analyzer always compares per-user means across variants — pick what each user&apos;s contribution should mean.
                 </>
               )}
             />
-            <NativeSelect id="metricAgg" name="metricAgg" defaultValue={metric.metricAgg}>
-              <option value="once">Once per user</option>
-              <option value="count">Count all</option>
-              <option value="sum">Sum values</option>
-            </NativeSelect>
+            <select
+              id="metricAgg"
+              name="metricAgg"
+              value={metricAgg}
+              onChange={(e) => setMetricAgg(e.target.value)}
+              className={cn(
+                "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 py-1 text-sm",
+                "transition-colors outline-none",
+                "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              )}
+            >
+              {metricType === "binary" ? (
+                <option value="once">Once per user</option>
+              ) : (
+                <>
+                  <option value="count">Count all events</option>
+                  <option value="sum">Sum event values</option>
+                  <option value="average">Average values per user</option>
+                </>
+              )}
+            </select>
           </div>
         </div>
         <div className="space-y-1">
@@ -1010,9 +1312,29 @@ function ExpertSetupForm({
             <br />If this is wrong, a huge regression can show up as verdict <i>&quot;strong signal → adopt treatment&quot;</i> because the analyzer thinks your metric is going the right way.
           </FieldHelp>
         </label>
+
+        {/* Data source + observed data for the primary metric */}
+        <div className="space-y-2 rounded-md bg-muted/20 px-2.5 py-2.5">
+          <div className="text-[10px] uppercase text-muted-foreground font-medium">
+            Data source
+          </div>
+          <input type="hidden" name="primaryDataSource" value={primaryDataSource} />
+          <input type="hidden" name="primaryDataSourceNote" value={primaryDataSourceNote} />
+          <DataSourcePicker
+            value={primaryDataSource}
+            note={primaryDataSourceNote}
+            onChange={setPrimaryDataSource}
+            onNoteChange={setPrimaryDataSourceNote}
+          />
+          {primaryDataSource === "manual" && (
+            <VariantsDataEditor initial={dataRows} metricType={metricType} metricAgg={metricAgg} />
+          )}
+        </div>
       </Section>
+      </div>
 
       {/* ── Guardrails ── */}
+      <div hidden={currentStep !== "guardrails"}>
       <Section
         icon={<ShieldCheck className="size-3.5" />}
         title="Guardrails"
@@ -1020,8 +1342,10 @@ function ExpertSetupForm({
       >
         <GuardrailsEditor initial={guardrailRows} defaultVariants={defaultVariants} />
       </Section>
+      </div>
 
       {/* ── Priors & min sample ── */}
+      <div hidden={currentStep !== "prior"}>
       <Section
         icon={<Sigma className="size-3.5" />}
         title="Prior & Stopping"
@@ -1063,8 +1387,10 @@ function ExpertSetupForm({
           </p>
         </div>
       </Section>
+      </div>
 
       {/* ── Observation window ── */}
+      <div hidden={currentStep !== "observation"}>
       <Section
         icon={<Calendar className="size-3.5" />}
         title="Observation Window"
@@ -1103,57 +1429,35 @@ function ExpertSetupForm({
           </div>
         </div>
       </Section>
+      </div>
 
-      {/* ── Variants + data ── */}
-      <Section
-        icon={<Database className="size-3.5" />}
-        title="Observed Data"
-        subtitle="Provide totals now or skip and fill in later."
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <LabelWithHelp
-              htmlFor="controlVariant"
-              label="Control variant"
-              className="text-xs"
-              help="Variant name treated as the baseline. Must match the variant key in your FeatBit flag and in the data rows below."
-            />
-            <Input
-              id="controlVariant"
-              name="controlVariant"
-              value={controlName}
-              onChange={(e) => setControlName(e.target.value)}
-              placeholder="control"
-              className="text-sm font-mono"
-            />
-          </div>
-          <div className="space-y-1">
-            <LabelWithHelp
-              htmlFor="treatmentVariant"
-              label="Treatment variant(s)"
-              className="text-xs"
-              help="Variant(s) being compared against control. Use a comma-separated list for multiple arms (bandit)."
-            />
-            <Input
-              id="treatmentVariant"
-              name="treatmentVariant"
-              value={treatmentNames}
-              onChange={(e) => setTreatmentNames(e.target.value)}
-              placeholder="treatment"
-              className="text-sm font-mono"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Comma-separated for multiple arms (bandit).
-            </p>
-          </div>
-        </div>
-        <VariantsDataEditor initial={dataRows} metricType={metricType} />
-      </Section>
+      </div>
+      </div>
 
-      <DialogFooter className="gap-2 pt-1">
-        <Button type="button" variant="outline" size="sm" onClick={onDone}>
+      <DialogFooter className="gap-2 pt-3 border-t mt-4">
+        <Button type="button" variant="ghost" size="sm" onClick={onDone}>
           Cancel
         </Button>
+        <div className="flex-1" />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isFirst}
+          onClick={() => setCurrentStep(STEPS[currentIdx - 1].key)}
+        >
+          Back
+        </Button>
+        {!isLast && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setCurrentStep(STEPS[currentIdx + 1].key)}
+          >
+            Next
+          </Button>
+        )}
         <Button type="submit" size="sm">Save setup</Button>
       </DialogFooter>
     </form>

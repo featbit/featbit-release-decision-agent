@@ -31,6 +31,7 @@ export function computeMetricSection(
   treatments: string[],
   isGuardrail = false,
   prior?: GaussianPrior | null,
+  metricAgg?: string,
 ): MetricSection | null {
   const inverse = Boolean(mdata.inverse);
   const ctrlRaw = mdata[control] as Record<string, number> | undefined;
@@ -126,6 +127,9 @@ export function computeMetricSection(
     verdict: verdicts.length > 0 ? verdicts.join("; ") : "no data",
   };
   if (inverse) section.inverse = true;
+  if (metricAgg === "once" || metricAgg === "count" || metricAgg === "sum" || metricAgg === "average") {
+    section.metric_agg = metricAgg;
+  }
 
   return section;
 }
@@ -146,6 +150,7 @@ export interface AnalysisInput {
   priorStddev?: number;
   minimumSample?: number;
   guardrailEvents?: string[] | null;
+  primaryMetricAgg?: string;
 }
 
 /**
@@ -167,6 +172,7 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
     priorStddev = 0.3,
     minimumSample = 0,
     guardrailEvents,
+    primaryMetricAgg,
   } = input;
 
   // Build prior
@@ -227,7 +233,7 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
   const primaryData = metrics[primaryKey];
 
   const primaryMetric = primaryData
-    ? computeMetricSection(primaryKey, primaryData, control, treatments, false, prior)
+    ? computeMetricSection(primaryKey, primaryData, control, treatments, false, prior, primaryMetricAgg)
     : null;
 
   // Guardrails
