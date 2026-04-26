@@ -94,7 +94,7 @@ Optionally also terminate the orphaned session on sandbox0 to free its VM; see _
 
 ## Environment tuning
 
-The environment's `packages` field in theory pre-installs tools so VMs do not pay for them on each cold start:
+The environment's `packages` field pre-installs tools so VMs do not pay for them on each cold start:
 
 ```
 POST /v1/environments/{id}
@@ -107,7 +107,7 @@ POST /v1/environments/{id}
 }
 ```
 
-Current state: `npm: []` (empty). Attempting to preinstall `tsx` via this field caused session creation to fail with `504 resolve environment artifact: npm build failed` — the environment artifact build is performed lazily on the first session create, and its timeout is too short for packages pulling native binaries (tsx → esbuild). The skills therefore still pay the `npx tsx` cold-download cost (~10 s) on the first bash call of every new session. Tracked separately; do not re-add packages that bring in native binaries until sandbox0's build pipeline is fixed.
+Current state: `npm: ["tsx"]`. Pre-installed `tsx` lands at `/opt/managed-env/npm/bin/tsx` and is on `$PATH`, so the first `npx tsx scripts/sync.ts ...` call no longer pays the ~10 s cold-download cost. Sandbox0 fixed the env-build pipeline (previously `504 resolve environment artifact: npm build failed` for packages pulling native binaries like tsx → esbuild). To re-apply or extend the package list run `npm run sandbox0:update-env` from `modules/web`.
 
 ## Ops
 

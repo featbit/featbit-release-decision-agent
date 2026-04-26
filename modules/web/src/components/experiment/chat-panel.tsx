@@ -13,14 +13,14 @@ import { persistMessagesAction } from "@/lib/actions";
 
 /**
  * Global agent-backend switch (compile-time, env-driven, never changes at
- * runtime). Set `NEXT_PUBLIC_AGENT_BACKEND=sandbox0` to route chat through
- * the Managed-Agents integration; anything else keeps the classic
+ * runtime). Defaults to `sandbox0` (Managed-Agents integration). Set
+ * `NEXT_PUBLIC_AGENT_BACKEND=classic` to fall back to the classic
  * Claude-Agent-SDK server at `NEXT_PUBLIC_SANDBOX_URL`.
  */
 const AGENT_BACKEND =
-  (process.env.NEXT_PUBLIC_AGENT_BACKEND ?? "classic") === "sandbox0"
-    ? ("sandbox0" as const)
-    : ("classic" as const);
+  (process.env.NEXT_PUBLIC_AGENT_BACKEND ?? "sandbox0") === "classic"
+    ? ("classic" as const)
+    : ("sandbox0" as const);
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Send, Square, Bot, User, AlertCircle, WifiOff, Loader2, CheckCircle2 } from "lucide-react";
