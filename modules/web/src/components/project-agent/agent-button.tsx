@@ -101,7 +101,7 @@ export function AgentButton() {
       <Button
         variant="ghost"
         size="sm"
-        className="h-8 gap-1.5 text-xs"
+        className="h-8 gap-1.5 border border-border/70 bg-background/70 text-xs shadow-sm shadow-foreground/5 backdrop-blur"
         onClick={openDrawer}
       >
         <Sparkles className="size-3.5" />
@@ -120,9 +120,9 @@ export function AgentButton() {
           side="right"
           showCloseButton={false}
           style={{ width: "70vw", maxWidth: "70vw" }}
-          className="flex flex-col p-0 gap-0"
+          className="flex flex-col gap-0 border-l border-border/80 bg-background/95 p-0 shadow-2xl shadow-foreground/15 backdrop-blur-xl"
         >
-          <SheetHeader className="shrink-0 border-b px-4 py-3 flex flex-row items-center justify-between space-y-0">
+          <SheetHeader className="shrink-0 border-b border-border/70 bg-background/80 px-4 py-3 flex flex-row items-center justify-between space-y-0 backdrop-blur-xl">
             <div>
               <SheetTitle className="flex items-center gap-2 text-sm">
                 <Sparkles className="size-4 text-brand" />
@@ -171,7 +171,7 @@ export function AgentButton() {
       {minimized && open && (
         <button
           onClick={() => { setMinimized(false); }}
-          className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full bg-foreground px-4 py-2.5 text-sm font-medium text-background shadow-lg hover:opacity-90 transition-opacity"
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg bg-foreground px-4 py-2.5 text-sm font-bold text-background shadow-lg shadow-foreground/20 transition-opacity hover:opacity-90"
         >
           <Sparkles className="size-3.5" />
           project-agent

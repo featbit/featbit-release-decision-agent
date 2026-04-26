@@ -308,14 +308,16 @@ export function AgentChat({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 bg-card/55">
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
       >
         {messages.length === 0 && !streaming && (
-          <div className="text-sm text-muted-foreground flex items-start gap-2 rounded-lg border border-dashed p-3">
-            <Sparkles className="size-4 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 rounded-lg border border-dashed border-primary/30 bg-accent/45 p-3 text-sm text-muted-foreground">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+              <Sparkles className="size-4" />
+            </div>
             <span>
               Ask project-agent anything about this project, or just say
               &ldquo;hi&rdquo; to run through onboarding.
@@ -334,11 +336,11 @@ export function AgentChat({
         {streaming && !messages.some((m) => m.role === "agent" && (m.text || m.thinking)) && (
           <div className="flex gap-3 text-sm">
             <div className="flex shrink-0 items-start pt-0.5">
-              <div className="flex size-7 items-center justify-center rounded-full bg-foreground/10">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
                 <Bot className="size-4" />
               </div>
             </div>
-            <div className="bg-muted rounded-lg px-3 py-2 flex items-center gap-2">
+            <div className="bg-card rounded-lg px-3.5 py-2.5 flex items-center gap-2 shadow-sm shadow-foreground/5 ring-1 ring-border/80">
               <span className="inline-flex gap-1">
                 <span className="animate-bounce [animation-delay:0ms]">·</span>
                 <span className="animate-bounce [animation-delay:150ms]">·</span>
@@ -353,43 +355,46 @@ export function AgentChat({
       </div>
       <form
         onSubmit={submit}
-        className="border-t p-3 flex items-end gap-2 bg-background"
+        className="border-t border-border/70 bg-background/72 p-3 flex items-end gap-2 backdrop-blur-xl"
       >
-        <Textarea
-          value={draft}
-          onChange={(e) => {
-            setDraft(e.target.value);
-            // Auto-grow: reset height first so shrinking works, then clamp to 5 lines.
-            const el = e.target;
-            el.style.height = "0";
-            el.style.height = `${Math.min(el.scrollHeight, 5 * 24)}px`;
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit(e);
-            }
-          }}
-          placeholder="Message project-agent…"
-          rows={1}
-          className="min-h-0 resize-none overflow-y-auto"
-          style={{ height: "36px" }}
-          disabled={streaming}
-        />
-        {streaming ? (
-          <Button
-            type="button"
-            size="icon"
-            variant="outline"
-            onClick={() => abortRef.current?.abort()}
-          >
-            <Square className="size-4" />
-          </Button>
-        ) : (
-          <Button type="submit" size="icon" disabled={!draft.trim()}>
-            <Send className="size-4" />
-          </Button>
-        )}
+        <div className="flex flex-1 items-end gap-2 rounded-lg border border-border/80 bg-card/90 p-2 shadow-sm shadow-foreground/5">
+          <Textarea
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              // Auto-grow: reset height first so shrinking works, then clamp to 5 lines.
+              const el = e.target;
+              el.style.height = "0";
+              el.style.height = `${Math.min(el.scrollHeight, 5 * 24)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit(e);
+              }
+            }}
+            placeholder="Message project-agent…"
+            rows={1}
+            className="min-h-0 resize-none overflow-y-auto border-0 bg-transparent shadow-none focus-visible:ring-0"
+            style={{ height: "36px" }}
+            disabled={streaming}
+          />
+          {streaming ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              className="size-9"
+              onClick={() => abortRef.current?.abort()}
+            >
+              <Square className="size-4" />
+            </Button>
+          ) : (
+            <Button type="submit" size="icon" className="size-9" disabled={!draft.trim()}>
+              <Send className="size-4" />
+            </Button>
+          )}
+        </div>
       </form>
     </div>
   );
@@ -421,8 +426,8 @@ function MessageBubble({
       <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
         <div
           className={cn(
-            "rounded-lg px-3 py-2 text-sm max-w-[85%] whitespace-pre-wrap",
-            isUser && "bg-primary text-primary-foreground",
+            "rounded-lg px-3.5 py-2.5 text-sm max-w-[85%] whitespace-pre-wrap shadow-sm shadow-foreground/5 ring-1 ring-transparent",
+            isUser && "bg-primary text-primary-foreground ring-primary/20",
             isError &&
               "bg-destructive/10 text-destructive border border-destructive/30"
           )}
@@ -437,11 +442,11 @@ function MessageBubble({
   return (
     <div className="flex gap-3">
       <div className="flex shrink-0 items-start pt-0.5">
-        <div className="flex size-7 items-center justify-center rounded-full bg-foreground/10">
+        <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
           <Bot className="size-4" />
         </div>
       </div>
-      <div className="max-w-[85%] rounded-lg px-3 py-2 bg-muted text-sm flex-1">
+      <div className="max-w-[85%] rounded-lg bg-card px-3.5 py-2.5 text-sm flex-1 shadow-sm shadow-foreground/5 ring-1 ring-border/80">
         {message.thinking && (
           <details
             open={!message.isFinal}

@@ -111,10 +111,11 @@ export function ChatPanel({
   // lifetime of the app, which satisfies the rules-of-hooks invariant even
   // though the static checker can't see it.
   //
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const chat =
     AGENT_BACKEND === "sandbox0"
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       ? useSandbox0Chat(chatOpts)
+      // eslint-disable-next-line react-hooks/rules-of-hooks
       : useSandboxChat(chatOpts);
   const { messages: liveMessages, isStreaming, error, connectionStatus, activity, sendMessage, abort } = chat;
   const sandbox0Extras = AGENT_BACKEND === "sandbox0" ? (chat as ReturnType<typeof useSandbox0Chat>) : null;
@@ -189,7 +190,7 @@ export function ChatPanel({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-card/55">
       {/* Connection status bar */}
       <ConnectionStatusBar status={connectionStatus} />
 
@@ -207,10 +208,12 @@ export function ChatPanel({
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {displayMessages.length === 0 && !isStreaming ? (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-3 text-muted-foreground">
-            <Bot className="size-10 opacity-30" />
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+            <div className="flex size-14 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
+              <Bot className="size-7" />
+            </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium">
+              <p className="text-sm font-bold text-foreground">
                 Start a conversation with the agent
               </p>
               <p className="text-xs">
@@ -230,19 +233,19 @@ export function ChatPanel({
             >
               {msg.role !== "user" && (
                 <div className="flex shrink-0 items-start pt-0.5">
-                  <div className="flex size-7 items-center justify-center rounded-full bg-foreground/10">
-                    <Bot className="size-4" />
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-primary shadow-sm ring-1 ring-primary/15">
+                    <Bot className="size-4.5" />
                   </div>
                 </div>
               )}
               <div
                 className={cn(
-                  "max-w-[80%] rounded-lg px-3 py-2",
+                  "max-w-[82%] rounded-lg px-3.5 py-2.5 shadow-sm shadow-foreground/5 ring-1 ring-transparent",
                   msg.role === "user"
-                    ? "bg-primary text-primary-foreground whitespace-pre-wrap"
+                    ? "bg-primary text-primary-foreground whitespace-pre-wrap ring-primary/20"
                     : msg.role === "system"
-                      ? "bg-muted text-muted-foreground text-xs italic whitespace-pre-wrap"
-                      : "bg-muted"
+                      ? "bg-muted/70 text-muted-foreground text-xs italic whitespace-pre-wrap ring-border/70"
+                      : "bg-card text-card-foreground ring-border/80"
                 )}
               >
                 {msg.role === "assistant" && msg.thinking && (
@@ -265,7 +268,7 @@ export function ChatPanel({
               </div>
               {msg.role === "user" && (
                 <div className="flex shrink-0 items-start pt-0.5">
-                  <div className="flex size-7 items-center justify-center rounded-full bg-primary/10">
+                  <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
                     <User className="size-4" />
                   </div>
                 </div>
@@ -281,11 +284,11 @@ export function ChatPanel({
         {isStreaming && (
             <div className="flex gap-3 text-sm">
               <div className="flex shrink-0 items-start pt-0.5">
-                <div className="flex size-7 items-center justify-center rounded-full bg-foreground/10">
+                <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
                   <Bot className="size-4" />
                 </div>
               </div>
-              <div className="bg-muted rounded-lg px-3 py-2 flex items-center gap-2">
+              <div className="bg-card rounded-lg px-3.5 py-2.5 flex items-center gap-2 shadow-sm shadow-foreground/5 ring-1 ring-border/80">
                 <span className="inline-flex gap-1">
                   <span className="animate-bounce [animation-delay:0ms]">·</span>
                   <span className="animate-bounce [animation-delay:150ms]">·</span>
@@ -308,8 +311,8 @@ export function ChatPanel({
       </div>
 
       {/* Input area */}
-      <div className="border-t p-3">
-        <div className="flex items-end gap-2">
+      <div className="border-t border-border/70 bg-background/72 p-3 backdrop-blur-xl">
+        <div className="flex items-end gap-2 rounded-lg border border-border/80 bg-card/90 p-2 shadow-sm shadow-foreground/5">
           <textarea
             ref={inputRef}
             value={input}
@@ -317,16 +320,17 @@ export function ChatPanel({
             onKeyDown={handleKeyDown}
             placeholder="Describe your goal, ask for advice, or tell the agent what to do next…"
             rows={1}
-            className="flex-1 resize-none overflow-y-auto rounded-lg border border-input bg-transparent px-3 py-2 text-sm leading-5 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
+            className="flex-1 resize-none overflow-y-auto rounded-md border-0 bg-transparent px-2 py-1.5 text-sm leading-5 placeholder:text-muted-foreground focus-visible:outline-none disabled:opacity-50"
             disabled={isStreaming}
           />
           {isStreaming ? (
-            <Button size="sm" variant="outline" onClick={abort}>
+            <Button size="icon" variant="outline" onClick={abort} className="size-9">
               <Square className="size-4" />
             </Button>
           ) : (
             <Button
-              size="sm"
+              size="icon"
+              className="size-9"
               disabled={!input.trim()}
               onClick={handleSubmit}
             >
@@ -334,7 +338,7 @@ export function ChatPanel({
             </Button>
           )}
         </div>
-        <p className="mt-1.5 text-[10px] text-muted-foreground">
+        <p className="mt-1.5 text-[10px] font-medium text-muted-foreground">
           Press Enter to send · Shift+Enter for new line
         </p>
       </div>
@@ -364,7 +368,7 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-1.5 text-xs border-b transition-opacity duration-500",
+        "flex items-center gap-2 border-b border-border/70 px-3 py-1.5 text-xs font-medium transition-opacity duration-500",
         status === "checking"
           ? "bg-muted/50 text-muted-foreground"
           : status === "connected"
@@ -409,7 +413,7 @@ function Sandbox0SessionBar({
   // Error state: show red dot + message, takes priority over everything else.
   if (error && !sessionId) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b bg-destructive/10 text-destructive">
+      <div className="flex items-center gap-2 border-b border-border/70 bg-destructive/10 px-3 py-1.5 text-[11px] font-medium text-destructive">
         <span className="inline-block size-1.5 rounded-full shrink-0 bg-destructive" />
         <span className="font-medium">Session unavailable</span>
         <span className="truncate">· {error}</span>
@@ -420,7 +424,7 @@ function Sandbox0SessionBar({
   // Connecting state: no sessionId yet but no error either.
   if (!sessionId) {
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b bg-muted/30 text-muted-foreground">
+      <div className="flex items-center gap-2 border-b border-border/70 bg-background/55 px-3 py-1.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
         <Loader2 className="size-3 animate-spin" />
         <span>Connecting to session…</span>
       </div>
@@ -430,7 +434,7 @@ function Sandbox0SessionBar({
   // Connected: green for resumed, blue for new.
   const isResumed = sessionIsNew === false;
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b bg-muted/30 text-muted-foreground">
+    <div className="flex items-center gap-2 border-b border-border/70 bg-background/55 px-3 py-1.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
       <span
         className={cn(
           "inline-block size-1.5 rounded-full shrink-0",

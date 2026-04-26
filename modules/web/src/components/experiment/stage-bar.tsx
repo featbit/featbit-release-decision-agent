@@ -57,7 +57,7 @@ export function StageStepper({
   onStageSelect,
 }: StageStepperProps) {
   return (
-    <nav className="flex items-stretch gap-0.5 px-2 py-1 border-b shrink-0 bg-muted/20">
+    <nav className="flex items-stretch gap-0.5 border-b border-border/70 bg-background/55 px-2 py-1.5 backdrop-blur-xl shrink-0">
       {STAGES.map((stage, i) => {
         const isSelected = stage.key === activeTab;
         const hasContent = stageHasContent(experiment, stage.key);
@@ -72,15 +72,15 @@ export function StageStepper({
             onClick={() => onStageSelect(stage.key)}
             style={{ clipPath }}
             className={cn(
-              "flex-1 flex flex-col justify-center py-1 text-left transition-all cursor-pointer min-w-0 leading-tight",
+              "flex-1 flex flex-col justify-center py-1.5 text-left transition-all cursor-pointer min-w-0 leading-tight",
               isFirst ? "pl-3" : "pl-5",
               isLast ? "pr-3" : "pr-5",
               isSelected
-                ? "bg-foreground text-background [filter:drop-shadow(0_2px_3px_rgb(0_0_0_/_0.18))] -translate-y-px"
-                : "bg-muted text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                ? "bg-primary text-primary-foreground shadow-sm shadow-primary/20 -translate-y-px"
+                : "bg-card/70 text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground"
             )}
           >
-            <span className="flex items-center gap-1.5 text-[11px] font-semibold w-full min-w-0">
+            <span className="flex items-center gap-1.5 text-[11px] font-bold w-full min-w-0">
               <span
                 className={cn(
                   "size-1 rounded-full shrink-0",

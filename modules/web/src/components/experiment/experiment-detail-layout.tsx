@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Pencil, Shuffle, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import type {
   Experiment,
   ExperimentRun,
@@ -73,17 +74,17 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
   }
 
   const header = (
-    <header className="border-b shrink-0">
-      <div className="flex items-center gap-3 px-4 py-2">
+    <header className="shrink-0 border-b border-border/70 bg-background/78 shadow-sm shadow-foreground/5 backdrop-blur-xl">
+      <div className="flex items-center gap-3 px-4 py-2.5">
         <Link
           href="/experiments"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
         >
           <ArrowLeft className="size-3.5" />
           Experiments
         </Link>
-        <span className="text-muted-foreground/40">|</span>
-        <h1 className="text-sm font-semibold truncate">{experiment.name}</h1>
+        <span className="h-5 w-px bg-border" />
+        <h1 className="text-sm font-bold tracking-tight truncate">{experiment.name}</h1>
 
         {/* Experiment-scoped actions — grouped next to the name so they stay
             out of the workspace-switcher territory on the right. */}
@@ -103,8 +104,8 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
             className={cn(
               "flex items-center gap-1.5 h-7 rounded-md border px-2 text-xs transition-colors cursor-pointer",
               activeTab === "settings"
-                ? "bg-foreground text-background border-foreground"
-                : "border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted"
+                ? "bg-foreground text-background border-foreground shadow-sm shadow-foreground/10"
+                : "border-border bg-background/80 text-muted-foreground hover:border-primary/30 hover:bg-accent hover:text-accent-foreground"
             )}
           >
             <Settings className="size-3" />
@@ -137,6 +138,7 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <WorkspaceSwitcher readOnly />
         </div>
       </div>

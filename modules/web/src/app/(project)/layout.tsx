@@ -9,7 +9,9 @@ export default function ExperimentLayout({
 }) {
   return (
     <AuthShell>
-      <div className="h-dvh w-full flex flex-col">{children}</div>
+      <div className="h-dvh w-full flex flex-col">
+        {children}
+      </div>
     </AuthShell>
   );
 }

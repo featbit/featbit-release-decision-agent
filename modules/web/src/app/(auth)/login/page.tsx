@@ -19,7 +19,7 @@ import type { OAuthProvider, SsoPreCheck } from "@/lib/featbit-auth/types";
 import { PasswordLoginForm } from "@/components/auth/password-login-form";
 import { OAuthButtons } from "@/components/auth/oauth-buttons";
 import { SsoLoginForm } from "@/components/auth/sso-login-form";
-import { Loader2 } from "lucide-react";
+import { Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Tab = "password" | "sso";
@@ -55,7 +55,12 @@ function LoginPageInner() {
   const [activeTab, setActiveTab] = useState<Tab>("password");
   const [callbackError, setCallbackError] = useState<string | null>(null);
   const [isExchanging, setIsExchanging] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const hasHandledCallbackRef = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!isReady) return;
@@ -158,9 +163,9 @@ function LoginPageInner() {
     }
   }, [ssoPreCheck, providers, activeTab]);
 
-  if (!isReady || isExchanging) {
+  if (!mounted || !isReady || isExchanging) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-lg border border-border/70 bg-card/85 px-4 py-3 text-sm font-medium text-muted-foreground shadow-lg shadow-foreground/10 backdrop-blur-xl">
         <Loader2 className="size-4 animate-spin" />
         <span>{isExchanging ? "Finishing sign-in…" : "Loading…"}</span>
       </div>
@@ -170,14 +175,28 @@ function LoginPageInner() {
   const ssoEnabled = Boolean(ssoPreCheck?.isEnabled);
 
   return (
-    <Card className="w-full max-w-md py-6">
-      <CardHeader>
-        <div className="flex items-center gap-2">
+    <Card className="glass-panel w-full max-w-lg py-6">
+      <CardHeader className="gap-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.svg" alt="FeatBit" className="size-9" />
-          <div className="flex flex-col">
-            <CardTitle>Sign in to FeatBit Experimentation</CardTitle>
-            <CardDescription>Uses your FeatBit account.</CardDescription>
+            <img
+              src="/logo.svg"
+              alt="FeatBit"
+              className="size-11 rounded-lg bg-white p-1 shadow-sm ring-1 ring-border"
+            />
+            <div className="flex flex-col">
+              <CardTitle className="text-xl font-black tracking-tight">
+                FeatBit Experimentation
+              </CardTitle>
+              <CardDescription className="text-sm">
+                Sign in to your release decision workspace.
+              </CardDescription>
+            </div>
+          </div>
+          <div className="hidden rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-xs font-bold text-primary sm:flex items-center gap-1.5">
+            <Sparkles className="size-3.5" />
+            AI ready
           </div>
         </div>
       </CardHeader>
@@ -186,7 +205,7 @@ function LoginPageInner() {
         {ssoEnabled && (
           <div
             role="tablist"
-            className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5 text-sm self-start"
+            className="inline-flex self-start rounded-lg border border-border bg-muted/50 p-1 text-sm shadow-sm shadow-foreground/5"
           >
             <button
               type="button"
@@ -194,7 +213,7 @@ function LoginPageInner() {
               aria-selected={activeTab === "password"}
               onClick={() => setActiveTab("password")}
               className={cn(
-                "px-3 py-1 rounded-md transition-colors",
+                "px-3 py-1.5 rounded-md font-semibold transition-colors",
                 activeTab === "password"
                   ? "bg-background shadow-sm text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -208,7 +227,7 @@ function LoginPageInner() {
               aria-selected={activeTab === "sso"}
               onClick={() => setActiveTab("sso")}
               className={cn(
-                "px-3 py-1 rounded-md transition-colors",
+                "px-3 py-1.5 rounded-md font-semibold transition-colors",
                 activeTab === "sso"
                   ? "bg-background shadow-sm text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -220,7 +239,7 @@ function LoginPageInner() {
         )}
 
         {callbackError && (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive" role="alert">
             {callbackError}
           </p>
         )}
@@ -235,7 +254,7 @@ function LoginPageInner() {
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-border" />
                   </div>
-                  <div className="relative flex justify-center text-xs uppercase tracking-wide">
+                  <div className="relative flex justify-center text-xs font-bold uppercase tracking-[0.16em]">
                     <span className="bg-card px-2 text-muted-foreground">
                       or
                     </span>
@@ -249,7 +268,7 @@ function LoginPageInner() {
           <SsoLoginForm defaultWorkspaceKey={ssoPreCheck?.workspaceKey} />
         )}
 
-        <p className="text-xs text-muted-foreground text-center">
+        <p className="text-center text-xs font-medium text-muted-foreground">
           Need help?{" "}
           <Link
             href="https://docs.featbit.co"

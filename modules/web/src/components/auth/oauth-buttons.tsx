@@ -60,7 +60,7 @@ export function OAuthButtons({ providers, disabled }: Props) {
           onClick={() => {
             window.location.href = p.authorizeUrl;
           }}
-          className="w-full justify-center"
+          className="w-full justify-center bg-card/80"
         >
           <ProviderIcon name={p.name} />
           <span>Continue with {p.name}</span>

@@ -17,14 +17,14 @@ export default function DashboardLayout({
         <div className="flex h-full w-full">
           <AppSidebar />
           <main className="flex-1 overflow-auto flex flex-col">
-            <header className="sticky top-0 z-10 flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-2 backdrop-blur">
+            <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/75 px-3 backdrop-blur-xl">
               <SidebarTrigger />
               <div className="ml-auto flex items-center gap-2">
                 <AgentButton />
                 <WorkspaceSwitcher />
               </div>
             </header>
-            <div className="flex-1">{children}</div>
+            <div className="flex-1 px-4 py-4 md:px-6 lg:px-7">{children}</div>
           </main>
         </div>
       </SidebarProvider>
