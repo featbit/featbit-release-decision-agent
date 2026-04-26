@@ -186,7 +186,7 @@ function LoginPageInner() {
               className="size-11 rounded-lg bg-white p-1 shadow-sm ring-1 ring-border"
             />
             <div className="flex flex-col">
-              <CardTitle className="text-xl font-black tracking-tight">
+              <CardTitle className="text-lg font-black">
                 FeatBit Experimentation
               </CardTitle>
               <CardDescription className="text-sm">
@@ -205,7 +205,7 @@ function LoginPageInner() {
         {ssoEnabled && (
           <div
             role="tablist"
-            className="inline-flex self-start rounded-lg border border-border bg-muted/50 p-1 text-sm shadow-sm shadow-foreground/5"
+            className="surface-panel inline-flex self-start rounded-lg p-0.5 text-sm"
           >
             <button
               type="button"
@@ -213,9 +213,9 @@ function LoginPageInner() {
               aria-selected={activeTab === "password"}
               onClick={() => setActiveTab("password")}
               className={cn(
-                "px-3 py-1.5 rounded-md font-semibold transition-colors",
+                "px-3 py-1 rounded-md transition-colors",
                 activeTab === "password"
-                  ? "bg-background shadow-sm text-foreground"
+                  ? "bg-background shadow-sm text-foreground dark:bg-white/10"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -227,9 +227,9 @@ function LoginPageInner() {
               aria-selected={activeTab === "sso"}
               onClick={() => setActiveTab("sso")}
               className={cn(
-                "px-3 py-1.5 rounded-md font-semibold transition-colors",
+                "px-3 py-1 rounded-md transition-colors",
                 activeTab === "sso"
-                  ? "bg-background shadow-sm text-foreground"
+                  ? "bg-background shadow-sm text-foreground dark:bg-white/10"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -254,7 +254,7 @@ function LoginPageInner() {
                   <div className="absolute inset-0 flex items-center">
                     <div className="w-full border-t border-border" />
                   </div>
-                  <div className="relative flex justify-center text-xs font-bold uppercase tracking-[0.16em]">
+                  <div className="relative flex justify-center text-xs uppercase tracking-wide">
                     <span className="bg-card px-2 text-muted-foreground">
                       or
                     </span>
@@ -268,7 +268,7 @@ function LoginPageInner() {
           <SsoLoginForm defaultWorkspaceKey={ssoPreCheck?.workspaceKey} />
         )}
 
-        <p className="text-center text-xs font-medium text-muted-foreground">
+        <p className="text-center text-xs text-muted-foreground">
           Need help?{" "}
           <Link
             href="https://docs.featbit.co"

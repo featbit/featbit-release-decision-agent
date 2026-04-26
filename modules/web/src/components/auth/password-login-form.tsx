@@ -80,7 +80,7 @@ export function PasswordLoginForm({ onAuthenticated }: Props) {
       noValidate
     >
       <div className="flex flex-col gap-2">
-        <Label htmlFor="identity" className="font-semibold">Email</Label>
+        <Label htmlFor="identity">Email</Label>
         <Input
           id="identity"
           type="email"
@@ -94,7 +94,7 @@ export function PasswordLoginForm({ onAuthenticated }: Props) {
         {step === 2 && (
           <button
             type="button"
-            className="self-start text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            className="self-start text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             onClick={() => {
               setStep(1);
               setPassword("");
@@ -111,7 +111,7 @@ export function PasswordLoginForm({ onAuthenticated }: Props) {
       {step === 2 && (
         <>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="password" className="font-semibold">Password</Label>
+            <Label htmlFor="password">Password</Label>
             <Input
               id="password"
               type="password"
@@ -126,7 +126,7 @@ export function PasswordLoginForm({ onAuthenticated }: Props) {
 
           {needsWorkspaceKey && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="workspaceKey" className="font-semibold">Workspace key</Label>
+              <Label htmlFor="workspaceKey">Workspace key</Label>
               <Input
                 id="workspaceKey"
                 type="text"

@@ -130,7 +130,6 @@
   html {
     @apply font-sans;
     font-family: var(--font-manrope), "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-    font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -156,8 +155,7 @@
   }
   h1, h2, h3, h4, h5, h6 {
     color: var(--foreground);
-    font-weight: 700;
-    line-height: 1.5;
+    line-height: 1.2;
   }
   .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
     color: #f0f0f0;
