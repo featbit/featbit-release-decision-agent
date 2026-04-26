@@ -7,14 +7,12 @@ import {
   useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { authStorage } from "./storage";
 import { userService } from "./user-service";
 import { identityService } from "./identity-service";
 import { projectService } from "./project-service";
-import { millisecondsUntilExpiry } from "./jwt";
-import { refreshAccessToken, SESSION_EXPIRED_EVENT } from "./http";
+import { SESSION_EXPIRED_EVENT } from "./http";
 import type {
   Environment,
   Organization,
@@ -24,117 +22,39 @@ import type {
   Workspace,
 } from "./types";
 
-interface PersistedAuth {
+export type SessionStatus = "unknown" | "checking" | "valid" | "invalid";
+
+interface AuthContextValue {
+  isReady: boolean;
   isAuthenticated: boolean;
+  /** Kept for source compatibility — the real token lives server-side. */
   token: string | null;
   profile: Profile | null;
   workspace: Workspace | null;
   organization: Organization | null;
   projectEnv: ProjectEnv | null;
-}
-
-export type SessionStatus = "unknown" | "checking" | "valid" | "invalid";
-
-interface AuthContextValue extends PersistedAuth {
-  isReady: boolean;
   sessionStatus: SessionStatus;
   organizations: Organization[];
   projects: Project[];
   currentProject: Project | null;
   currentEnvironment: Environment | null;
-  completeLogin: (token: string) => Promise<Profile>;
+  /** Called after a successful exchange route — token argument is ignored. */
+  completeLogin: (token?: string) => Promise<Profile>;
   logout: () => Promise<void>;
   selectOrganization: (org: Organization) => Promise<void>;
   selectProjectEnv: (projectId: string, envId: string) => void;
 }
 
-const emptyState: PersistedAuth = {
-  isAuthenticated: false,
-  token: null,
-  profile: null,
-  workspace: null,
-  organization: null,
-  projectEnv: null,
-};
-
-const listeners = new Set<() => void>();
-let cachedSnapshot: PersistedAuth = emptyState;
-let cacheVersion = -1;
-let currentVersion = 0;
-
-function computeSnapshot(): PersistedAuth {
-  const token = authStorage.getToken();
-  if (!token) return emptyState;
-  return {
-    isAuthenticated: true,
-    token,
-    profile: authStorage.getProfile(),
-    workspace: authStorage.getWorkspace(),
-    organization: authStorage.getOrganization(),
-    projectEnv: authStorage.getProjectEnv(),
-  };
+interface MeResponse {
+  profile: Profile | null;
+  organizationId?: string | null;
+  workspaceId?: string | null;
 }
 
-function getSnapshot(): PersistedAuth {
-  if (cacheVersion !== currentVersion) {
-    cachedSnapshot = computeSnapshot();
-    cacheVersion = currentVersion;
-  }
-  return cachedSnapshot;
-}
-
-function notifyAuthChange() {
-  currentVersion += 1;
-  listeners.forEach((l) => l());
-}
-
-function subscribe(onChange: () => void) {
-  listeners.add(onChange);
-  const handleStorage = () => {
-    currentVersion += 1;
-    onChange();
-  };
-  if (typeof window !== "undefined") {
-    window.addEventListener("storage", handleStorage);
-  }
-  return () => {
-    listeners.delete(onChange);
-    if (typeof window !== "undefined") {
-      window.removeEventListener("storage", handleStorage);
-    }
-  };
-}
-
-// ── Auto-refresh scheduler (module singleton) ────────────────────────────────
-// Fires 30 seconds before the access token expires; retry cadence capped to 60s
-// so a long-running tab with clock drift still attempts refreshes.
-
-let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-
-function cancelScheduledRefresh() {
-  if (refreshTimer) {
-    clearTimeout(refreshTimer);
-    refreshTimer = null;
-  }
-}
-
-function scheduleNextRefresh() {
-  cancelScheduledRefresh();
-  if (typeof window === "undefined") return;
-  const token = authStorage.getToken();
-  if (!token) return;
-  const msUntilExp = millisecondsUntilExpiry(token);
-  const refreshIn = Math.max(1_000, msUntilExp - 30_000);
-  refreshTimer = setTimeout(async () => {
-    refreshTimer = null;
-    const ok = await refreshAccessToken();
-    if (ok) {
-      notifyAuthChange();
-      scheduleNextRefresh();
-    }
-    // If not ok, we don't clear the token here. The next authenticated request
-    // will 401 and go through the http.ts retry + event flow.
-  }, refreshIn);
+async function fetchMe(): Promise<MeResponse> {
+  const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+  if (!res.ok) return { profile: null };
+  return (await res.json()) as MeResponse;
 }
 
 function toProjectEnv(project: Project, env: Environment): ProjectEnv {
@@ -165,23 +85,39 @@ function pickProjectEnv(
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const state = useSyncExternalStore(subscribe, getSnapshot, () => emptyState);
+interface AuthProviderProps {
+  initialProfile?: Profile | null;
+  children: React.ReactNode;
+}
+
+export function AuthProvider({
+  initialProfile = null,
+  children,
+}: AuthProviderProps) {
+  const [profile, setProfile] = useState<Profile | null>(initialProfile);
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [projectEnv, setProjectEnvState] = useState<ProjectEnv | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("unknown");
-  const isReady = typeof window !== "undefined";
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>(
+    initialProfile ? "valid" : "invalid",
+  );
+  // Server-injected profile means we're already past the "is the user signed
+  // in" round-trip — no client-side bootstrap needed.
+  const isReady = true;
+
+  const isAuthenticated = profile !== null;
 
   const currentProject = useMemo(
-    () => projects.find((p) => p.id === state.projectEnv?.projectId) ?? null,
-    [projects, state.projectEnv],
+    () => projects.find((p) => p.id === projectEnv?.projectId) ?? null,
+    [projects, projectEnv],
   );
   const currentEnvironment = useMemo(
     () =>
-      currentProject?.environments.find(
-        (e) => e.id === state.projectEnv?.envId,
-      ) ?? null,
-    [currentProject, state.projectEnv],
+      currentProject?.environments.find((e) => e.id === projectEnv?.envId) ??
+      null,
+    [currentProject, projectEnv],
   );
 
   const refreshProjects = useCallback(async () => {
@@ -191,120 +127,115 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const stored = authStorage.getProjectEnv();
       const next = pickProjectEnv(list, stored);
       authStorage.setProjectEnv(next);
-      notifyAuthChange();
+      setProjectEnvState(next);
     } catch {
       setProjects([]);
     }
   }, []);
 
+  const hydrateAfterAuth = useCallback(
+    async (nextProfile: Profile) => {
+      // Caller is responsible for putting `profile` into state — either via
+      // useState initializer (server-injected path) or setProfile after login
+      // (completeLogin path). All the setState calls below are post-await so
+      // they don't trigger effect-body render cascades.
+      authStorage.setProfile(nextProfile);
+
+      try {
+        const ws = await userService.getWorkspace();
+        if (ws) {
+          authStorage.setWorkspace(ws);
+          setWorkspace(ws);
+        }
+      } catch {
+        /* optional */
+      }
+
+      try {
+        const orgs = await userService.getOrganizations(false);
+        setOrganizations(orgs);
+        const stored = authStorage.getOrganization();
+        const org = orgs.find((o) => o.id === stored?.id) || orgs[0] || null;
+        if (org) {
+          authStorage.setOrganization(org);
+          setOrganization(org);
+        }
+      } catch {
+        setOrganizations([]);
+      }
+
+      await refreshProjects();
+      setSessionStatus("valid");
+    },
+    [refreshProjects],
+  );
+
+  // Server-injected hydration: when the root layout passed us a profile, we
+  // already know the user is authenticated — fan out the secondary fetches
+  // (workspace / orgs / projects) in the background. No /api/auth/me round-trip.
   useEffect(() => {
-    if (!state.isAuthenticated) {
-      cancelScheduledRefresh();
-      setSessionStatus("invalid");
-      return;
-    }
+    if (!initialProfile) return;
+    // The setStates inside hydrateAfterAuth are all post-await — this is the
+    // canonical "fetch data on mount" pattern and the cascading-render concern
+    // doesn't apply to async hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void hydrateAfterAuth(initialProfile);
+  }, [initialProfile, hydrateAfterAuth]);
 
-    // First-time validation per tab: confirm the stored token still works.
-    if (sessionStatus === "unknown" || sessionStatus === "checking") {
-      setSessionStatus("checking");
-      userService
-        .getProfile()
-        .then((profile) => {
-          if (profile) authStorage.setProfile(profile);
-          setSessionStatus("valid");
-        })
-        .catch(() => {
-          setSessionStatus("invalid");
-        });
-      return;
-    }
-
-    if (sessionStatus !== "valid") return;
-
-    if (organizations.length === 0) {
-      userService
-        .getOrganizations(false)
-        .then((list) => setOrganizations(list))
-        .catch(() => setOrganizations([]));
-    }
-    if (projects.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      void refreshProjects();
-    }
-    scheduleNextRefresh();
-  }, [
-    state.isAuthenticated,
-    state.token,
-    sessionStatus,
-    organizations.length,
-    projects.length,
-    refreshProjects,
-  ]);
-
+  // Server-side session expired (proxy returned 401) → drop client state.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = () => {
-      cancelScheduledRefresh();
       authStorage.clearAll();
+      setProfile(null);
+      setWorkspace(null);
+      setOrganization(null);
+      setProjectEnvState(null);
+      setOrganizations([]);
+      setProjects([]);
       setSessionStatus("invalid");
-      notifyAuthChange();
     };
     window.addEventListener(SESSION_EXPIRED_EVENT, handler);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
   }, []);
 
   const completeLogin = useCallback(
-    async (token: string): Promise<Profile> => {
-      authStorage.setToken(token);
-      const profile = await userService.getProfile();
-      authStorage.setProfile(profile);
-
-      try {
-        const workspace = await userService.getWorkspace();
-        if (workspace) authStorage.setWorkspace(workspace);
-      } catch {
-        /* optional */
+    async (_token?: string): Promise<Profile> => {
+      void _token;
+      const me = await fetchMe();
+      if (!me.profile) {
+        throw new Error("Login completed but session was not found.");
       }
-
-      let orgs: Organization[] = [];
-      try {
-        orgs = await userService.getOrganizations(false);
-        const stored = authStorage.getOrganization();
-        const organization =
-          orgs.find((o) => o.id === stored?.id) || orgs[0] || null;
-        if (organization) authStorage.setOrganization(organization);
-      } catch {
-        orgs = [];
-      }
-      setOrganizations(orgs);
-
-      await refreshProjects();
-      notifyAuthChange();
-      scheduleNextRefresh();
+      setProfile(me.profile);
       setSessionStatus("valid");
-      return profile;
+      await hydrateAfterAuth(me.profile);
+      return me.profile;
     },
-    [refreshProjects],
+    [hydrateAfterAuth],
   );
 
   const logout = useCallback(async () => {
-    cancelScheduledRefresh();
     try {
       await identityService.logout();
     } catch {
       /* ignore */
     }
     authStorage.clearAll();
+    setProfile(null);
+    setWorkspace(null);
+    setOrganization(null);
+    setProjectEnvState(null);
     setOrganizations([]);
     setProjects([]);
-    notifyAuthChange();
+    setSessionStatus("invalid");
   }, []);
 
   const selectOrganization = useCallback(
     async (org: Organization) => {
       authStorage.setOrganization(org);
       authStorage.setProjectEnv(null);
-      notifyAuthChange();
+      setOrganization(org);
+      setProjectEnvState(null);
       await refreshProjects();
     },
     [refreshProjects],
@@ -315,16 +246,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const project = projects.find((p) => p.id === projectId);
       const env = project?.environments.find((e) => e.id === envId);
       if (!project || !env) return;
-      authStorage.setProjectEnv(toProjectEnv(project, env));
-      notifyAuthChange();
+      const next = toProjectEnv(project, env);
+      authStorage.setProjectEnv(next);
+      setProjectEnvState(next);
     },
     [projects],
   );
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      ...state,
       isReady,
+      isAuthenticated,
+      token: isAuthenticated ? "session" : null,
+      profile,
+      workspace,
+      organization,
+      projectEnv,
       sessionStatus,
       organizations,
       projects,
@@ -336,8 +273,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       selectProjectEnv,
     }),
     [
-      state,
       isReady,
+      isAuthenticated,
+      profile,
+      workspace,
+      organization,
+      projectEnv,
       sessionStatus,
       organizations,
       projects,

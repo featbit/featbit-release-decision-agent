@@ -175,7 +175,7 @@ function LoginPageInner() {
   const ssoEnabled = Boolean(ssoPreCheck?.isEnabled);
 
   return (
-    <Card className="glass-panel w-full max-w-lg py-6">
+    <Card className="glass-panel w-full max-w-sm py-6">
       <CardHeader className="gap-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -190,13 +190,9 @@ function LoginPageInner() {
                 FeatBit Experimentation
               </CardTitle>
               <CardDescription className="text-sm">
-                Sign in to your release decision workspace.
+                Uses your FeatBit account.
               </CardDescription>
             </div>
-          </div>
-          <div className="hidden rounded-lg border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-xs font-bold text-primary sm:flex items-center gap-1.5">
-            <Sparkles className="size-3.5" />
-            AI ready
           </div>
         </div>
       </CardHeader>

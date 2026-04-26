@@ -5,8 +5,13 @@ import type {
   Workspace,
 } from "./types";
 
+// Notes on this file post-refactor:
+// - The auth token is owned exclusively by the server (see src/lib/server-auth)
+//   and lives in an HttpOnly cookie. Nothing token-related is stored here anymore.
+// - We still keep ergonomic UI state in localStorage: which workspace/org/project
+//   the user last picked, and the "where should I land after login" hint.
+
 const STATIC_KEYS = {
-  token: "token",
   profile: "auth",
   loginRedirectUrl: "login-redirect-url",
   isSsoFirstLogin: "is-sso-first-login",
@@ -69,19 +74,15 @@ function setEnvCookie(envId: string | null) {
 }
 
 export const authStorage = {
-  getToken(): string | null {
-    if (!isBrowser()) return null;
-    return window.localStorage.getItem(STATIC_KEYS.token);
-  },
-  setToken(token: string) {
-    write(STATIC_KEYS.token, token);
-  },
-
   getProfile(): Profile | null {
     return getProfileRaw();
   },
   setProfile(profile: Profile) {
     write(STATIC_KEYS.profile, profile);
+  },
+  clearProfile() {
+    if (!isBrowser()) return;
+    window.localStorage.removeItem(STATIC_KEYS.profile);
   },
 
   getWorkspace(): Workspace | null {

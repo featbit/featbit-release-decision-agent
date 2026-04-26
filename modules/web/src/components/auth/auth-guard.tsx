@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/featbit-auth/auth-context";
-import { authStorage } from "@/lib/featbit-auth/storage";
 
 function ConnectingSplash({ message }: { message: string }) {
   return (
@@ -21,43 +20,27 @@ function ConnectingSplash({ message }: { message: string }) {
   );
 }
 
+/**
+ * Middleware enforces unauthenticated → /login redirects before this renders,
+ * so the only job left is to wait for the initial /api/auth/me round-trip.
+ * If somehow we land here without a session (cookie cleared in another tab,
+ * server-side expiry mid-session) we hand control back to /login.
+ */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isReady, isAuthenticated, sessionStatus } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
 
-  // Defer all auth-derived rendering until after the client has mounted so
-  // that SSR and the first client render agree (both show "Loading…"),
-  // preventing a hydration mismatch when useAuth resolves synchronously
-  // from localStorage.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const shouldRedirectToLogin =
-    isReady && (!isAuthenticated || sessionStatus === "invalid");
+  const shouldRedirect = isReady && sessionStatus === "invalid" && !isAuthenticated;
 
   useEffect(() => {
-    if (!shouldRedirectToLogin) return;
-    if (typeof window !== "undefined") {
-      const target = `${pathname}${window.location.search || ""}`;
-      if (target && target !== "/login") {
-        authStorage.setLoginRedirectUrl(target);
-      }
-    }
-    router.replace("/login");
-  }, [shouldRedirectToLogin, pathname, router]);
+    if (shouldRedirect) router.replace("/login");
+  }, [shouldRedirect, router]);
 
-  if (!mounted || !isReady) {
+  if (!isReady || sessionStatus === "checking" || sessionStatus === "unknown") {
     return <ConnectingSplash message="Loading…" />;
   }
-  if (shouldRedirectToLogin) {
+  if (shouldRedirect) {
     return <ConnectingSplash message="Redirecting to sign-in…" />;
   }
-  if (sessionStatus === "checking" || sessionStatus === "unknown") {
-    return <ConnectingSplash message="Moving into your target space..." />;
-  }
-
   return <>{children}</>;
 }

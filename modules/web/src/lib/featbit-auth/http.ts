@@ -1,6 +1,6 @@
-import { FEATBIT_API_V1 } from "./config";
+import { FEATBIT_PROXY_PREFIX } from "./config";
 import { authStorage } from "./storage";
-import type { ApiEnvelope, LoginToken } from "./types";
+import type { ApiEnvelope } from "./types";
 
 export class FeatBitApiError extends Error {
   readonly status: number;
@@ -17,21 +17,15 @@ export class FeatBitApiError extends Error {
 interface RequestOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined | null>;
+  /** Kept for source compatibility — has no effect now that token lives server-side. */
   skipAuth?: boolean;
   raw?: boolean;
-  /** Internal — set when this request is already a retry after refresh. Prevents loops. */
-  _isRetry?: boolean;
-  /** Internal — include credentials (for refresh endpoint). */
-  _withCredentials?: boolean;
 }
 
-function buildUrl(
-  path: string,
-  query?: RequestOptions["query"],
-) {
+function buildUrl(path: string, query?: RequestOptions["query"]) {
   const base = path.startsWith("http")
     ? path
-    : `${FEATBIT_API_V1}${path.startsWith("/") ? path : `/${path}`}`;
+    : `${FEATBIT_PROXY_PREFIX}${path.startsWith("/") ? path : `/${path}`}`;
   if (!query) return base;
   const qs = new URLSearchParams();
   Object.entries(query).forEach(([k, v]) => {
@@ -41,26 +35,9 @@ function buildUrl(
   return s ? `${base}${base.includes("?") ? "&" : "?"}${s}` : base;
 }
 
-function buildHeaders(skipAuth?: boolean): HeadersInit {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-
-  if (!skipAuth && typeof window !== "undefined") {
-    const token = authStorage.getToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const org = authStorage.getOrganization();
-    if (org?.id) headers["Organization"] = org.id;
-    const profile = authStorage.getProfile();
-    if (profile?.workspaceId) headers["Workspace"] = profile.workspaceId;
-  }
-  return headers;
-}
-
 // ── Session-expired event bus ────────────────────────────────────────────────
-// Emitted after a request fails with 401 AND the refresh attempt also failed.
-// UI layers (AuthGuard etc.) listen to decide whether to prompt re-auth.
+// Emitted when a same-origin request returns 401 — meaning the server-side
+// session has been destroyed (FeatBit refresh failed, admin logged us out, etc.).
 
 export const SESSION_EXPIRED_EVENT = "featbit:session-expired";
 
@@ -69,84 +46,46 @@ function emitSessionExpired() {
   window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
 }
 
-// ── Silent refresh (singleflight) ────────────────────────────────────────────
-// Only one refresh is in-flight at a time; concurrent 401s wait on the same promise.
-
-let refreshInflight: Promise<boolean> | null = null;
-
-async function doRefresh(): Promise<boolean> {
-  const url = buildUrl("/identity/refresh-token");
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { Accept: "application/json" },
-      credentials: "include",
-    });
-    if (!res.ok) return false;
-    const text = await res.text();
-    if (!text) return false;
-    let parsed: ApiEnvelope<LoginToken> | LoginToken;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return false;
-    }
-    const data =
-      "success" in parsed && parsed.success
-        ? (parsed.data as LoginToken | undefined)
-        : (parsed as LoginToken);
-    if (!data?.token) return false;
-    authStorage.setToken(data.token);
-    return true;
-  } catch {
-    return false;
-  }
+// Kept for source compatibility with components that imported it. Refresh now
+// happens server-side; the browser has nothing to do here.
+export async function refreshAccessToken(): Promise<boolean> {
+  return true;
 }
 
-export function refreshAccessToken(): Promise<boolean> {
-  if (refreshInflight) return refreshInflight;
-  refreshInflight = doRefresh().finally(() => {
-    refreshInflight = null;
-  });
-  return refreshInflight;
+function contextHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const out: Record<string, string> = {};
+  const org = authStorage.getOrganization();
+  if (org?.id) out["Organization"] = org.id;
+  const profile = authStorage.getProfile();
+  if (profile?.workspaceId) out["Workspace"] = profile.workspaceId;
+  return out;
 }
-
-// ── Main request function ────────────────────────────────────────────────────
 
 export async function apiRequest<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const {
-    body,
-    query,
-    skipAuth,
-    raw,
-    headers,
-    _isRetry,
-    _withCredentials,
-    ...rest
-  } = options;
+  const { body, query, raw, headers, ...rest } = options;
   const url = buildUrl(path, query);
+
   const init: RequestInit = {
     ...rest,
-    headers: { ...buildHeaders(skipAuth), ...(headers || {}) },
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...contextHeaders(),
+      ...(headers || {}),
+    },
   };
-  if (_withCredentials) {
-    init.credentials = "include";
-  }
   if (body !== undefined) {
     init.body = typeof body === "string" ? body : JSON.stringify(body);
   }
 
   const response = await fetch(url, init);
 
-  // 401 on an authenticated request → try refresh once, then retry.
-  if (response.status === 401 && !skipAuth && !_isRetry) {
-    const ok = await refreshAccessToken();
-    if (ok) {
-      return apiRequest<T>(path, { ...options, _isRetry: true });
-    }
+  if (response.status === 401) {
     emitSessionExpired();
   }
 

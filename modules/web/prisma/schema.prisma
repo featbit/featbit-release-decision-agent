@@ -179,3 +179,18 @@ model UserProjectMemory {
   @@index([featbitProjectKey, featbitUserId, type])
   @@map("user_project_memory")
 }
+
+model AuthSession {
+  id              String   @id
+  featbitToken    String   @map("featbit_token")
+  featbitCookies  Json     @map("featbit_cookies")
+  profile         Json
+  workspaceId     String?  @map("workspace_id")
+  organizationId  String?  @map("organization_id")
+  expiresAt       DateTime @map("expires_at")
+  refreshedAt     DateTime @default(now()) @map("refreshed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("auth_session")
+}
