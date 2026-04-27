@@ -56,88 +56,10 @@ function NavBar() {
 function Footer() {
   return (
     <footer className="border-t border-border/60 bg-muted/30">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
-          <div className="col-span-2 md:col-span-1">
-            <Link href="/" className="flex items-center gap-2 mb-4">
-              <Image
-                src="/logo.svg"
-                alt="FeatBit"
-                width={28}
-                height={28}
-                className="size-7 shrink-0"
-              />
-              <span className="font-semibold text-sm">FeatBit</span>
-            </Link>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              AI-powered experiment management for data-driven release decisions.
-            </p>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-foreground mb-3">Product</p>
-            <ul className="space-y-2">
-              <li>
-                <Link href="/experiments" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Dashboard
-                </Link>
-              </li>
-              <li>
-                <Link href="/experiments/new" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  New experiment
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-foreground mb-3">Content</p>
-            <ul className="space-y-2">
-              <li>
-                <Link href="/blog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Blog
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-foreground mb-3">Open source</p>
-            <ul className="space-y-2">
-              <li>
-                <a
-                  href="https://github.com/featbit/featbit"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  GitHub
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://docs.featbit.co"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Documentation
-                </a>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="mt-10 pt-6 border-t border-border/60 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            © {new Date().getFullYear()} FeatBit. Open source under MIT license.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Built with{" "}
-            <span className="text-brand font-medium">♥</span>
-            {" "}for engineering teams.
-          </p>
-        </div>
+      <div className="mx-auto max-w-6xl px-6 py-6 text-center">
+        <p className="text-xs text-muted-foreground">
+          © {new Date().getFullYear()} FeatBit Inc. All rights reserved.
+        </p>
       </div>
     </footer>
   );

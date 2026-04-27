@@ -118,9 +118,17 @@ export async function refreshIfNeeded(session: ServerSession): Promise<ServerSes
   if (!tokenExpiresSoon(session.token)) return session;
   const existing = inflight.get(session.id);
   if (existing) return existing;
-  const promise = doRefresh(session).finally(() => {
-    inflight.delete(session.id);
-  });
+  const promise = doRefresh(session)
+    .catch((err) => {
+      // Network errors (fetch failed, ECONNREFUSED, etc.) should not crash the
+      // page tree. Return the existing session so the user stays logged in; the
+      // refresh will be retried on the next request.
+      console.error("[refreshIfNeeded] token refresh failed, keeping stale session:", err);
+      return session;
+    })
+    .finally(() => {
+      inflight.delete(session.id);
+    });
   inflight.set(session.id, promise);
   return promise;
 }
