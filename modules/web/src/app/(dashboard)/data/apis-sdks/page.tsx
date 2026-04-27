@@ -40,6 +40,11 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
+// Production track-service endpoint — the real ingest URL for A/B testing
+// events. Distinct from NEXT_PUBLIC_FEATBIT_API_URL (which is the FeatBit
+// backend, not track-service). Matches the default in track-client.ts.
+const TRACK_BASE_URL = "https://track.featbit.ai";
+
 // ── Per-SDK snippets for the SDKs section ────────────────────────────────────
 // Pattern: (1) a project-internal helper trackFlagForExpt(user, variant),
 // (2) call it right after the FeatBit SDK evaluation.
@@ -441,8 +446,9 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
         <h2 className="text-lg font-semibold">APIs</h2>
         <p className="text-sm text-muted-foreground max-w-2xl mt-1">
           The HTTP surface of <strong>track-service</strong>, FeatBit&apos;s
-          managed data warehouse for experiment events. Everything below is
-          transport — one payload shape, two endpoints.
+          managed data warehouse for experiment events.{" "}
+          <code>POST /api/track/event</code> sends one event;{" "}
+          <code>POST /api/track</code> sends a batch (array of the same body).
         </p>
       </div>
 
@@ -450,226 +456,56 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Base URL &amp; auth</CardTitle>
+          <CardTitle>Base URL</CardTitle>
           <CardDescription>
-            Track-service exposes two ingest endpoints. The environment ID
-            goes in the <code>Authorization</code> header — it identifies
-            which FeatBit environment the events belong to.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <div className="space-y-1">
-            <div className="text-muted-foreground">Local (docker-compose):</div>
-            <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
-              http://localhost:5050
-            </code>
-          </div>
-          <div className="space-y-1">
-            <div className="text-muted-foreground">In-cluster:</div>
-            <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
-              http://track-service:8080
-            </code>
-          </div>
-          <div className="space-y-1">
-            <div className="text-muted-foreground">Header:</div>
-            <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
-              Authorization: &lt;envSecret&gt;
-            </code>
-            <p className="text-xs text-muted-foreground">
-              The env secret is a signed token
-              (<code>fbes.&lt;b64url(envId)&gt;.&lt;b64url(hmac)&gt;</code>)
-              that track-service parses to recover the envId and verify the
-              caller holds the signing key. The plain envId is what lands in
-              ClickHouse as the partition key — tokens never touch storage.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Mint one with the CLI:
-            </p>
-            <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
-              TRACK_SERVICE_SIGNING_KEY=… npx tsx scripts/generate-env-secret.ts rat-env-v1
-            </code>
-            <p className="text-xs text-muted-foreground">
-              When the deployed track-service has no signing key configured
-              (local dev, legacy setups), the header is trusted as a plain
-              envId — snippets below that use <code>rat-env-v1</code> keep
-              working unchanged.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>The two endpoints</CardTitle>
-          <CardDescription>
-            There is <strong>no per-event-type endpoint</strong>. Both{" "}
-            <code>flag_evaluation</code> and <code>metric</code> events go
-            through the same two routes — what makes it a flag-eval event
-            vs. a metric event is which field of the payload you fill in.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <div className="flex items-start gap-2">
-            <Badge>POST</Badge>
-            <div>
-              <code className="font-mono">/api/track</code>
-              <span className="text-muted-foreground">
-                {" "}— batch. Body is an array of <code>TrackPayload</code>.
-                Use this from SDKs that buffer events and flush periodically.
-              </span>
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Badge>POST</Badge>
-            <div>
-              <code className="font-mono">/api/track/event</code>
-              <span className="text-muted-foreground">
-                {" "}— single. Body is one <code>TrackPayload</code>. Handy
-                from scripts, webhooks, or servers that only have one event
-                at a time.
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Payload shape</CardTitle>
-          <CardDescription>
-            One payload is one user plus any mix of <code>variations</code>{" "}
-            (flag exposures) and <code>metrics</code> (conversions). In
-            practice they are sent separately — a flag evaluation fires at
-            exposure time, while the metric event fires later when the user
-            converts. The <strong>same <code>user.keyId</code></strong> on
-            both is what lets the query layer join them.
+            The managed track-service endpoint. The{" "}
+            <code>Authorization</code> header carries your env secret
+            (see card above).
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{`{
-  "user": {
-    "keyId":      "string",          // required, stable user id
-    "properties": { "k": "v" }       // optional, stored as JSON
-  },
-  "variations": [
-    {
-      "flagKey":      "string",      // required
-      "variant":      "string",      // required, e.g. "control" | "treatment"
-      "timestamp":    1776300000000, // epoch ms
-      "experimentId": "string",      // optional
-      "layerId":      "string"       // optional
-    }
-  ],
-  "metrics": [
-    {
-      "eventName":    "string",      // required, e.g. "checkout-completed"
-      "timestamp":    1776300060000, // epoch ms
-      "numericValue": 42.5,          // optional, for revenue / duration
-      "type":         "string"       // optional
-    }
-  ]
-}`}</pre>
+          <code className="block px-3 py-2 rounded bg-muted font-mono text-xs">
+            {TRACK_BASE_URL}
+          </code>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Field-by-field meaning</CardTitle>
+          <CardTitle>Recording Traffic Events</CardTitle>
           <CardDescription>
-            What each field is used for downstream.
+            One <code>variations[]</code> entry per flag evaluation. The
+            same <code>user.keyId</code> on the metric event later is what
+            lets the query layer attribute conversions back to the variant.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-[auto,1fr] gap-x-4 gap-y-3 text-sm">
-            <code className="font-mono text-xs pt-0.5">user.keyId</code>
-            <div>
-              <div>
-                Stable identifier for the subject of the exposure and the
-                metric. <strong>The join key.</strong> Whatever you pass on
-                a flag_evaluation call must be the exact same string on the
-                corresponding metric event, or the metric will not be
-                attributed.
-              </div>
-              <div className="text-muted-foreground text-xs mt-1">
-                Typically a logged-in user id, an anonymous cookie id, a
-                device id, or a session id — whichever granularity your
-                experiment randomizes at.
-              </div>
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">user.properties</code>
-            <div>
-              <div>
-                Optional flat map stored as JSON. Lets you slice results
-                later (country, plan, platform, app version).
-              </div>
-              <div className="text-muted-foreground text-xs mt-1">
-                Keep it lean. Only include properties the experiment actually
-                slices on. Real experiments often get by with just{" "}
-                <code>keyId</code>.
-              </div>
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">variations[].flagKey</code>
-            <div>Which flag was evaluated. Must match the flag key used in stats-service analysis.</div>
-
-            <code className="font-mono text-xs pt-0.5">variations[].variant</code>
-            <div>
-              Which branch the user got — usually <code>control</code> /{" "}
-              <code>treatment</code>, but any string your experiment is
-              configured for works (multi-variant, hold-out, etc.).
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">variations[].timestamp</code>
-            <div>
-              Exposure time (epoch ms). Analysis attributes each user to their{" "}
-              <em>first</em> exposure; later exposures of the same user/flag
-              are ignored for the join.
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">variations[].experimentId</code>
-            <div>
-              Optional. Set only when the exposure should be attributed to a
-              specific experiment run. For plain feature-flag rollouts, leave
-              it out.
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">variations[].layerId</code>
-            <div>Optional. For mutually-exclusive layers where a user is in at most one experiment per layer.</div>
-
-            <code className="font-mono text-xs pt-0.5">metrics[].eventName</code>
-            <div>
-              The conversion / revenue / duration event name. Must match the
-              metric name configured on the experiment.
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">metrics[].timestamp</code>
-            <div>
-              Event time (epoch ms). Must be <code>≥</code> the exposure
-              timestamp; otherwise the attribution pipeline drops it.
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">metrics[].numericValue</code>
-            <div>
-              Optional. Carries the quantity for revenue / duration / any
-              continuous metric. Omit for pure conversion events (presence of
-              the event = 1).
-            </div>
-
-            <code className="font-mono text-xs pt-0.5">metrics[].type</code>
-            <div>Optional. Reserved for future aggregation hints — leave unset.</div>
-          </div>
+          <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST ${TRACK_BASE_URL}/api/track/event \\
+  -H "Authorization: rat-env-v1" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "user": {
+      "keyId": "user-123",                  // required, stable user id — THE join key with metric events
+      "properties": { "country": "US" }     // optional flat map; lets you slice results later (country, plan, platform…)
+    },
+    "variations": [{
+      "flagKey":      "new-checkout",       // required — must match the flag key analyzed downstream
+      "variant":      "treatment",          // required — usually "control" / "treatment"; any string your experiment configures
+      "timestamp":    1776300000000,        // exposure time, epoch ms (Date.now()). Analysis uses the FIRST exposure; later ones are ignored
+      "experimentId": "exp-checkout-q2",    // optional — set only when this exposure attributes to a specific run
+      "layerId":      "checkout-layer"      // optional — for mutually-exclusive layers (a user is in at most one experiment per layer)
+    }]
+  }'`, envSecret)}</pre>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Recording metric events</CardTitle>
+          <CardTitle>Recording Metric Events</CardTitle>
           <CardDescription>
-            Same endpoint as flag_evaluation. Only contract:{" "}
-            <code>user.keyId</code> must match the one used at exposure, and{" "}
-            <code>metric.timestamp</code> must be{" "}
-            <code>≥</code> the exposure timestamp.
+            Same endpoint. Two contracts: <code>user.keyId</code> must match
+            the one used at exposure, and <code>metric.timestamp</code> must
+            be <code>≥</code> the exposure timestamp.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5 text-sm">
@@ -680,14 +516,16 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
               is users exposed; numerator is users who fired the event at
               least once post-exposure.
             </p>
-            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST http://localhost:5050/api/track/event \\
+            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST ${TRACK_BASE_URL}/api/track/event \\
   -H "Authorization: rat-env-v1" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "user": { "keyId": "user-123" },
+    "user": {
+      "keyId": "user-123"                   // MUST match the keyId used at exposure, or attribution drops the event
+    },
     "metrics": [{
-      "eventName": "checkout-completed",
-      "timestamp": 1776300060000
+      "eventName": "checkout-completed",    // required — must match the metric configured on the experiment
+      "timestamp": 1776300060000            // event time, epoch ms; must be ≥ exposure timestamp or it will not be attributed
     }]
   }'`, envSecret)}</pre>
           </div>
@@ -696,10 +534,10 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
             <div className="font-medium">Revenue (continuous value)</div>
             <p className="text-muted-foreground">
               Fire the event per transaction and put the amount in{" "}
-              <code>numericValue</code>. Pick a consistent unit
-              (cents, or primary currency unit) — stats-service sums as-is.
+              <code>numericValue</code>. Pick a consistent unit (cents, or
+              primary currency unit) — stats-service sums as-is.
             </p>
-            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST http://localhost:5050/api/track/event \\
+            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST ${TRACK_BASE_URL}/api/track/event \\
   -H "Authorization: rat-env-v1" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -707,7 +545,7 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
     "metrics": [{
       "eventName":    "purchase",
       "timestamp":    1776300060000,
-      "numericValue": 42.50
+      "numericValue": 42.50                 // quantity (consistent unit) — omit for binary conversion events
     }]
   }'`, envSecret)}</pre>
           </div>
@@ -719,7 +557,7 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
               <code>numericValue</code> (milliseconds is the convention across
               stats-service).
             </p>
-            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST http://localhost:5050/api/track/event \\
+            <pre className="px-3 py-2 rounded bg-muted font-mono text-xs overflow-x-auto">{withEnvSecret(`curl -X POST ${TRACK_BASE_URL}/api/track/event \\
   -H "Authorization: rat-env-v1" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -727,7 +565,7 @@ function ApisSection({ envSecret }: { envSecret: string | null }) {
     "metrics": [{
       "eventName":    "page-load",
       "timestamp":    1776300060000,
-      "numericValue": 842
+      "numericValue": 842                   // duration in ms (the stats-service convention)
     }]
   }'`, envSecret)}</pre>
           </div>
@@ -835,7 +673,7 @@ function SdksSection({ envSecret }: { envSecret: string | null }) {
                 <Tabs.Tab
                   key={s.id}
                   value={s.id}
-                  className="px-3 py-1.5 text-xs font-medium text-muted-foreground rounded-t hover:text-foreground data-[selected]:text-foreground data-[selected]:border-b-2 data-[selected]:border-foreground -mb-px cursor-pointer"
+                  className="px-3 py-1.5 text-xs font-medium text-muted-foreground border-b-2 border-transparent rounded-t hover:text-foreground data-[active]:text-foreground data-[active]:font-semibold data-[active]:border-foreground -mb-px cursor-pointer"
                 >
                   {s.label}
                 </Tabs.Tab>
