@@ -351,18 +351,16 @@ Content-Type: application/json
   "metricEvent": "page_view",
   "startDate":   "2026-04-01",
   "endDate":     "2026-04-14",
-  "metricType":  "binary",        // optional; "binary" | "continuous"
-  "metricAgg":   "once"           // optional; "once" | "count" | "sum" | "average"
+  "metricType":  "binary",        // required; "binary" | "continuous"
+  "metricAgg":   "once"           // required; "once" | "count" | "sum" | "average"
 }
 ```
 
-`metricType` and `metricAgg` are optional. When present, track-service picks
-the per-user contribution column accordingly (binary → 0/1; count → events
-per user; sum → Σ values; average → mean per user). Track-client also uses
-`metricType` to select the response shape (`{n, k}` for binary,
-`{n, sum, sum_squares}` for continuous), skipping its legacy heuristic. When
-both are omitted the legacy "everything" SQL behaviour kicks in for
-back-compat — see `modules/track-service/Services/ClickHouseQueryClient.cs`.
+All six fields are required — track-service rejects requests missing any of
+them with a 400. `metricType` decides both the per-user SQL contribution
+column (binary → 0/1; count → events per user; sum → Σ values;
+average → mean per user) and the response shape track-client returns to the
+analyzer (`{n, k}` for binary, `{n, sum, sum_squares}` for continuous).
 
 ### track-service → ClickHouse
 

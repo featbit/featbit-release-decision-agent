@@ -23,10 +23,17 @@ public static class QueryEndpoint
             if (string.IsNullOrWhiteSpace(req.FlagKey) ||
                 string.IsNullOrWhiteSpace(req.MetricEvent) ||
                 string.IsNullOrWhiteSpace(req.StartDate) ||
-                string.IsNullOrWhiteSpace(req.EndDate))
+                string.IsNullOrWhiteSpace(req.EndDate) ||
+                string.IsNullOrWhiteSpace(req.MetricType) ||
+                string.IsNullOrWhiteSpace(req.MetricAgg))
             {
-                return Results.BadRequest("flagKey, metricEvent, startDate, endDate are all required");
+                return Results.BadRequest(
+                    "flagKey, metricEvent, startDate, endDate, metricType, metricAgg are all required");
             }
+            if (req.MetricType is not ("binary" or "continuous"))
+                return Results.BadRequest("metricType must be 'binary' or 'continuous'");
+            if (req.MetricAgg is not ("once" or "count" or "sum" or "average"))
+                return Results.BadRequest("metricAgg must be 'once' | 'count' | 'sum' | 'average'");
 
             // Back-compat: if the body also carries envId, require it to match
             // the token's envId. Catches stale callers pointing at the wrong env.

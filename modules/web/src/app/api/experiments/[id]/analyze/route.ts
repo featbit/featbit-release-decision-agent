@@ -91,6 +91,16 @@ export async function POST(
   let dataSource: "live" | "stored" = "live";
 
   if (canLiveFetch) {
+    // Narrow Prisma's `string | null` to MetricSpec's canonical literal union.
+    // Run rows always have a value (DB default 'binary' / 'once'; the
+    // experiment-run POST validator rejects anything else), so a missing
+    // value here means a row that pre-dated the column — fall back to the
+    // same DB default.
+    const narrowType = (v: string | null | undefined): "binary" | "continuous" =>
+      v === "continuous" ? "continuous" : "binary";
+    const narrowAgg = (v: string | null | undefined): "once" | "count" | "sum" | "average" =>
+      v === "count" || v === "sum" || v === "average" ? v : "once";
+
     metrics = (await queryAllMetrics({
       envId: envId as string,
       flagKey: flagKey as string,
@@ -101,13 +111,13 @@ export async function POST(
       // matches what the analyzer expects.
       primary: {
         event:      run.primaryMetricEvent,
-        metricType: run.primaryMetricType ?? undefined,
-        metricAgg:  run.primaryMetricAgg  ?? undefined,
+        metricType: narrowType(run.primaryMetricType),
+        metricAgg:  narrowAgg(run.primaryMetricAgg),
       },
       guardrails: guardrailDefs.map((g) => ({
         event:      g.event,
-        metricType: g.metricType,
-        metricAgg:  g.metricAgg,
+        metricType: narrowType(g.metricType),
+        metricAgg:  narrowAgg(g.metricAgg),
       })),
     })) as MetricsDict | null;
   }

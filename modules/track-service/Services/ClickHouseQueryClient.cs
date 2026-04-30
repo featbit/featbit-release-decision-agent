@@ -27,8 +27,8 @@ public sealed class ClickHouseQueryClient(
         string metricEvent,
         DateOnly start,
         DateOnly end,
-        string? metricType,
-        string? metricAgg,
+        string metricType,
+        string metricAgg,
         CancellationToken ct)
     {
         // Unit of analysis is the user: n = users, x_i = that user's contribution
@@ -39,23 +39,24 @@ public sealed class ClickHouseQueryClient(
         // Σ(per-event value²). That's why we aggregate per-user in user_totals
         // FIRST and only square at the outer layer.
         //
-        // Per-user contribution (x_i) depends on metricAgg:
+        // Per-user contribution (x_i) is selected by NormaliseAgg:
         //   "once"    → if(conv_count > 0, 1, 0)   — binary, capped at 1/user
         //   "count"   → conv_count                 — number of qualifying events
         //   "sum"     → user_sum                   — Σ numeric_value across events
         //   "average" → user_avg                   — mean numeric_value across events
-        //   null/other → user_sum (legacy default; back-compat for callers
-        //                that don't yet send metricAgg)
         //
-        // `conversions` (countIf conv_count > 0) is always emitted so the
-        // legacy {n, k} shape keeps working when track-client falls back to
-        // the heuristic. For "once" it equals the cohort's converter count.
+        // `conversions` (countIf conv_count > 0) is also emitted because
+        // track-client uses it directly as `k` for binary metrics.
         var userContribution = NormaliseAgg(metricType, metricAgg) switch
         {
             "once"    => "if(ifNull(ut.conv_count, 0) > 0, 1.0, 0.0)",
             "count"   => "toFloat64(ifNull(ut.conv_count, 0))",
+            "sum"     => "ifNull(ut.user_sum, 0)",
             "average" => "ifNull(ut.user_avg, 0)",
-            _         => "ifNull(ut.user_sum, 0)",   // "sum" or unspecified
+            var unknown => throw new ArgumentException(
+                $"Unsupported metricAgg '{unknown}' (after normalisation). " +
+                "Endpoint validation should have caught this — bug in track-service.",
+                nameof(metricAgg)),
         };
 
         var sql = $@"
@@ -143,18 +144,15 @@ ORDER BY variant;
     /// <summary>
     /// Resolve the canonical per-user aggregation. Binary metrics always
     /// collapse to "once" regardless of what was sent (you can't sum a yes/no
-    /// answer). Anything unrecognised falls back to "sum" — the legacy SQL
-    /// behaviour, so old callers that don't send metricType/metricAgg keep
-    /// working unchanged.
+    /// answer). Endpoint validation already rejects unknown metricAgg values,
+    /// so this method's switch always returns one of the four canonical
+    /// values; the GetVariantStatsAsync caller reuses that guarantee to
+    /// throw on unexpected values without a silent fallback.
     /// </summary>
-    private static string NormaliseAgg(string? metricType, string? metricAgg)
+    private static string NormaliseAgg(string metricType, string metricAgg)
     {
         if (string.Equals(metricType, "binary", StringComparison.Ordinal))
             return "once";
-        return metricAgg switch
-        {
-            "once" or "count" or "sum" or "average" => metricAgg,
-            _ => "sum",
-        };
+        return metricAgg;
     }
 }
