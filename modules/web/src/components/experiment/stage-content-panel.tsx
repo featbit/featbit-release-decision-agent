@@ -389,19 +389,22 @@ function FlagAndExperimentSection({
 }
 
 /* ── Metrics integration section ── */
+// metricType / metricAgg vocabulary is the canonical set ("continuous" not "numeric";
+// adds "average") shared with the run columns and sync.ts. See AGENTS.md → Metric
+// Vocabulary. Parser below tolerates legacy "numeric" values for back-compat.
 type PrimaryMetric = {
   name?: string;
   event?: string;
-  metricType?: "binary" | "numeric";
-  metricAgg?: "once" | "count" | "sum";
+  metricType?: "binary" | "continuous";
+  metricAgg?: "once" | "count" | "sum" | "average";
   description?: string;
 };
 
 type GuardrailMetric = {
   name?: string;
   event?: string;
-  metricType?: "binary" | "numeric";
-  metricAgg?: "once" | "count" | "sum";
+  metricType?: "binary" | "continuous";
+  metricAgg?: "once" | "count" | "sum" | "average";
   direction?: "increase_bad" | "decrease_bad";
   description?: string;
 };
@@ -545,7 +548,13 @@ function MetricsIntegrationSection({
 }
 
 function formatAgg(agg?: string): string {
-  return agg === "once" ? "once per user" : agg === "count" ? "count all" : agg === "sum" ? "sum values" : "—";
+  switch (agg) {
+    case "once":    return "once per user";
+    case "count":   return "count all";
+    case "sum":     return "sum values";
+    case "average": return "average values";
+    default:        return "—";
+  }
 }
 
 /* ── Single experiment run card ── */

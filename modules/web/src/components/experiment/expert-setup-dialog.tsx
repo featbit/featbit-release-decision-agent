@@ -75,7 +75,8 @@ type GuardrailRow = {
   event: string;
   description: string;
   inverse: boolean;
-  metricType: string;          // "binary" | "numeric"
+  metricType: string;          // "binary" | "continuous"
+  metricAgg: string;           // "once" | "count" | "sum" | "average"
   dataRows: DataRow[];         // observed data per variant (optional)
   dataSource: DataSource;      // where the numbers come from
   dataSourceNote: string;      // free-text for "external"
@@ -88,15 +89,20 @@ function asDataSource(v: unknown): DataSource {
 
 /**
  * Force `metricAgg` to a value that's valid for the given `metricType`.
- * - binary  → only "once" makes sense (yes/no per user)
- * - numeric → "count" / "sum" / "average" (per-user pre-aggregation choice);
- *             "once" doesn't apply
+ * - binary     → only "once" makes sense (yes/no per user)
+ * - continuous → "count" / "sum" / "average" (per-user pre-aggregation choice);
+ *                "once" doesn't apply
  */
 function coerceAggForType(agg: string, type: string): string {
   if (type === "binary") return "once";
-  // numeric
+  // continuous
   if (agg === "count" || agg === "sum" || agg === "average") return agg;
   return "sum";
+}
+
+/** Normalise legacy "numeric" rows → canonical "continuous". */
+function normalizeMetricType(value: unknown): "binary" | "continuous" {
+  return value === "continuous" || value === "numeric" ? "continuous" : "binary";
 }
 
 /* ── Parse helpers: reuse logic from metric-edit and analyze route ── */
@@ -108,11 +114,12 @@ function parsePrimaryMetric(value: string | null | undefined) {
   try {
     const p = JSON.parse(value);
     if (p && typeof p === "object") {
+      const metricType = normalizeMetricType(p.metricType);
       return {
         name: p.name ?? "",
         event: p.event ?? "",
-        metricType: p.metricType ?? "binary",
-        metricAgg: p.metricAgg ?? "once",
+        metricType,
+        metricAgg: coerceAggForType(p.metricAgg ?? "once", metricType),
         description: p.description ?? "",
         inverse: Boolean(p.inverse),
         dataSource: asDataSource(p.dataSource),
@@ -131,12 +138,15 @@ function parseGuardrails(value: string | null | undefined): GuardrailRow[] {
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
-      return parsed.map((g) => ({
+      return parsed.map((g) => {
+        const metricType = normalizeMetricType(g.metricType);
+        return {
         name: g.name ?? g.event ?? "",
         event: g.event ?? "",
         description: g.description ?? "",
         inverse: Boolean(g.inverse),
-        metricType: g.metricType ?? "binary",
+        metricType,
+        metricAgg: coerceAggForType(g.metricAgg ?? "once", metricType),
         dataRows: Array.isArray(g.dataRows)
           ? g.dataRows.map((r: Partial<DataRow>) => ({
               variant: r.variant ?? "",
@@ -147,7 +157,8 @@ function parseGuardrails(value: string | null | undefined): GuardrailRow[] {
           : [],
         dataSource: asDataSource(g.dataSource),
         dataSourceNote: g.dataSourceNote ?? "",
-      }));
+        };
+      });
     }
   } catch {/* ignore */}
   return [];
@@ -526,6 +537,7 @@ function GuardrailsEditor({
       {
         name: "", event: "", description: "", inverse: false,
         metricType: "binary",
+        metricAgg: "once",
         dataRows: defaultVariants.map((v) => ({ variant: v, n: "", s: "", ss: "" })),
         dataSource: "manual",
         dataSourceNote: "",
@@ -575,7 +587,7 @@ function GuardrailsEditor({
               />
             </div>
           </div>
-          <div className="grid grid-cols-[1fr_auto] gap-2 pr-5 items-end">
+          <div className="grid grid-cols-[1fr_auto_auto] gap-2 pr-5 items-end">
             <div className="space-y-1">
               <LabelWithHelp
                 label="Description"
@@ -604,7 +616,11 @@ function GuardrailsEditor({
               />
               <select
                 value={row.metricType}
-                onChange={(e) => update(i, "metricType", e.target.value)}
+                onChange={(e) => {
+                  const nextType = e.target.value;
+                  update(i, "metricType", nextType);
+                  update(i, "metricAgg", coerceAggForType(row.metricAgg, nextType));
+                }}
                 className={cn(
                   "h-7 rounded-lg border border-input bg-transparent px-2 py-0 text-xs",
                   "transition-colors outline-none",
@@ -612,7 +628,44 @@ function GuardrailsEditor({
                 )}
               >
                 <option value="binary">Binary</option>
-                <option value="numeric">Numeric</option>
+                <option value="continuous">Numeric</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <LabelWithHelp
+                label="Agg"
+                className="text-[10px] uppercase text-muted-foreground"
+                help={row.metricType === "binary" ? (
+                  <>Binary metrics aggregate as <b>once per user</b> — there is no other meaningful choice.</>
+                ) : (
+                  <>
+                    <b>Count</b> — number of events per user.
+                    <br />
+                    <b>Sum</b> — sum of values per user.
+                    <br />
+                    <b>Average</b> — mean of values per user.
+                  </>
+                )}
+              />
+              <select
+                value={row.metricAgg}
+                onChange={(e) => update(i, "metricAgg", e.target.value)}
+                disabled={row.metricType === "binary"}
+                className={cn(
+                  "h-7 rounded-lg border border-input bg-transparent px-2 py-0 text-xs",
+                  "transition-colors outline-none disabled:opacity-60",
+                  "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                )}
+              >
+                {row.metricType === "binary" ? (
+                  <option value="once">Once per user</option>
+                ) : (
+                  <>
+                    <option value="count">Count</option>
+                    <option value="sum">Sum</option>
+                    <option value="average">Average</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
@@ -688,7 +741,7 @@ function GuardrailDataTable({
   metricType: string;
   onChange: (next: DataRow[]) => void;
 }) {
-  const isNumeric = metricType === "numeric";
+  const isNumeric = metricType === "continuous";
   const gridCols = isNumeric
     ? "grid-cols-[1fr_1fr_1fr_1fr_auto]"
     : "grid-cols-[1fr_1fr_1fr_auto]";
@@ -786,7 +839,7 @@ function VariantsDataEditor({
         { variant: "treatment", n: "", s: "", ss: "" },
       ];
   const [rows, setRows] = useState<DataRow[]>(base);
-  const isNumeric = metricType === "numeric";
+  const isNumeric = metricType === "continuous";
 
   function update(i: number, field: keyof DataRow, v: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: v } : r)));
@@ -1223,7 +1276,7 @@ function ExpertSetupForm({
               )}
             >
               <option value="binary">Binary (conversion)</option>
-              <option value="numeric">Numeric (value)</option>
+              <option value="continuous">Numeric (value)</option>
             </select>
           </div>
           <div className="space-y-1">

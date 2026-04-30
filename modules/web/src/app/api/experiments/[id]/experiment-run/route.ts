@@ -5,7 +5,7 @@ const VALID_RUN_STATUSES = new Set(["draft", "collecting", "analyzing", "decided
 const VALID_METHODS = new Set(["bayesian_ab", "frequentist", "bandit"]);
 const VALID_DECISIONS = new Set(["CONTINUE", "PAUSE", "ROLLBACK", "INCONCLUSIVE"]);
 const VALID_METRIC_TYPES = new Set(["binary", "continuous"]);
-const VALID_METRIC_AGG = new Set(["once", "sum", "last"]);
+const VALID_METRIC_AGG = new Set(["once", "count", "sum", "average"]);
 
 function validateRunFields(fields: Record<string, unknown>): string | null {
   if (fields.status !== undefined && !VALID_RUN_STATUSES.has(fields.status as string))

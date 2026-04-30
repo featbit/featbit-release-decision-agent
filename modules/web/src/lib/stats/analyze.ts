@@ -138,6 +138,19 @@ export function computeMetricSection(
 // FULL ANALYSIS
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Per-guardrail definition. Carries enough metadata for the analyzer to honour
+ * the user's declared aggregation and direction without re-reading the
+ * Experiment row. Mirrors the GuardrailDef shape produced by parseGuardrailDefs
+ * in lib/data.ts.
+ */
+export interface GuardrailDefInput {
+  event: string;
+  metricType?: string;   // canonical: "binary" | "continuous"
+  metricAgg?: string;    // canonical: "once" | "count" | "sum" | "average"
+  inverse?: boolean;
+}
+
 export interface AnalysisInput {
   slug: string;
   metrics: Record<string, Record<string, unknown>>;
@@ -149,6 +162,13 @@ export interface AnalysisInput {
   priorMean?: number;
   priorStddev?: number;
   minimumSample?: number;
+  /**
+   * Rich guardrail definitions. Use this in preference to `guardrailEvents`.
+   * The legacy string[] form (event names only) is still accepted for
+   * back-compat — it maps to GuardrailDefInput[] with default binary/once.
+   */
+  guardrails?: GuardrailDefInput[] | null;
+  /** @deprecated pass `guardrails` instead. */
   guardrailEvents?: string[] | null;
   primaryMetricAgg?: string;
 }
@@ -171,9 +191,15 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
     priorMean = 0,
     priorStddev = 0.3,
     minimumSample = 0,
+    guardrails: guardrailDefsIn,
     guardrailEvents,
     primaryMetricAgg,
   } = input;
+
+  // Normalise both call shapes to GuardrailDefInput[]. Legacy callers passed
+  // string[] (event names only); the new path passes the rich GuardrailDef[].
+  const guardrailDefs: GuardrailDefInput[] = guardrailDefsIn
+    ?? (guardrailEvents ?? []).map((event) => ({ event }));
 
   // Build prior
   const prior: GaussianPrior = {
@@ -228,7 +254,7 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
   };
 
   // Primary metric (first non-guardrail metric)
-  const guardrailSet = new Set(guardrailEvents ?? []);
+  const guardrailSet = new Set(guardrailDefs.map((g) => g.event));
   const primaryKey = metricKeys.find((k) => !guardrailSet.has(k)) ?? metricKeys[0];
   const primaryData = metrics[primaryKey];
 
@@ -249,13 +275,26 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
     }
   }
 
-  // Guardrails
-  const guardrails: MetricSection[] = [];
-  for (const gEvent of guardrailEvents ?? []) {
-    const gData = metrics[gEvent];
+  // Guardrails. Live track-service responses don't carry the user's `inverse`
+  // declaration, so attach it here from the guardrail definition before
+  // computeMetricSection reads `mdata.inverse`. Same for metricAgg.
+  const guardrailSections: MetricSection[] = [];
+  for (const def of guardrailDefs) {
+    const gData = metrics[def.event] as Record<string, unknown> | undefined;
     if (!gData) continue;
-    const section = computeMetricSection(gEvent, gData, control, treatments, true);
-    if (section) guardrails.push(section);
+    if (def.inverse && gData.inverse === undefined) {
+      gData.inverse = true;
+    }
+    const section = computeMetricSection(
+      def.event,
+      gData,
+      control,
+      treatments,
+      true,
+      undefined,
+      def.metricAgg,
+    );
+    if (section) guardrailSections.push(section);
   }
 
   return {
@@ -271,7 +310,7 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
     prior: priorLabel,
     srm,
     primary_metric: primaryMetric,
-    guardrails,
+    guardrails: guardrailSections,
     sample_check: sampleCheck,
     ...(warnings.length > 0 ? { warnings } : {}),
   };

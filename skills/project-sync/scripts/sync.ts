@@ -32,7 +32,7 @@
  *  method:            bayesian_ab | frequentist | bandit
  *  decision:          CONTINUE | PAUSE | ROLLBACK | INCONCLUSIVE
  *  primaryMetricType: binary | continuous
- *  primaryMetricAgg:  once | sum | last
+ *  primaryMetricAgg:  once | count | sum | average
  *
  * FIELD FORMAT STANDARDS (for update-state)
  * ─────────────────────────────────────────────────────────────────────────────
@@ -82,9 +82,12 @@ const VALID_METHODS = new Set(["bayesian_ab", "frequentist", "bandit"]);
 
 const VALID_DECISIONS = new Set(["CONTINUE", "PAUSE", "ROLLBACK", "INCONCLUSIVE"]);
 
+// Single canonical vocabulary used by ALL paths (run columns AND state JSON).
+// Use these everywhere — never reintroduce the legacy "numeric" / "last" /
+// "count-only" subsets, which used to differ between run and state writes.
 const VALID_METRIC_TYPES = new Set(["binary", "continuous"]);
 
-const VALID_METRIC_AGG = new Set(["once", "sum", "last"]);
+const VALID_METRIC_AGG = new Set(["once", "count", "sum", "average"]);
 
 // Fields allowed in update-state
 const ALLOWED_STATE_FIELDS = new Set([
@@ -218,8 +221,6 @@ async function getExperiment(experimentId: string) {
   console.log(JSON.stringify(experiment, null, 2));
 }
 
-const METRIC_TYPES = new Set(["binary", "numeric"]);
-const METRIC_AGGS = new Set(["once", "count", "sum"]);
 const GUARDRAIL_DIRECTIONS = new Set(["increase_bad", "decrease_bad"]);
 
 /**
@@ -243,14 +244,14 @@ function validateMetricObject(
       errs.push(`${kind}.${key} is required (non-empty string).`);
     }
   }
-  if (typeof o.metricType !== "string" || !METRIC_TYPES.has(o.metricType)) {
+  if (typeof o.metricType !== "string" || !VALID_METRIC_TYPES.has(o.metricType)) {
     errs.push(
-      `${kind}.metricType must be one of: ${[...METRIC_TYPES].join(" | ")}`,
+      `${kind}.metricType must be one of: ${[...VALID_METRIC_TYPES].join(" | ")}`,
     );
   }
-  if (typeof o.metricAgg !== "string" || !METRIC_AGGS.has(o.metricAgg)) {
+  if (typeof o.metricAgg !== "string" || !VALID_METRIC_AGG.has(o.metricAgg)) {
     errs.push(
-      `${kind}.metricAgg must be one of: ${[...METRIC_AGGS].join(" | ")}`,
+      `${kind}.metricAgg must be one of: ${[...VALID_METRIC_AGG].join(" | ")}`,
     );
   }
   if (requireDirection) {
@@ -535,8 +536,8 @@ COMMANDS:
 STATE FIELD FORMATS (on project state via update-state):
   variants        pipe-separated string  — "standard (control)|streamlined (treatment)"
   primaryMetric   JSON object            — {"name","event","metricType","metricAgg","description"?}
-                                           metricType: binary | numeric
-                                           metricAgg:  once | count | sum
+                                           metricType: binary | continuous
+                                           metricAgg:  once | count | sum | average
   guardrails      JSON array             — [{"name","event","metricType","metricAgg","direction","description"?}, ...]
                                            direction: increase_bad | decrease_bad
 

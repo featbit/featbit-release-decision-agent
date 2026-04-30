@@ -60,11 +60,16 @@ These are the only valid values for each enum field. The script and server API *
 | `run status` | `draft` \| `collecting` \| `analyzing` \| `decided` \| `archived` — **NEVER use `running`, `paused`, `completed` or any other value.** Each status has its own dedicated CLI command — the command name *is* the status. |
 | `method` | `bayesian_ab` \| `frequentist` \| `bandit` |
 | `decision` | `CONTINUE` \| `PAUSE` \| `ROLLBACK` \| `INCONCLUSIVE` |
-| `primaryMetricType` (on **run**: `--primaryMetricType`) | `binary` \| `continuous` |
-| `primaryMetricAgg` (on **run**: `--primaryMetricAgg`) | `once` \| `sum` \| `last` |
-| `metricType` (inside **state** `primaryMetric`/`guardrails` JSON) | `binary` \| `numeric` |
-| `metricAgg` (inside **state** `primaryMetric`/`guardrails` JSON) | `once` \| `count` \| `sum` |
+| `metricType` (run **and** state JSON) | `binary` \| `continuous` |
+| `metricAgg` (run **and** state JSON) | `once` \| `count` \| `sum` \| `average` |
 | `direction` (inside **state** `guardrails` JSON entry) | `increase_bad` \| `decrease_bad` |
+
+> **Single canonical vocabulary.** Use the same `metricType` / `metricAgg` values
+> for *both* run-column writes (`--primaryMetricType`, `--primaryMetricAgg`) and
+> state-JSON writes (`--primaryMetric`, `--guardrails`). The legacy `numeric`
+> spelling and the `last` aggregation are gone — use `continuous` and `count`
+> (or `sum` / `average`) instead. The script accepts the legacy values on read
+> for back-compat with old experiments but rejects them on write.
 
 ---
 
@@ -74,7 +79,7 @@ These are the only valid values for each enum field. The script and server API *
 |---|---|---|
 | `variants` (on project state) | Pipe-separated `"key (annotation)\|key (annotation)"` | `"standard (control)\|streamlined (treatment)"` |
 | `primaryMetric` (on project state) | **JSON object** with `{name, event, metricType, metricAgg, description?}` — the web UI renders each field as its own column | `'{"name":"Signup conversion","event":"signup_completed","metricType":"binary","metricAgg":"once","description":"Proportion of visitors that complete a signup — chosen because it directly measures the H1 change."}'` |
-| `guardrails` (on project state) | **JSON array** of `{name, event, metricType, metricAgg, direction, description?}` — one object per guardrail metric | `'[{"name":"Checkout abandonment","event":"checkout_abandoned","metricType":"binary","metricAgg":"once","direction":"increase_bad","description":"must not rise"},{"name":"Support load","event":"support_chat_open","metricType":"numeric","metricAgg":"count","direction":"increase_bad"}]'` |
+| `guardrails` (on project state) | **JSON array** of `{name, event, metricType, metricAgg, direction, description?}` — one object per guardrail metric | `'[{"name":"Checkout abandonment","event":"checkout_abandoned","metricType":"binary","metricAgg":"once","direction":"increase_bad","description":"must not rise"},{"name":"Support load","event":"support_chat_open","metricType":"continuous","metricAgg":"count","direction":"increase_bad"}]'` |
 | `guardrailEvents` (on run) | **Comma-separated** event names — sync.ts converts to JSON array | `"checkout_abandoned,support_chat_open"` |
 | `inputData` | Valid JSON string — raw metrics snapshot | `'{"metrics":{"control":{"n":1000},"treatment":{"n":1020}}}'` |
 | `analysisResult` | Valid JSON string — Bayesian output | `'{"decision":"CONTINUE","probability":0.87}'` |
@@ -114,7 +119,7 @@ npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts update-state <experime
 
 > **variants format**: must be pipe-separated strings — NOT JSON. Use `"key (annotation)|key (annotation)"`.
 >
-> **primaryMetric format**: must be a valid JSON object with fields `name` (short display name), `event` (the instrumented event key, snake_case), `metricType` (`binary` or `numeric`), `metricAgg` (`once`, `count`, or `sum`), and optional `description` (rationale). The web UI renders `name`/`event`/`metricType`/`metricAgg` as separate table columns — do NOT dump the whole description into `name`.
+> **primaryMetric format**: must be a valid JSON object with fields `name` (short display name), `event` (the instrumented event key, snake_case), `metricType` (`binary` or `continuous`), `metricAgg` (`once`, `count`, `sum`, or `average`), and optional `description` (rationale). The web UI renders `name`/`event`/`metricType`/`metricAgg` as separate table columns — do NOT dump the whole description into `name`.
 >
 > **guardrails format**: must be a valid JSON array; each entry is a guardrail object with the same shape as `primaryMetric` plus `direction` (`increase_bad` or `decrease_bad`). Use one entry per guardrail metric, never a single string.
 

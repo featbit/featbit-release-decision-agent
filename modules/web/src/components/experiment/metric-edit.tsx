@@ -21,8 +21,8 @@ import type { Experiment } from "@/generated/prisma";
 type GuardrailRow = {
   name: string;
   event: string;
-  metricType: "binary" | "numeric";
-  metricAgg: "once" | "count" | "sum";
+  metricType: "binary" | "continuous";
+  metricAgg: "once" | "count" | "sum" | "average";
   direction: "increase_bad" | "decrease_bad";
   description: string;
 };
@@ -44,10 +44,15 @@ function parsePrimaryMetric(value: string | null | undefined) {
   try {
     const p = JSON.parse(value);
     if (p && typeof p === "object") {
+      // Back-compat: legacy "numeric" rows surface as canonical "continuous".
+      const metricType =
+        p.metricType === "continuous" || p.metricType === "numeric"
+          ? "continuous"
+          : "binary";
       return {
         name: p.name ?? "",
         event: p.event ?? "",
-        metricType: p.metricType ?? "binary",
+        metricType,
         metricAgg: p.metricAgg ?? "once",
         description: p.description ?? "",
       };
@@ -65,13 +70,19 @@ function parseGuardrailsToRows(value: string | null | undefined): GuardrailRow[]
       return parsed.map((g): GuardrailRow => ({
         name: g.name ?? g.event ?? "",
         event: g.event ?? g.name ?? "",
-        metricType: g.metricType === "numeric" ? "numeric" : "binary",
+        // Back-compat: legacy "numeric" rows surface as the canonical "continuous".
+        metricType:
+          g.metricType === "continuous" || g.metricType === "numeric"
+            ? "continuous"
+            : "binary",
         metricAgg:
           g.metricAgg === "count"
             ? "count"
             : g.metricAgg === "sum"
               ? "sum"
-              : "once",
+              : g.metricAgg === "average"
+                ? "average"
+                : "once",
         // `inverse:true` from older data → decrease_bad (higher is worse
         // means we actually want lower, so increase is bad). Keep simple.
         direction:
@@ -210,7 +221,7 @@ function GuardrailsEditor({ initialRows }: { initialRows: GuardrailRow[] }) {
                     )}
                   >
                     <option value="binary">Binary</option>
-                    <option value="numeric">Numeric</option>
+                    <option value="continuous">Numeric</option>
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -230,6 +241,7 @@ function GuardrailsEditor({ initialRows }: { initialRows: GuardrailRow[] }) {
                     <option value="once">Once per user</option>
                     <option value="count">Count all</option>
                     <option value="sum">Sum values</option>
+                    <option value="average">Average values</option>
                   </select>
                 </div>
                 <div className="space-y-1">
@@ -342,7 +354,7 @@ function MetricEditForm({
             <Label htmlFor="metricType" className="text-xs">Metric Type</Label>
             <NativeSelect id="metricType" name="metricType" defaultValue={metric.metricType}>
               <option value="binary">Binary (conversion)</option>
-              <option value="numeric">Numeric (value)</option>
+              <option value="continuous">Numeric (value)</option>
             </NativeSelect>
           </div>
           <div className="space-y-1">
@@ -351,6 +363,7 @@ function MetricEditForm({
               <option value="once">Once per user</option>
               <option value="count">Count all</option>
               <option value="sum">Sum values</option>
+              <option value="average">Average values</option>
             </NativeSelect>
           </div>
         </div>

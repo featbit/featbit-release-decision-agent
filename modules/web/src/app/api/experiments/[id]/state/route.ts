@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateExperiment, getExperiment } from "@/lib/data";
+import { updateExperiment, getExperiment, propagateMetricsToLatestRun } from "@/lib/data";
 
 const ALLOWED_FIELDS = new Set([
   "goal",
@@ -45,5 +45,17 @@ export async function PUT(
   }
 
   const updated = await updateExperiment(id, data);
+
+  // Mirror metric definitions onto the latest ExperimentRun. The analysis
+  // route reads type/agg/guardrails from the run row, so without this fan-out
+  // an agent's `update-state --primaryMetric '{...}'` write would never reach
+  // the analyzer. Same contract as updateMetricsAction in lib/actions.ts.
+  if (data.primaryMetric !== undefined || data.guardrails !== undefined) {
+    await propagateMetricsToLatestRun(id, {
+      primaryMetric: data.primaryMetric as string | null | undefined,
+      guardrails: data.guardrails as string | null | undefined,
+    });
+  }
+
   return NextResponse.json(updated);
 }
