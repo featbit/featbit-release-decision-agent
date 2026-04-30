@@ -89,17 +89,29 @@ export async function queryMetric(
     if (!data.variants || data.variants.length === 0) return {};
 
     // Convert TrackVariantStats[] → { variant: { n, k } | { n, sum, sum_squares } }
+    //
+    // Continuous vs binary detection:
+    //   - Binary (proportion): click/conversion events where each event records
+    //     no meaningful numeric value — sumValue ≈ conversions (value=1 per event).
+    //   - Continuous: revenue / duration metrics where sumValue > conversions
+    //     (events carry real numeric payloads, not just a count).
+    //
+    // Checking sumValue > 0 alone is NOT sufficient — a click metric with one
+    // conversion still has sumValue=1, which would incorrectly flag it as
+    // continuous and produce a "mean" column instead of a conversion rate.
     const result: Record<string, Record<string, number>> = {};
     for (const v of data.variants) {
-      if (v.sumValue > 0 || v.sumSquares > 0) {
-        // Continuous metric
+      const isContinuous = (v.sumValue > 0 || v.sumSquares > 0) &&
+        v.sumValue > v.conversions + 0.001;
+      if (isContinuous) {
+        // Continuous metric (e.g. revenue, load time)
         result[v.variant] = {
           n:            v.users,
           sum:          v.sumValue,
           sum_squares:  v.sumSquares,
         };
       } else {
-        // Binary / proportion metric
+        // Binary / proportion metric (e.g. click, signup, checkout)
         result[v.variant] = {
           n: v.users,
           k: v.conversions,

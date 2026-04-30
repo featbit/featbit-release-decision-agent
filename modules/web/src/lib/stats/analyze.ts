@@ -236,6 +236,19 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
     ? computeMetricSection(primaryKey, primaryData, control, treatments, false, prior, primaryMetricAgg)
     : null;
 
+  // Detect variant key mismatch and build warnings
+  const warnings: string[] = [];
+  if (!primaryMetric && primaryData) {
+    const availableKeys = Object.keys(primaryData);
+    const missing = [control, ...treatments].filter((v) => !availableKeys.includes(v));
+    if (missing.length > 0) {
+      warnings.push(
+        `Variant key mismatch: expected [${[control, ...treatments].join(", ")}] but metric data has [${availableKeys.join(", ")}]. ` +
+        `Update the run's control/treatment variant settings to match the actual variation values.`
+      );
+    }
+  }
+
   // Guardrails
   const guardrails: MetricSection[] = [];
   for (const gEvent of guardrailEvents ?? []) {
@@ -260,6 +273,7 @@ export function runAnalysis(input: AnalysisInput): AnalysisOutput {
     primary_metric: primaryMetric,
     guardrails,
     sample_check: sampleCheck,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 

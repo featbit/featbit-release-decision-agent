@@ -135,6 +135,17 @@ export function ExperimentDetailLayout({ experiment }: ExperimentDetailLayoutPro
               Edit setup
             </Button>
           )}
+          {entryMode === "guided" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setExpertEditOpen(true)}
+              className="h-7 text-xs"
+            >
+              <Pencil className="size-3" />
+              Expert setup
+            </Button>
+          )}
         </div>
 
         <div className="ml-auto flex items-center gap-2">
