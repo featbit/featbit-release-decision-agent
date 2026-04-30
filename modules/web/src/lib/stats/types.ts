@@ -76,6 +76,7 @@ export interface AnalysisOutput {
   primary_metric: MetricSection | null;
   guardrails: MetricSection[];
   sample_check: SampleCheck;
+  warnings?: string[];
 }
 
 /** Binary variant data from TSDB. */

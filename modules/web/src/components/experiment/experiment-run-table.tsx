@@ -232,7 +232,6 @@ function ObservationWindowInline({
     );
   }
 
-  const hasDates = run.observationStart && run.observationEnd;
   return (
     <button
       type="button"
@@ -241,9 +240,19 @@ function ObservationWindowInline({
       title="Edit observation window"
     >
       <Calendar className="size-3" />
-      {hasDates ? (
+      {run.observationStart ? (
         <span>
-          {fmtDate(run.observationStart!)} → {fmtDate(run.observationEnd!)}
+          {fmtDate(run.observationStart)} →{" "}
+          {run.observationEnd ? (
+            fmtDate(run.observationEnd)
+          ) : (
+            <span className="italic text-muted-foreground">ongoing</span>
+          )}
+        </span>
+      ) : run.observationEnd ? (
+        <span>
+          <span className="italic text-muted-foreground">— </span>
+          → {fmtDate(run.observationEnd)}
         </span>
       ) : (
         <span className="italic">Set observation window</span>

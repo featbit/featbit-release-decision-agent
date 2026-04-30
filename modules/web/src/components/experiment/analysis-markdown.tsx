@@ -59,13 +59,14 @@ interface BayesianAnalysis {
   treatments: string[];
   prior: string;
   srm: SrmCheck;
-  primary_metric: MetricSection;
+  primary_metric: MetricSection | null;
   guardrails: MetricSection[];
   sample_check: {
     minimum_per_variant: number;
     ok: boolean;
     variants: Record<string, number>;
   };
+  warnings?: string[];
 }
 
 interface BanditArm {
@@ -140,7 +141,8 @@ function gaussPdf(x: number, mu: number, sigma: number): number {
   return Math.exp(-0.5 * z * z) / (sigma * Math.sqrt(2 * Math.PI));
 }
 
-function PosteriorChart({ section }: { section: MetricSection }) {
+function PosteriorChart({ section }: { section: MetricSection | null }) {
+  if (!section) return null;
   const treatment = section.rows.find((r) => !r.is_control);
   if (
     !treatment ||
@@ -337,7 +339,8 @@ function describeValueColumn(section: MetricSection): {
 }
 
 /* ── Metric table (Bayesian) ── */
-function MetricTable({ section, label }: { section: MetricSection; label: string }) {
+function MetricTable({ section, label }: { section: MetricSection | null; label: string }) {
+  if (!section) return null;
   const isProp = section.metric_type === "proportion";
   const typeLabel = section.metric_type + (section.inverse ? " · inverse" : "") + (section.unit ? ` (${section.unit})` : "");
   const valueColumn = describeValueColumn(section);
@@ -424,9 +427,15 @@ function BayesianView({ data }: { data: BayesianAnalysis }) {
         <span>Window: {data.window.start} → {data.window.end}</span>
         <span>Prior: {data.prior}</span>
         {data.computed_at && (
-          <span>Data as of: {new Date(data.computed_at).toLocaleString()}</span>
+          <span>Data as of: {new Date(data.computed_at).toLocaleString("en-US")}</span>
         )}
       </div>
+
+      {(data.warnings ?? []).map((w, i) => (
+        <div key={i} className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+          ⚠ {w}
+        </div>
+      ))}
 
       <SrmBadge srm={data.srm} />
       <MetricTable section={data.primary_metric} label="Primary Metric" />
@@ -459,7 +468,7 @@ function BanditView({ data }: { data: BanditAnalysis }) {
         <span>Window: {data.window.start} → {data.window.end}</span>
         <span>Algorithm: {data.algorithm}</span>
         {data.computed_at && (
-          <span>Data as of: {new Date(data.computed_at).toLocaleString()}</span>
+          <span>Data as of: {new Date(data.computed_at).toLocaleString("en-US")}</span>
         )}
       </div>
 

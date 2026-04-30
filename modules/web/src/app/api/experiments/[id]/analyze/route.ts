@@ -29,6 +29,7 @@ export async function POST(
           id: true,
           flagKey: true,
           featbitEnvId: true,
+          variants: true,
         },
       },
     },
@@ -63,8 +64,8 @@ export async function POST(
     );
   }
 
-  const controlVariant = run.controlVariant ?? "false";
-  const treatments = (run.treatmentVariant ?? "true")
+  let controlVariant = run.controlVariant ?? "false";
+  let treatments = (run.treatmentVariant ?? "true")
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
@@ -151,6 +152,36 @@ export async function POST(
     .reduce((sum, v) => sum + ((v as Record<string, number>).n ?? 0), 0);
   if (totalUsers === 0) {
     return NextResponse.json({ status: "no_data", reason: "zero_users" });
+  }
+
+  // ── Auto-correct variant keys if configured names don't match actual data ─────
+  // controlVariant / treatmentVariant store FeatBit variation KEYS (e.g. "variation-a")
+  // but ClickHouse records the variation VALUE (e.g. "Cut Feature Flag Infra Costs…").
+  // If none of the configured names appear in primaryData, do a positional remap so
+  // analysis can proceed without manual intervention.
+  {
+    const actualKeys = Object.keys(primaryData).sort();
+    const configured = [controlVariant, ...treatments];
+    const noneMatch = configured.every((v) => !actualKeys.includes(v));
+
+    if (noneMatch && actualKeys.length === configured.length) {
+      // Sort both sides, map by index (variation-a → 1st actual, variation-b → 2nd actual, …)
+      const sortedConfigured = [...configured].sort();
+      const newControl = actualKeys[sortedConfigured.indexOf(controlVariant)];
+      const newTreatments = treatments.map((t) => actualKeys[sortedConfigured.indexOf(t)]);
+
+      if (newControl !== undefined && newTreatments.every((v) => v !== undefined)) {
+        await prisma.experimentRun.update({
+          where: { id: runId },
+          data: {
+            controlVariant: newControl,
+            treatmentVariant: newTreatments.join(","),
+          },
+        });
+        controlVariant = newControl;
+        treatments = newTreatments;
+      }
+    }
   }
 
   // For bandit with multi-arm: track-service already returns all variants in one query
