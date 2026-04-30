@@ -284,8 +284,8 @@ function SummaryTab({
             <MessageCircle className="size-3.5 mt-0.5 shrink-0 text-muted-foreground" />
             <p className="text-sm text-muted-foreground leading-relaxed">
               {hasDecision
-                ? "当前已有决策。点击后会让 chat 结合当前分析结果，给出复核结论与建议。"
-                : "点击后会让 chat 基于当前分析数据，产出可执行的决策解释（继续/暂停/回滚候选/不确定）。"}
+                ? "A decision is already on file. Click to have chat revisit it against the current analysis and suggest follow-ups."
+                : "Click to have chat read the current analysis and produce an actionable decision recommendation (continue / pause / rollback candidate / inconclusive)."}
             </p>
           </div>
           <Button
