@@ -93,6 +93,40 @@ Use `C:\Code\featbit\featbit-support` as the visual reference for layout rhythm,
 - Chat bubbles and agent panels should use the same `surface-panel` language: light borders, white/translucent surfaces, and modest rounded rectangles.
 - Theme toggles should be explicit controls; in sidebars use the compact icon button paired with a `Theme` label.
 
+## Metric Vocabulary & Fan-out Contract
+
+Metric type/agg use a single canonical vocabulary across the whole repo. See
+the root [AGENTS.md → Metric Vocabulary & Storage Layout](../../AGENTS.md) for
+the full table. Locally in `modules/web`, the rules an agent must respect are:
+
+### Canonical values only on writes
+
+- `metricType`: `"binary" | "continuous"` — never `"numeric"`.
+- `metricAgg`: `"once" | "count" | "sum" | "average"` — never `"last"`.
+- Read paths (`parsePrimaryMetric`, `parseGuardrails`, `parseGuardrailDefs`) tolerate the legacy `"numeric"` spelling and normalise to `"continuous"`. Don't rely on this in new code.
+
+### Setup-side writes MUST fan out to the latest run
+
+The analysis route (`/api/experiments/[id]/analyze`) reads metric type/agg/guardrails from the **ExperimentRun** row, not the Experiment row. Any write to `Experiment.primaryMetric` or `Experiment.guardrails` must propagate to the latest run, otherwise the analyzer keeps using stale or default values.
+
+Use `propagateMetricsToLatestRun(experimentId, fields)` from `lib/data.ts`. Existing call sites:
+
+- `updateMetricsAction` in `lib/actions.ts` — Edit Metrics dialog
+- `PUT /api/experiments/[id]/state` route handler — agent's `update-state`
+- `saveExpertSetupAction` writes the run columns directly inside its own transaction (no helper needed)
+
+When you add a new write site for the experiment-level metric JSON, you must call this helper too. When you add a new read site, prefer `parseGuardrailDefs` over splitting strings — it handles both the modern `GuardrailDef[]` shape and the legacy `string[]`.
+
+### Run-side guardrails are GuardrailDef[], not string[]
+
+`ExperimentRun.guardrailEvents` stores rich definitions:
+
+```json
+[{"event": "checkout_abandoned", "metricType": "binary", "metricAgg": "once", "inverse": false}]
+```
+
+The legacy bare `string[]` form is read-tolerated but never written. `analyze.ts` reads `metricAgg` and `inverse` from this column so guardrails analyse correctly even on the live track-service path (where the heuristic in `track-client.ts` cannot infer them from the response).
+
 ## Relationship to Parent Project
 
 This `agent/` folder is part of the [featbit-release-decision-agent](https://github.com/featbit/featbit-release-decision-agent) mono-repo. The parent project's `skills/` folder contains the agent skills that power the experiment loop. The web UI in this folder provides a visual interface for those same capabilities.

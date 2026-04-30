@@ -59,8 +59,8 @@ Then capture it as a structured object — NOT a paragraph. The five fields are:
 |---|---|---|
 | `name` | Short human-readable label (shows in the web UI's metric table) | `"Signup conversion"` |
 | `event` | Instrumented event key emitted from code (snake_case, no spaces) | `"signup_completed"` |
-| `metricType` | `binary` for conversion (fires 0/1) or `numeric` for a value (revenue, latency, count per user) | `"binary"` |
-| `metricAgg` | `once` (max 1 per user, for funnel conversion), `count` (tally all occurrences), or `sum` (add numeric payloads) | `"once"` |
+| `metricType` | `binary` for conversion (fires 0/1) or `continuous` for a value (revenue, latency, count per user) | `"binary"` |
+| `metricAgg` | `once` (max 1 per user, for funnel conversion), `count` (tally all occurrences), `sum` (add numeric payloads), or `average` (mean of values per user) | `"once"` |
 | `description` | One-sentence rationale — why this metric decides go/no-go | `"Proportion of visitors that sign up — directly measures the H1 change."` |
 
 If the user gives a vague metric name (e.g. "signup rate"), probe until the event key, metric type, and aggregation are concrete. Don't proceed with a half-defined metric.
@@ -146,8 +146,8 @@ def design_measurement(project_id, user_message):
     primary_json = json.dumps({
         "name": primary_metric.name,
         "event": primary_metric.event,
-        "metricType": primary_metric.metric_type,       # binary | numeric
-        "metricAgg":  primary_metric.metric_agg,        # once | count | sum
+        "metricType": primary_metric.metric_type,       # binary | continuous
+        "metricAgg":  primary_metric.metric_agg,        # once | count | sum | average
         "description": primary_metric.rationale,
     })
     guardrails_json = json.dumps([

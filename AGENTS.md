@@ -1,6 +1,8 @@
 # AGENTS.md — FeatBit Release Decision Agent
 
-> Architecture, service map, and operational guide. Everything runs in Docker.
+> Architecture, service map, and operational guide. Day-to-day development uses
+> each service's native dev loop (`npm run dev`, `dotnet run`); docker compose
+> is for cross-service integration and prod-like reproductions, not the default.
 
 ---
 
@@ -372,6 +374,80 @@ POST http://web:3000/api/experiments/{id}/activity
 
 ---
 
+## 📐 Metric Vocabulary & Storage Layout
+
+> **Single canonical vocabulary** across all writers (UI, agent skills, REST API)
+> and all readers (analysis engine, track-service queries). One spelling per
+> concept — never two. The legacy `numeric` / `last` values are gone.
+
+### Canonical enums
+
+| Field | Values |
+|---|---|
+| `metricType` | `binary` \| `continuous` |
+| `metricAgg`  | `once` \| `count` \| `sum` \| `average` |
+| `direction`  (guardrail only) | `increase_bad` \| `decrease_bad` |
+| `inverse`    (guardrail only, derived) | `true` ⇔ `direction === "decrease_bad"` |
+
+Read paths tolerate the legacy `numeric` spelling and normalise to
+`continuous` so old experiments keep loading. Write paths only emit the
+canonical values.
+
+Enforced in:
+
+- `modules/web/src/app/api/experiments/[id]/experiment-run/route.ts` — POST validator (`VALID_METRIC_TYPES`, `VALID_METRIC_AGG`)
+- `skills/project-sync/scripts/sync.ts` — `validateMetricObject` (state JSON) and the `--primaryMetricType` / `--primaryMetricAgg` flag handlers (run columns)
+- `modules/web/src/lib/data.ts` — `parseGuardrailDefs`, `propagateMetricsToLatestRun` normalisation helpers
+
+### Two storage locations, one fan-out contract
+
+Metric definitions live in **two** places:
+
+```
+Experiment row             ExperimentRun row
+─────────────────          ──────────────────────────
+primaryMetric  (JSON) ───► primaryMetricEvent  (string)
+                           primaryMetricType   (canonical enum)
+                           primaryMetricAgg    (canonical enum)
+                           metricDescription   (string)
+
+guardrails     (JSON) ───► guardrailEvents     (GuardrailDef[] JSON)
+```
+
+The Experiment-level JSON is the **setup truth** (what the user/agent declared
+in the wizard or via `update-state`). The ExperimentRun columns are the
+**analysis truth** (what `/api/experiments/[id]/analyze` reads). Any setup-side
+write **must** propagate to the latest run row, otherwise the analyzer keeps
+using stale or default values and the user's edits silently disappear.
+
+The propagation helper is `propagateMetricsToLatestRun(experimentId, fields)` in
+`modules/web/src/lib/data.ts`. It is called from:
+
+- `updateMetricsAction` in `lib/actions.ts` (Edit Metrics dialog)
+- `saveExpertSetupAction` writes the run columns directly (no helper needed)
+- `PUT /api/experiments/[id]/state` (the agent's `update-state` path)
+
+When adding a new write site for `Experiment.primaryMetric` or `Experiment.guardrails`, call this helper. When adding a new read site, prefer `parseGuardrailDefs` over manually splitting strings — it handles the legacy `string[]` shape too.
+
+### Run-side guardrails carry full definitions
+
+`ExperimentRun.guardrailEvents` was historically a bare `string[]` of event
+names. It now stores the rich shape:
+
+```json
+[
+  {"event": "checkout_abandoned", "metricType": "binary",     "metricAgg": "once",  "inverse": false},
+  {"event": "support_chat_open",  "metricType": "continuous", "metricAgg": "count", "inverse": false}
+]
+```
+
+`parseGuardrailDefs` accepts both shapes for back-compat. The analyzer reads
+this column directly, so guardrail `metricAgg` and `inverse` propagate to
+`runAnalysis()` even on the live track-service path (where the heuristic in
+`track-client.ts` cannot infer them from the response).
+
+---
+
 ## 🔍 Troubleshooting
 
 ### Analysis returns no data
@@ -410,21 +486,41 @@ POST http://web:3000/api/experiments/{id}/activity
 
 ---
 
-## ⚠️ After completing any task
+## ✅ After completing any task
 
-All local debugging and testing happens inside Docker. After making code changes, always rebuild and restart the affected service:
+Pick the lightest verification that actually proves the change. Don't reach for docker compose by default — it's a 5-10 minute step that's only worth it when *integration across services* is what you're verifying.
+
+### Single-service changes (the common case)
+
+Use the language-native dev loop:
+
+| Service | Local loop |
+|---|---|
+| `modules/web` | `npm run dev` (Next.js HMR) — or `npx tsc --noEmit` + `npm run lint` for compile-time only |
+| `modules/track-service` | `dotnet run` from the project directory |
+| `modules/sandbox` / `modules/project-agent` | `npm run dev` in the module |
+| `modules/run-active-test-worker` | `npm run dev` (wrangler dev) |
+
+For most code changes, `tsc --noEmit` (or `dotnet build`) plus a hand-exercised dev server is all the smoke test you need.
+
+### Cross-service / production-like verification
+
+Reach for docker compose when:
+- the change spans more than one service (e.g. web ↔ track-service contract change)
+- you need realistic networking (envoy, ingress, container DNS)
+- you're reproducing a prod-only bug
 
 ```bash
 cd modules
 
-# Rebuild + restart a single service (e.g., web)
+# Rebuild + restart a single service
 docker compose build web && docker compose up -d web
 
-# Or rebuild all and restart
+# Or rebuild all
 docker compose build && docker compose up -d
 ```
 
-Skipping this step means the running container still has the old code.
+Inside docker, the running container still has the OLD code until you rebuild — easy footgun if you forget.
 
 ---
 
