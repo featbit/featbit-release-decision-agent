@@ -346,13 +346,23 @@ POST http://track-service:8080/api/query/experiment
 Content-Type: application/json
 
 {
-  "envId": "pricing-env-123",
-  "flagKey": "pricing-page",
+  "envId":       "pricing-env-123",
+  "flagKey":     "pricing-page",
   "metricEvent": "page_view",
-  "startDate": "2026-04-01",
-  "endDate": "2026-04-14"
+  "startDate":   "2026-04-01",
+  "endDate":     "2026-04-14",
+  "metricType":  "binary",        // optional; "binary" | "continuous"
+  "metricAgg":   "once"           // optional; "once" | "count" | "sum" | "average"
 }
 ```
+
+`metricType` and `metricAgg` are optional. When present, track-service picks
+the per-user contribution column accordingly (binary → 0/1; count → events
+per user; sum → Σ values; average → mean per user). Track-client also uses
+`metricType` to select the response shape (`{n, k}` for binary,
+`{n, sum, sum_squares}` for continuous), skipping its legacy heuristic. When
+both are omitted the legacy "everything" SQL behaviour kicks in for
+back-compat — see `modules/track-service/Services/ClickHouseQueryClient.cs`.
 
 ### track-service → ClickHouse
 

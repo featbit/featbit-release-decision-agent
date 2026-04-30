@@ -81,7 +81,6 @@ export async function POST(
   // metricType / metricAgg / inverse, so the analyzer honours each guardrail's
   // declared aggregation and direction even on the live-data path.
   const guardrailDefs = parseGuardrailDefs(run.guardrailEvents);
-  const guardrailEventNames = guardrailDefs.map((g) => g.event);
 
   // ── Step 1: Obtain per-variant stats ────────────────────────────────────────
   // Prefer live track-service fetch when the flag is wired up. Fall back to
@@ -97,8 +96,19 @@ export async function POST(
       flagKey: flagKey as string,
       startDate,
       endDate,
-      primaryMetricEvent: run.primaryMetricEvent,
-      guardrailEvents: guardrailEventNames,
+      // Pass the run's declared metricType / metricAgg through to track-service
+      // so the SQL aggregates per the user's intent and the response shape
+      // matches what the analyzer expects.
+      primary: {
+        event:      run.primaryMetricEvent,
+        metricType: run.primaryMetricType ?? undefined,
+        metricAgg:  run.primaryMetricAgg  ?? undefined,
+      },
+      guardrails: guardrailDefs.map((g) => ({
+        event:      g.event,
+        metricType: g.metricType,
+        metricAgg:  g.metricAgg,
+      })),
     })) as MetricsDict | null;
   }
 

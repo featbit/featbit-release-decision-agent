@@ -44,7 +44,8 @@ public static class QueryEndpoint
             if (end < start) return Results.BadRequest("endDate must be >= startDate");
 
             var variants = await ch.GetVariantStatsAsync(
-                envId, req.FlagKey, req.MetricEvent, start, end, ct);
+                envId, req.FlagKey, req.MetricEvent, start, end,
+                req.MetricType, req.MetricAgg, ct);
 
             return Results.Ok(new ExperimentQueryResponse
             {
