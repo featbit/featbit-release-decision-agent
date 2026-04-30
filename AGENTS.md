@@ -114,10 +114,13 @@ modules/web/src/
 
 | Variable | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `TRACK_SERVICE_URL` | No | Defaults to `http://track-service:8080` |
-| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | Browser-reachable sandbox URL (default: `http://localhost:3100`) |
+| `DATABASE_URL` | Yes (runtime) | PostgreSQL connection string |
+| `TRACK_SERVICE_URL` | No (runtime) | Defaults to `http://track-service:8080` |
+| `SANDBOX0_API_KEY` | Yes (runtime) | Auth for sandbox0 Managed Agents (server-side; the `/api/sandbox0/*` routes use it). Default agent backend; see `chat-panel.tsx`. |
+| `SANDBOX0_BASE_URL` | No (runtime) | Defaults to `https://agents.sandbox0.ai` |
 | `NEXT_PUBLIC_FEATBIT_API_URL` | Build arg | FeatBit backend for auth (default: `https://app-api.featbit.co`) |
+| `NEXT_PUBLIC_SANDBOX_URL` | Build arg, optional | **Only used when `NEXT_PUBLIC_AGENT_BACKEND=classic`** (legacy SSE backend). The default `sandbox0` backend talks to web's own `/api/sandbox0/*` routes — no browser-side sandbox URL needed. |
+| `NEXT_PUBLIC_AGENT_BACKEND` | Build arg | `sandbox0` (default) or `classic`. Leave unset to get sandbox0. |
 
 ---
 

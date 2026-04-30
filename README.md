@@ -263,7 +263,11 @@ featbit-release-decision-agent/
 | Variable | Type | Required | Purpose |
 |---|---|---|---|
 | `DATABASE_URL` | Secret | Yes | PostgreSQL connection string |
-| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | No | Sandbox Agent endpoint (for UI) |
+| `SANDBOX0_API_KEY` | Secret | Yes | Server-side auth for the default sandbox0 (Managed Agents) backend |
+| `SANDBOX0_BASE_URL` | Env | No | Defaults to `https://agents.sandbox0.ai` |
+| `NEXT_PUBLIC_FEATBIT_API_URL` | Build arg | Yes | FeatBit backend for auth |
+| `NEXT_PUBLIC_AGENT_BACKEND` | Build arg | No | `sandbox0` (default) or `classic`. Only set explicitly to override. |
+| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | No | Only relevant when `NEXT_PUBLIC_AGENT_BACKEND=classic` |
 
 Example `.env` (local dev):
 ```

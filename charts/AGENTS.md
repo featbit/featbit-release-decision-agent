@@ -137,18 +137,30 @@ emits at the moment).
 No CI today — both images are built locally and pushed by hand. Replace
 `<acr>` with the ACR login server (e.g. `featbitrdawu3.azurecr.io`).
 
+The web image only needs `NEXT_PUBLIC_FEATBIT_API_URL` baked in. The default
+agent backend is **sandbox0** (Managed Agents) — chat traffic flows through
+the web app's own `/api/sandbox0/*` routes, no browser-side sandbox URL
+needed. The legacy `NEXT_PUBLIC_SANDBOX_URL` is only meaningful when an
+operator explicitly sets `NEXT_PUBLIC_AGENT_BACKEND=classic` to fall back
+to the SSE backend.
+
 ```bash
 # track-service
 docker build -t <acr>/featbit/track-service:0.3.0 modules/track-service
 docker push  <acr>/featbit/track-service:0.3.0
 
-# web — note the build-args (NEXT_PUBLIC_* are baked at build time)
+# web — only the FeatBit auth URL is a build-time public env var
 docker build modules/web \
-  --build-arg NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai \
   --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
   -t <acr>/featbit/web:0.2.0
 docker push <acr>/featbit/web:0.2.0
 ```
+
+Server-side runtime envs (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) are NOT
+build-time. They reach the pod via `web.extraEnv` (or an
+`existingSecret`-style secret projected from Key Vault). Confirm your
+`values.aks.local.yaml` carries them before rolling — chat will silently
+fail if `SANDBOX0_API_KEY` is missing.
 
 ### One-off data fix already applied
 
