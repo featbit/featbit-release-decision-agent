@@ -81,7 +81,6 @@ export async function POST(
   // metricType / metricAgg / inverse, so the analyzer honours each guardrail's
   // declared aggregation and direction even on the live-data path.
   const guardrailDefs = parseGuardrailDefs(run.guardrailEvents);
-  const guardrailEventNames = guardrailDefs.map((g) => g.event);
 
   // ── Step 1: Obtain per-variant stats ────────────────────────────────────────
   // Prefer live track-service fetch when the flag is wired up. Fall back to
@@ -92,13 +91,34 @@ export async function POST(
   let dataSource: "live" | "stored" = "live";
 
   if (canLiveFetch) {
+    // Narrow Prisma's `string | null` to MetricSpec's canonical literal union.
+    // Run rows always have a value (DB default 'binary' / 'once'; the
+    // experiment-run POST validator rejects anything else), so a missing
+    // value here means a row that pre-dated the column — fall back to the
+    // same DB default.
+    const narrowType = (v: string | null | undefined): "binary" | "continuous" =>
+      v === "continuous" ? "continuous" : "binary";
+    const narrowAgg = (v: string | null | undefined): "once" | "count" | "sum" | "average" =>
+      v === "count" || v === "sum" || v === "average" ? v : "once";
+
     metrics = (await queryAllMetrics({
       envId: envId as string,
       flagKey: flagKey as string,
       startDate,
       endDate,
-      primaryMetricEvent: run.primaryMetricEvent,
-      guardrailEvents: guardrailEventNames,
+      // Pass the run's declared metricType / metricAgg through to track-service
+      // so the SQL aggregates per the user's intent and the response shape
+      // matches what the analyzer expects.
+      primary: {
+        event:      run.primaryMetricEvent,
+        metricType: narrowType(run.primaryMetricType),
+        metricAgg:  narrowAgg(run.primaryMetricAgg),
+      },
+      guardrails: guardrailDefs.map((g) => ({
+        event:      g.event,
+        metricType: narrowType(g.metricType),
+        metricAgg:  narrowAgg(g.metricAgg),
+      })),
     })) as MetricsDict | null;
   }
 

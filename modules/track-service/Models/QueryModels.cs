@@ -3,6 +3,13 @@ using System.Text.Json.Serialization;
 namespace FeatBit.TrackService.Models;
 
 /// <summary>Request body for POST /api/query/experiment.</summary>
+/// <remarks>
+/// Canonical values match modules/web (see root AGENTS.md → Metric Vocabulary):
+///   metricType: "binary" | "continuous"
+///   metricAgg:  "once" | "count" | "sum" | "average"
+/// Both are required — track-client always sends them and the analyzer
+/// relies on the matching (n, k) vs (n, sum, sum_squares) choice.
+/// </remarks>
 public sealed class ExperimentQueryRequest
 {
     [JsonPropertyName("envId")]       public string EnvId       { get; set; } = "";
@@ -10,6 +17,8 @@ public sealed class ExperimentQueryRequest
     [JsonPropertyName("metricEvent")] public string MetricEvent { get; set; } = "";
     [JsonPropertyName("startDate")]   public string StartDate   { get; set; } = ""; // YYYY-MM-DD
     [JsonPropertyName("endDate")]     public string EndDate     { get; set; } = ""; // YYYY-MM-DD (inclusive)
+    [JsonPropertyName("metricType")]  public string MetricType  { get; set; } = ""; // "binary" | "continuous"
+    [JsonPropertyName("metricAgg")]   public string MetricAgg   { get; set; } = ""; // "once" | "count" | "sum" | "average"
 }
 
 /// <summary>Per-variant aggregate result, ready to feed into stats-service.</summary>

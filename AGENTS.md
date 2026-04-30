@@ -346,13 +346,21 @@ POST http://track-service:8080/api/query/experiment
 Content-Type: application/json
 
 {
-  "envId": "pricing-env-123",
-  "flagKey": "pricing-page",
+  "envId":       "pricing-env-123",
+  "flagKey":     "pricing-page",
   "metricEvent": "page_view",
-  "startDate": "2026-04-01",
-  "endDate": "2026-04-14"
+  "startDate":   "2026-04-01",
+  "endDate":     "2026-04-14",
+  "metricType":  "binary",        // required; "binary" | "continuous"
+  "metricAgg":   "once"           // required; "once" | "count" | "sum" | "average"
 }
 ```
+
+All six fields are required — track-service rejects requests missing any of
+them with a 400. `metricType` decides both the per-user SQL contribution
+column (binary → 0/1; count → events per user; sum → Σ values;
+average → mean per user) and the response shape track-client returns to the
+analyzer (`{n, k}` for binary, `{n, sum, sum_squares}` for continuous).
 
 ### track-service → ClickHouse
 

@@ -219,8 +219,17 @@ export interface GuardrailDef {
  *   - string[]: ["page_bounce", "session_duration_p50"]  → defaults to binary/once/non-inverse
  *   - GuardrailDef[]:  [{ event, metricType, metricAgg, inverse, direction? }]
  *
- * Legacy "numeric" metricType is normalised to canonical "continuous". `direction`
- * (from older entries) is collapsed into `inverse` (decrease_bad → inverse=true).
+ * Legacy "numeric" metricType is normalised to canonical "continuous".
+ *
+ * `direction` (UI vocabulary, from older entries) collapses into `inverse`:
+ *
+ *   direction=increase_bad ⇔ "alarm if it rises"  ⇔ "lower is better" ⇔ inverse=true
+ *   direction=decrease_bad ⇔ "alarm if it falls" ⇔ "higher is better" ⇔ inverse=false
+ *
+ * Getting this right is load-bearing: the analyzer computes P(harm) as
+ * P(treatment < control) when inverse=false, and P(treatment > control) when
+ * inverse=true. Flipping inverse flips the verdict — a healthy bounce drop
+ * reads as "99.8% harm" if inverse is false instead of true.
  */
 export function parseGuardrailDefs(raw: string | null | undefined): GuardrailDef[] {
   if (!raw) return [];
@@ -232,7 +241,7 @@ export function parseGuardrailDefs(raw: string | null | undefined): GuardrailDef
         return { event: item, metricType: "binary", metricAgg: "once", inverse: false };
       }
       const metricType = item.metricType === "numeric" ? "continuous" : (item.metricType ?? "binary");
-      const inverse = item.inverse ?? item.direction === "decrease_bad";
+      const inverse = item.inverse ?? item.direction === "increase_bad";
       return {
         event: item.event ?? "",
         metricType,
