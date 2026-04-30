@@ -23,7 +23,7 @@ trackService:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/track-service
-    tag: "0.2.0"
+    tag: "0.3.0"
     pullPolicy: IfNotPresent
 
   serviceAccount:
@@ -168,7 +168,7 @@ web:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/web
-    tag: "0.1.0"
+    tag: "0.2.0"
     pullPolicy: IfNotPresent
 
   serviceAccount:

@@ -28,7 +28,7 @@ trackService:
     # Inherits global.imageRegistry when empty.
     registry: ""
     repository: featbit/track-service
-    tag: "0.1.0"
+    tag: "0.3.0"
     pullPolicy: IfNotPresent
 
   # (A) Dev / staging — plain Secret generated from the value below:
@@ -112,7 +112,7 @@ trackService:
 #   docker build modules/web \
 #     --build-arg NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai \
 #     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
-#     -t your-acr.azurecr.io/featbit/web:0.1.0
+#     -t your-acr.azurecr.io/featbit/web:0.2.0
 web:
   enabled: true
   replicaCount: 2
@@ -120,7 +120,7 @@ web:
   image:
     registry: ""           # inherits global.imageRegistry
     repository: featbit/web
-    tag: "0.1.0"
+    tag: "0.2.0"
     pullPolicy: IfNotPresent
 
   # (A) Dev / staging — chart generates a Secret from the value below:

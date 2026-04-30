@@ -77,6 +77,89 @@ Installed ~99 days before this work, used by multiple releases:
 - CH password path: `modules/.env` → human pastes into `az keyvault secret set`
   → KV → CSI → K8s Secret → pod env var. Never touches the chart.
 
+## Application changes pending deploy — chart 0.2.0 (2026-05-01)
+
+`Chart.yaml` bumped 0.1.0 → 0.2.0. New image tags:
+
+| Image | Old | New |
+|---|---|---|
+| `featbit/track-service` | `0.2.0` | `0.3.0` |
+| `featbit/web` | `0.1.0` | `0.2.0` |
+
+The chart **structure** (templates, env vars, secrets) is unchanged — only
+image tags and version metadata moved. No new prereqs.
+
+### What's actually in the new images
+
+- **Metric vocabulary unified** (`{binary | continuous} × {once | count | sum | average}`)
+  end-to-end across UI, server actions, REST API, sync.ts, SKILL.md, and
+  the track-service request schema. Setup-side writes (Edit Metrics dialog,
+  `/api/experiments/[id]/state` PUT, expert wizard) now propagate to the
+  latest run row via `propagateMetricsToLatestRun` — without this, the
+  analyzer kept reading stale defaults.
+- **track-service request body now requires `metricType` + `metricAgg`.**
+  Old behaviour (omit them → SQL falls back to "sum" per-user contribution)
+  is gone. Anything missing the fields gets a 400.
+- **Inverse-direction fix.** Guardrails declared with `direction=increase_bad`
+  (e.g. `visitor_bounced`) now correctly produce `inverse=true` so the
+  analyzer's `P(harm)` is `P(treatment > control)`, not the flipped form.
+- Drops the legacy `(sumValue > conversions)` heuristic that misclassified
+  binary metrics carrying numeric payloads as continuous.
+- UI: variant key auto-remap when configured names don't match ClickHouse-stored
+  variation values; warnings array surfaces in the analysis output; observation
+  window shows `ongoing` when only start is set; chat-trigger callout is now
+  English; expert wizard adds a per-guardrail `metricAgg` select.
+
+### Deploy order recommendation
+
+Roll **track-service first**, then **web**. Reason: new track-service rejects
+requests missing `metricType` / `metricAgg` (400). Old web pods don't send
+these fields. During a parallel rollout there is a brief window where stale
+old-web pods could call new track-service and 400 — recovers in ≤ 1 minute as
+the rolling update completes, but a phased upgrade avoids the noise:
+
+```
+helm upgrade featbit-rda ./charts/featbit-rda \
+  -f charts/featbit-rda/examples/aks/values.aks.local.yaml \
+  --set web.image.tag=0.1.0       # pin web to old image …
+helm upgrade featbit-rda ./charts/featbit-rda \
+  -f charts/featbit-rda/examples/aks/values.aks.local.yaml \
+  # … then drop the override on the second pass
+```
+
+Reverse direction (new web → old track-service) is fine: old track-service
+silently ignores the unknown request fields and runs its sum-based SQL,
+which is correct for binary/once metrics (the only kind FeatBit's UI ever
+emits at the moment).
+
+### Build + push commands
+
+No CI today — both images are built locally and pushed by hand. Replace
+`<acr>` with the ACR login server (e.g. `featbitrdawu3.azurecr.io`).
+
+```bash
+# track-service
+docker build -t <acr>/featbit/track-service:0.3.0 modules/track-service
+docker push  <acr>/featbit/track-service:0.3.0
+
+# web — note the build-args (NEXT_PUBLIC_* are baked at build time)
+docker build modules/web \
+  --build-arg NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai \
+  --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
+  -t <acr>/featbit/web:0.2.0
+docker push <acr>/featbit/web:0.2.0
+```
+
+### One-off data fix already applied
+
+Experiment `3988bc05-0e08-44ca-b11e-ad409412ff47` (FeatBit Official Website /
+homepage hero heading) had legacy guardrail data that surfaced the inverse
+bug (`visitor_bounced` reading 99.8% P(harm)). The DB rows were normalised
+on 2026-04-30 via `modules/web/scripts/normalize-experiment-metrics.ts`. No
+further action needed for that experiment. Other experiments with `direction`
+but no explicit `inverse` would benefit from the same script — re-running it
+per experiment ID is safe and idempotent.
+
 ## TODO
 
 - [ ] **Enable KV Secret rotation** on the AKS CSI addon (currently disabled;
