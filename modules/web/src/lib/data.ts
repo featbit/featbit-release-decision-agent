@@ -143,14 +143,73 @@ export async function getRunningExperimentRuns() {
   });
 }
 
+// ─── Metric vocabulary normalisation ────────────────────────────────────────
+// Single canonical vocabulary shared with sync.ts and the run validator.
+// "numeric" was a UI-only legacy spelling; treat it as "continuous" on read.
+function normalizeMetricType(value: unknown): "binary" | "continuous" {
+  return value === "continuous" || value === "numeric" ? "continuous" : "binary";
+}
+
+function normalizeMetricAgg(value: unknown): "once" | "count" | "sum" | "average" {
+  return value === "count" || value === "sum" || value === "average" ? value : "once";
+}
+
+/**
+ * Push primary-metric / guardrail definitions from the Experiment row to the
+ * latest ExperimentRun row. The analysis API (`/api/experiments/[id]/analyze`)
+ * reads from the run row, NOT the experiment row, so any setup-side write
+ * (Edit Metrics dialog, /state PUT, etc.) MUST call this to keep the two
+ * in sync. Without it the run keeps stale or empty type/agg fields and the
+ * analysis silently uses defaults.
+ *
+ * Returns the run that was updated, or null if the experiment has no run yet.
+ */
+export async function propagateMetricsToLatestRun(
+  experimentId: string,
+  fields: { primaryMetric?: string | null; guardrails?: string | null },
+) {
+  const run = await prisma.experimentRun.findFirst({
+    where: { experimentId },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!run) return null;
+
+  const update: Record<string, unknown> = {};
+
+  if (fields.primaryMetric !== undefined) {
+    try {
+      const parsed = fields.primaryMetric ? JSON.parse(fields.primaryMetric) : null;
+      if (parsed && typeof parsed === "object" && parsed.event) {
+        update.primaryMetricEvent = parsed.event;
+        update.primaryMetricType = normalizeMetricType(parsed.metricType);
+        update.primaryMetricAgg  = normalizeMetricAgg(parsed.metricAgg);
+        if (parsed.description) update.metricDescription = parsed.description;
+      }
+    } catch { /* ignore — leave run unchanged */ }
+  }
+
+  if (fields.guardrails !== undefined) {
+    try {
+      const defs = parseGuardrailDefs(fields.guardrails);
+      // Store as the rich GuardrailDef[] shape so analyze.ts can read
+      // metricType/metricAgg/inverse without re-parsing the experiment row.
+      update.guardrailEvents = defs.length > 0 ? JSON.stringify(defs) : null;
+    } catch { /* ignore */ }
+  }
+
+  if (Object.keys(update).length === 0) return run;
+
+  return prisma.experimentRun.update({ where: { id: run.id }, data: update });
+}
+
 /**
  * Guardrail definition for a single metric.
  * Used by the data server to collect + analyze each guardrail.
  */
 export interface GuardrailDef {
   event: string;
-  metricType: string;    // "binary" | "continuous"
-  metricAgg: string;     // "once" | "sum" | "mean" | "count" | "latest"
+  metricType: string;    // canonical: "binary" | "continuous" (legacy "numeric" tolerated on read)
+  metricAgg: string;     // canonical: "once" | "count" | "sum" | "average"
   inverse: boolean;
 }
 
@@ -158,22 +217,36 @@ export interface GuardrailDef {
  * Parse guardrailEvents JSON into structured guardrail definitions.
  * Supports both legacy formats:
  *   - string[]: ["page_bounce", "session_duration_p50"]  → defaults to binary/once/non-inverse
- *   - GuardrailDef[]:  [{ event, metricType, metricAgg, inverse }]
+ *   - GuardrailDef[]:  [{ event, metricType, metricAgg, inverse, direction? }]
+ *
+ * Legacy "numeric" metricType is normalised to canonical "continuous".
+ *
+ * `direction` (UI vocabulary, from older entries) collapses into `inverse`:
+ *
+ *   direction=increase_bad ⇔ "alarm if it rises"  ⇔ "lower is better" ⇔ inverse=true
+ *   direction=decrease_bad ⇔ "alarm if it falls" ⇔ "higher is better" ⇔ inverse=false
+ *
+ * Getting this right is load-bearing: the analyzer computes P(harm) as
+ * P(treatment < control) when inverse=false, and P(treatment > control) when
+ * inverse=true. Flipping inverse flips the verdict — a healthy bounce drop
+ * reads as "99.8% harm" if inverse is false instead of true.
  */
 export function parseGuardrailDefs(raw: string | null | undefined): GuardrailDef[] {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((item: string | Partial<GuardrailDef>) => {
+    return parsed.map((item: string | (Partial<GuardrailDef> & { direction?: string })) => {
       if (typeof item === "string") {
         return { event: item, metricType: "binary", metricAgg: "once", inverse: false };
       }
+      const metricType = item.metricType === "numeric" ? "continuous" : (item.metricType ?? "binary");
+      const inverse = item.inverse ?? item.direction === "increase_bad";
       return {
         event: item.event ?? "",
-        metricType: item.metricType ?? "binary",
+        metricType,
         metricAgg: item.metricAgg ?? "once",
-        inverse: item.inverse ?? false,
+        inverse,
       };
     }).filter((g: GuardrailDef) => g.event);
   } catch {

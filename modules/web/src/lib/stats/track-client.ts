@@ -41,16 +41,31 @@ export interface QueryParams {
   metricEvent: string;
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD
+  /**
+   * Canonical "binary" | "continuous". Required — picks the response shape
+   * (`{n,k}` for binary, `{n,sum,sum_squares}` for continuous). Track-service
+   * also receives this and uses it to choose the per-user SQL contribution.
+   */
+  metricType: "binary" | "continuous";
+  /**
+   * Canonical "once" | "count" | "sum" | "average". Required. Track-service
+   * uses this to pick the per-user contribution column (binary=once,
+   * continuous=count|sum|average).
+   */
+  metricAgg: "once" | "count" | "sum" | "average";
 }
 
 /**
  * Query one metric event from track-service and return a per-variant data dict
  * in the shape expected by runAnalysis():
  *
- *   { "control": { n: 1000, k: 150 }, "treatment": { n: 1020, k: 204 } }
+ *   binary     → { "control": { n: 1000, k: 150 }, ... }
+ *   continuous → { "control": { n: 1000, sum: 5000, sum_squares: 27500 }, ... }
  *
- * For continuous metrics (sumValue > 0), returns:
- *   { "control": { n: 1000, sum: 5000, sum_squares: 27500 }, ... }
+ * Shape is decided by `metricType` — the caller's declaration is the single
+ * source of truth. Run rows always carry `primaryMetricType` (DB default
+ * `binary`) and guardrails always go through parseGuardrailDefs, so the
+ * declaration is always present at this boundary.
  *
  * Returns null if the query fails or no data is found.
  */
@@ -71,6 +86,8 @@ export async function queryMetric(
         metricEvent: params.metricEvent,
         startDate:   params.startDate,
         endDate:     params.endDate,
+        metricType:  params.metricType,
+        metricAgg:   params.metricAgg,
       }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -88,35 +105,12 @@ export async function queryMetric(
     // "track-service unreachable" (which returns null via the catch below).
     if (!data.variants || data.variants.length === 0) return {};
 
-    // Convert TrackVariantStats[] → { variant: { n, k } | { n, sum, sum_squares } }
-    //
-    // Continuous vs binary detection:
-    //   - Binary (proportion): click/conversion events where each event records
-    //     no meaningful numeric value — sumValue ≈ conversions (value=1 per event).
-    //   - Continuous: revenue / duration metrics where sumValue > conversions
-    //     (events carry real numeric payloads, not just a count).
-    //
-    // Checking sumValue > 0 alone is NOT sufficient — a click metric with one
-    // conversion still has sumValue=1, which would incorrectly flag it as
-    // continuous and produce a "mean" column instead of a conversion rate.
+    const isContinuous = params.metricType === "continuous";
     const result: Record<string, Record<string, number>> = {};
     for (const v of data.variants) {
-      const isContinuous = (v.sumValue > 0 || v.sumSquares > 0) &&
-        v.sumValue > v.conversions + 0.001;
-      if (isContinuous) {
-        // Continuous metric (e.g. revenue, load time)
-        result[v.variant] = {
-          n:            v.users,
-          sum:          v.sumValue,
-          sum_squares:  v.sumSquares,
-        };
-      } else {
-        // Binary / proportion metric (e.g. click, signup, checkout)
-        result[v.variant] = {
-          n: v.users,
-          k: v.conversions,
-        };
-      }
+      result[v.variant] = isContinuous
+        ? { n: v.users, sum: v.sumValue, sum_squares: v.sumSquares }
+        : { n: v.users, k: v.conversions };
     }
 
     return result;
@@ -128,6 +122,17 @@ export async function queryMetric(
 }
 
 /**
+ * Per-event spec consumed by queryAllMetrics. Carries the user's declared
+ * metricType / metricAgg so each query honours the right SQL aggregation
+ * (track-service side) and response shape (track-client side).
+ */
+export interface MetricSpec {
+  event: string;
+  metricType: "binary" | "continuous";
+  metricAgg: "once" | "count" | "sum" | "average";
+}
+
+/**
  * Query primary metric + guardrails in parallel and return the full metrics
  * dict ready for runAnalysis():
  *
@@ -135,28 +140,29 @@ export async function queryMetric(
  *     "checkout":    { "control": {n, k}, "treatment": {n, k} },
  *     "error_rate":  { "control": {n, k}, "treatment": {n, k}, "inverse": true },
  *   }
+ *
+ * Each MetricSpec must carry its declared metricType + metricAgg.
  */
 export async function queryAllMetrics(params: {
   envId: string;
   flagKey: string;
   startDate: string;
   endDate: string;
-  primaryMetricEvent: string;
-  guardrailEvents?: string[];
+  primary: MetricSpec;
+  guardrails?: MetricSpec[];
 }): Promise<Record<string, Record<string, unknown>> | null> {
-  const events = [
-    params.primaryMetricEvent,
-    ...(params.guardrailEvents ?? []),
-  ];
+  const specs: MetricSpec[] = [params.primary, ...(params.guardrails ?? [])];
 
   const results = await Promise.all(
-    events.map((metricEvent) =>
+    specs.map((spec) =>
       queryMetric({
         envId:       params.envId,
         flagKey:     params.flagKey,
-        metricEvent,
+        metricEvent: spec.event,
         startDate:   params.startDate,
         endDate:     params.endDate,
+        metricType:  spec.metricType,
+        metricAgg:   spec.metricAgg,
       }),
     ),
   );
@@ -165,9 +171,9 @@ export async function queryAllMetrics(params: {
   if (!results[0]) return null;
 
   const metrics: Record<string, Record<string, unknown>> = {};
-  for (let i = 0; i < events.length; i++) {
+  for (let i = 0; i < specs.length; i++) {
     if (results[i]) {
-      metrics[events[i]] = results[i] as Record<string, unknown>;
+      metrics[specs[i].event] = results[i] as Record<string, unknown>;
     }
   }
 

@@ -12,6 +12,7 @@ import {
   addActivity,
   addMessage,
   updateExperimentRun,
+  propagateMetricsToLatestRun,
 } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
 
@@ -114,9 +115,19 @@ export async function updateMetricsAction(formData: FormData) {
         })
       : null;
 
+  const guardrailsJson = guardrails?.trim() || null;
+
   await updateExperiment(experimentId, {
     primaryMetric,
-    guardrails: guardrails?.trim() || null,
+    guardrails: guardrailsJson,
+  });
+
+  // The analysis API reads metric type/agg from the ExperimentRun row, not
+  // the Experiment row — so editing metrics here MUST also update the run.
+  // Otherwise the next analyze call uses stale or empty type/agg fields.
+  await propagateMetricsToLatestRun(experimentId, {
+    primaryMetric,
+    guardrails: guardrailsJson,
   });
 
   await addActivity(experimentId, {
@@ -458,6 +469,7 @@ export async function saveExpertSetupAction(formData: FormData) {
     description?: string;
     inverse?: boolean;
     metricType?: string;
+    metricAgg?: string;
     dataRows?: GuardrailDataRowIn[];
     dataSource?: string;
     dataSourceNote?: string;
@@ -468,31 +480,49 @@ export async function saveExpertSetupAction(formData: FormData) {
     description: string;
     inverse: boolean;
     metricType: string;
+    metricAgg: string;
     dataRows: GuardrailDataRowIn[];
     dataSource: "manual" | "featbit" | "external";
     dataSourceNote: string;
   };
   let guardrailsForExperiment: string | null = null;
-  let guardrailEventNames: string[] = [];
+  let guardrailEventsJson: string | null = null;
   let guardrailDescriptions: Record<string, string> = {};
   let cleanedGuardrails: GuardrailParsed[] = [];
   try {
     const parsed = JSON.parse(guardrailsRaw) as GuardrailIn[];
     if (Array.isArray(parsed) && parsed.length > 0) {
       cleanedGuardrails = parsed
-        .map((g) => ({
-          name: g.name?.trim() || "",
-          event: g.event?.trim() || g.name?.trim() || "",
-          description: g.description?.trim() || "",
-          inverse: Boolean(g.inverse),
-          metricType: g.metricType === "numeric" ? "numeric" : "binary",
-          dataRows: Array.isArray(g.dataRows) ? g.dataRows : [],
-          dataSource:
-            g.dataSource === "featbit" || g.dataSource === "external"
-              ? (g.dataSource as "featbit" | "external")
-              : ("manual" as const),
-          dataSourceNote: g.dataSourceNote?.trim() || "",
-        }))
+        .map((g) => {
+          // Canonical metricType: "binary" | "continuous" (legacy "numeric" tolerated).
+          const metricType =
+            g.metricType === "continuous" || g.metricType === "numeric"
+              ? "continuous"
+              : "binary";
+          // Binary guardrails always aggregate "once per user"; continuous picks
+          // count / sum / average. Anything else falls back to "once".
+          const aggIn = g.metricAgg ?? "once";
+          const metricAgg =
+            metricType === "binary"
+              ? "once"
+              : aggIn === "count" || aggIn === "sum" || aggIn === "average"
+                ? aggIn
+                : "sum";
+          return {
+            name: g.name?.trim() || "",
+            event: g.event?.trim() || g.name?.trim() || "",
+            description: g.description?.trim() || "",
+            inverse: Boolean(g.inverse),
+            metricType,
+            metricAgg,
+            dataRows: Array.isArray(g.dataRows) ? g.dataRows : [],
+            dataSource:
+              g.dataSource === "featbit" || g.dataSource === "external"
+                ? (g.dataSource as "featbit" | "external")
+                : ("manual" as const),
+            dataSourceNote: g.dataSourceNote?.trim() || "",
+          };
+        })
         .filter((g) => g.name || g.event);
       if (cleanedGuardrails.length > 0) {
         // Strip dataRows from the UI-facing JSON — dataRows get merged into
@@ -507,7 +537,19 @@ export async function saveExpertSetupAction(formData: FormData) {
             };
           }),
         );
-        guardrailEventNames = cleanedGuardrails.map((g) => g.event).filter(Boolean);
+        // Run-side guardrailEvents now stores the rich GuardrailDef[] shape
+        // (event, metricType, metricAgg, inverse) so the analysis route can
+        // honour type/agg/inverse without re-reading the experiment row.
+        guardrailEventsJson = JSON.stringify(
+          cleanedGuardrails
+            .filter((g) => g.event)
+            .map((g) => ({
+              event: g.event,
+              metricType: g.metricType,
+              metricAgg: g.metricAgg,
+              inverse: g.inverse,
+            })),
+        );
         guardrailDescriptions = cleanedGuardrails.reduce<Record<string, string>>((acc, g) => {
           if (g.event && g.description) acc[g.event] = g.description;
           return acc;
@@ -605,7 +647,7 @@ export async function saveExpertSetupAction(formData: FormData) {
     method,
     primaryMetricEvent: metricEvent,
     metricDescription,
-    guardrailEvents: guardrailEventNames.length > 0 ? JSON.stringify(guardrailEventNames) : null,
+    guardrailEvents: guardrailEventsJson,
     guardrailDescriptions: Object.keys(guardrailDescriptions).length > 0
       ? JSON.stringify(guardrailDescriptions)
       : null,

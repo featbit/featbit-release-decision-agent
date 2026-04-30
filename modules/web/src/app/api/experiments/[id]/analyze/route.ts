@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { updateExperimentRun } from "@/lib/data";
+import { updateExperimentRun, parseGuardrailDefs } from "@/lib/data";
 import { runAnalysis } from "@/lib/stats/analyze";
 import { runBanditAnalysis } from "@/lib/stats/bandit";
 import { queryAllMetrics } from "@/lib/stats/track-client";
@@ -76,24 +76,11 @@ export async function POST(
   const endDate = end.toISOString().slice(0, 10);
   const method = run.method ?? "bayesian_ab";
 
-  // Parse guardrail event names
-  let guardrailEventNames: string[] = [];
-  if (run.guardrailEvents) {
-    try {
-      const parsed = JSON.parse(run.guardrailEvents);
-      if (Array.isArray(parsed)) {
-        guardrailEventNames = parsed.filter(
-          (v): v is string => typeof v === "string" && v.length > 0,
-        );
-      }
-    } catch {
-      // comma-separated fallback
-      guardrailEventNames = run.guardrailEvents
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-  }
+  // Parse guardrail definitions. parseGuardrailDefs accepts both legacy
+  // string[] (event names only) and the canonical GuardrailDef[] shape with
+  // metricType / metricAgg / inverse, so the analyzer honours each guardrail's
+  // declared aggregation and direction even on the live-data path.
+  const guardrailDefs = parseGuardrailDefs(run.guardrailEvents);
 
   // ── Step 1: Obtain per-variant stats ────────────────────────────────────────
   // Prefer live track-service fetch when the flag is wired up. Fall back to
@@ -104,13 +91,34 @@ export async function POST(
   let dataSource: "live" | "stored" = "live";
 
   if (canLiveFetch) {
+    // Narrow Prisma's `string | null` to MetricSpec's canonical literal union.
+    // Run rows always have a value (DB default 'binary' / 'once'; the
+    // experiment-run POST validator rejects anything else), so a missing
+    // value here means a row that pre-dated the column — fall back to the
+    // same DB default.
+    const narrowType = (v: string | null | undefined): "binary" | "continuous" =>
+      v === "continuous" ? "continuous" : "binary";
+    const narrowAgg = (v: string | null | undefined): "once" | "count" | "sum" | "average" =>
+      v === "count" || v === "sum" || v === "average" ? v : "once";
+
     metrics = (await queryAllMetrics({
       envId: envId as string,
       flagKey: flagKey as string,
       startDate,
       endDate,
-      primaryMetricEvent: run.primaryMetricEvent,
-      guardrailEvents: guardrailEventNames,
+      // Pass the run's declared metricType / metricAgg through to track-service
+      // so the SQL aggregates per the user's intent and the response shape
+      // matches what the analyzer expects.
+      primary: {
+        event:      run.primaryMetricEvent,
+        metricType: narrowType(run.primaryMetricType),
+        metricAgg:  narrowAgg(run.primaryMetricAgg),
+      },
+      guardrails: guardrailDefs.map((g) => ({
+        event:      g.event,
+        metricType: narrowType(g.metricType),
+        metricAgg:  narrowAgg(g.metricAgg),
+      })),
     })) as MetricsDict | null;
   }
 
@@ -214,7 +222,7 @@ export async function POST(
         priorMean: run.priorMean ?? 0,
         priorStddev: run.priorStddev ?? 0.3,
         minimumSample: run.minimumSample ?? 0,
-        guardrailEvents: guardrailEventNames.length > 0 ? guardrailEventNames : undefined,
+        guardrails: guardrailDefs.length > 0 ? guardrailDefs : undefined,
         primaryMetricAgg: run.primaryMetricAgg ?? undefined,
       });
 
