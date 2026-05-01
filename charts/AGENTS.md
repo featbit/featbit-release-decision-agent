@@ -52,11 +52,19 @@ while on the `docker-desktop` kubectl context. (Check with `kubectl config curre
 ## Cluster-side resources we applied (outside the chart)
 
 - Namespace `featbit-rda`
-- `SecretProviderClass/featbit-rda-clickhouse-kv` — projects the KV secret
-  into K8s Secret `featbit-rda-clickhouse-secret` (key `connection-string`).
+- `SecretProviderClass/featbit-rda-secrets-kv` — single SPC projecting all
+  umbrella-scoped Key Vault secrets into K8s Secrets:
+  | KV secret | K8s Secret | key |
+  |---|---|---|
+  | `featbit-rda-clickhouse-conn` | `featbit-rda-clickhouse-secret` | `connection-string` |
+  | `featbit-rda-signing-key` | `featbit-rda-signing-key-secret` | `signing-key` |
+  | `featbit-rda-web-database-url` | `featbit-rda-web-database-secret` | `database-url` |
+  | `featbit-rda-sandbox0-api-key` | `featbit-rda-sandbox0-secret` | `api-key` |
+
   Manifest template: `charts/featbit-rda/examples/aks/keyvault-secret-provider.yaml`.
-  The applied one has real identity IDs filled in; we used a heredoc (not the
-  template file) to apply it.
+  The applied one (`keyvault-secret-provider.local.yaml`, gitignored) has real
+  identity / tenant / vault names filled in. To add a new secret you must
+  update BOTH the public template and the local file, then re-apply.
 
 ## Pre-existing cluster infra (do NOT assume we own these)
 
@@ -157,10 +165,18 @@ docker push <acr>/featbit/web:0.2.0
 ```
 
 Server-side runtime envs (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) are NOT
-build-time. They reach the pod via `web.extraEnv` (or an
-`existingSecret`-style secret projected from Key Vault). Confirm your
-`values.aks.local.yaml` carries them before rolling — chat will silently
-fail if `SANDBOX0_API_KEY` is missing.
+build-time. `SANDBOX0_BASE_URL` defaults to `https://agents.sandbox0.ai`
+in code, so the prod wiring only needs to inject the API key. Wired via
+the same Key Vault SPC as the other secrets:
+
+- KV secret name: `featbit-rda-sandbox0-api-key`
+- Projected K8s Secret: `featbit-rda-sandbox0-secret` (key `api-key`)
+- `values.aks.local.yaml` → `web.extraEnv[SANDBOX0_API_KEY]` references it
+  via `secretKeyRef`
+
+Confirm your `values.aks.local.yaml` carries the `extraEnv` block before
+rolling — chat returns 401 "missing authorization header" if
+`SANDBOX0_API_KEY` is empty.
 
 ### One-off data fix already applied
 
