@@ -16,6 +16,7 @@
     "sandbox0:setup-vaults": "npx tsx scripts/sandbox0/setup-vaults.ts",
     "sandbox0:setup-agent": "npx tsx scripts/sandbox0/setup-agent.ts",
     "sandbox0:sync-skills": "npx tsx scripts/sandbox0/sync-skills.ts",
+    "sandbox0:clear-sessions": "npx tsx scripts/sandbox0/clear-sessions.ts",
     "sandbox0:rotate-llm-key": "npx tsx scripts/sandbox0/rotate-llm-key.ts",
     "sandbox0:update-env": "npx tsx scripts/sandbox0/update-env.ts"
   },

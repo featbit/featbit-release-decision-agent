@@ -127,6 +127,20 @@ When you add a new write site for the experiment-level metric JSON, you must cal
 
 The legacy bare `string[]` form is read-tolerated but never written. `analyze.ts` reads `metricAgg` and `inverse` from this column so guardrails analyse correctly even on the live track-service path (where the heuristic in `track-client.ts` cannot infer them from the response).
 
+## Sandbox0 Agent Ops
+
+The chat panel runs against a sandbox0 (Managed Agents) custom agent that bundles repo-local skills. Operating it is two scripts:
+
+```
+npm run sandbox0:sync-skills      # upload skills/<name>/ → bump default agent version
+npm run sandbox0:clear-sessions   # dry-run count
+npm run sandbox0:clear-sessions -- apply   # null out experiment.sandbox_id
+```
+
+Why both: `sync-skills` POSTs new skill versions and bumps the default agent (e.g. v10 → v11), but every experiment's existing session is pinned to the agent version it was created with. To force everyone onto the new skills, run `clear-sessions -- apply` — the next chat-panel open per experiment creates a fresh session against the bumped agent.
+
+`sync-skills` only **updates** existing sandbox0 skills; it never auto-creates from local folders. Onboarding a new skill is an explicit action via `sandbox0:setup-agent` (see `scripts/sandbox0/setup-agent.ts`).
+
 ## Relationship to Parent Project
 
 This `agent/` folder is part of the [featbit-release-decision-agent](https://github.com/featbit/featbit-release-decision-agent) mono-repo. The parent project's `skills/` folder contains the agent skills that power the experiment loop. The web UI in this folder provides a visual interface for those same capabilities.
