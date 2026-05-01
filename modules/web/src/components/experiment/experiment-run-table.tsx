@@ -760,7 +760,7 @@ export function ExperimentRunTable({
 
   function handleAnalyze(exp: ExperimentRun) {
     if (!triggerChat) return;
-    const message = `请基于当前实验 run "${exp.slug}" 的现有分析结果，给出 deciding 结论（CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE），并说明：1) 主指标信号 2) guardrail 风险 3) 下一步行动。`;
+    const message = `Based on the current analysis for experiment run "${exp.slug}", give a deciding verdict (CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE) and cover: 1) primary-metric signal 2) guardrail risk 3) next action.`;
     triggerChat(message);
   }
 
