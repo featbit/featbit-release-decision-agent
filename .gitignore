@@ -19,7 +19,7 @@ artifacts/
 .env
 .env.*
 *.local
-*.local.yaml
+# *.local.yaml
 *.local.yml
 secrets.json
 

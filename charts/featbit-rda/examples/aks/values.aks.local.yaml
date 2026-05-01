@@ -1,0 +1,174 @@
+# Local (gitignored — see .helmignore *.local.yaml) values for deploying to
+# the featbitsaasakswu3 AKS cluster in westus3. Uses:
+#   - ACR:           featbitrdawu3.azurecr.io
+#   - Key Vault:     featbit-kv-wu3
+#   - SPC:           featbit-rda-secrets-kv  (single SPC, multiple Secrets)
+#   - ClickHouse DB: default  (tables live in `default`, not `featbit`)
+
+global:
+  imageRegistry: "featbitrdawu3.azurecr.io"
+
+trackService:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    registry: ""
+    repository: featbit/track-service
+    tag: "0.3.0"
+    pullPolicy: IfNotPresent
+
+  clickHouse:
+    existingSecret: "featbit-rda-clickhouse-secret"
+    existingSecretKey: "connection-string"
+    database: "default"
+
+  # Signing key sourced from the same Key Vault SPC. web.envSecret defaults to
+  # reusing this same Secret automatically (see _helpers.tpl: web.signingKeySecretName).
+  envSecret:
+    existingSecret: "featbit-rda-signing-key-secret"
+    existingSecretKey: "signing-key"
+
+  volumeMounts:
+    - name: featbit-secrets
+      mountPath: "/mnt/secrets-store"
+      readOnly: true
+  volumes:
+    - name: featbit-secrets
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: "featbit-rda-secrets-kv"
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "1500m"
+      memory: "2Gi"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: track-service
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    host: "track.featbit.ai"
+    path: /
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    tls:
+      enabled: true
+      secretName: "track-service-tls"
+
+# ── web ────────────────────────────────────────────────────────────────────────
+# NEXT_PUBLIC_* are baked at `next build` time (not runtime). Build the image
+# in CI with these args before bumping the tag below:
+#   docker build modules/web \
+#     --build-arg NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai \
+#     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
+#     -t featbitrdawu3.azurecr.io/featbit/web:0.1.0
+web:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    registry: ""
+    repository: featbit/web
+    tag: "0.2.0"
+    pullPolicy: IfNotPresent
+
+  database:
+    existingSecret: "featbit-rda-web-database-secret"
+    existingSecretKey: "database-url"
+
+  # Leave envSecret.existingSecret blank — chart auto-points at
+  # featbit-rda-signing-key-secret because trackService.envSecret.existingSecret
+  # is set above. (See _helpers.tpl: web.signingKeySecretName.)
+
+  # sandbox0 (Managed Agents) — server-side runtime env. The API key is
+  # projected into Secret `featbit-rda-sandbox0-secret` by the same SPC as
+  # the other secrets (see keyvault-secret-provider.local.yaml).
+  extraEnv:
+    - name: SANDBOX0_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: featbit-rda-sandbox0-secret
+          key: api-key
+
+  # CSI volume must be mounted on the web pod too, otherwise the web-database
+  # Secret never gets projected.
+  volumeMounts:
+    - name: featbit-secrets
+      mountPath: "/mnt/secrets-store"
+      readOnly: true
+  volumes:
+    - name: featbit-secrets
+      csi:
+        driver: secrets-store.csi.k8s.io
+        readOnly: true
+        volumeAttributes:
+          secretProviderClass: "featbit-rda-secrets-kv"
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: web
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    host: "www.featbit.ai"
+    path: /
+    pathType: Prefix
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    tls:
+      enabled: true
+      secretName: "web-tls"
