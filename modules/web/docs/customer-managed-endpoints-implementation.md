@@ -18,7 +18,7 @@
 | 2   | API: `/api/projects/[projectKey]/customer-endpoints` CRUD                            | 1          | done (Test endpoint deferred to PR 4) |
 | 3   | Data Warehouse page UI: third top-level card + provider list / add / edit / rotate / delete | 1, 2       | done (test button still deferred to PR 4) |
 | 4   | `lib/stats/customer-endpoint-client.ts` + Test endpoint API + Test button UI         | 1          | done        |
-| 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode`              | 1, 4       | not started |
+| 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode` (+ fetcher)  | 1, 4       | done        |
 | 6   | Expert experiment setup: Data source as its own step + provider picker              | 1, 2       | not started |
 | 7   | `/data-warehouse/customer-endpoints/schema` doc page (renders the spec markdown)    | —          | not started |
 
@@ -483,9 +483,85 @@ be available.
 
 ---
 
-## PR 5 — Wire into analyze route
+## PR 5 — Wire analyze route to customer endpoints
 
-(Not started.)
+### Goal
+
+Make the existing `POST /api/experiments/[id]/analyze` route choose between
+the FeatBit-managed track-service path (legacy default) and the Customer
+Managed Data Endpoint path based on `ExperimentRun.dataSourceMode`. Same
+analyser downstream — both paths produce the same `MetricsDict` shape
+that `runAnalysis()` / `runBanditAnalysis()` already consume.
+
+### Decisions taken
+
+1. **Translator layer in a separate module.** New
+   `lib/stats/customer-endpoint-fetcher.ts` sits between the route and
+   the raw HTTP client. The route knows about runs and experiments; the
+   client knows about HTTP / HMAC. The fetcher translates the run row
+   into one or more endpoint calls (Mode A or Mode B), loads providers
+   from Prisma, fans out, and merges responses. Keeps the route handler
+   roughly the same size and the client decoupled from the experiment
+   data model.
+
+2. **No silent fallback from customer to stored data.** When the user
+   has explicitly chosen `dataSourceMode = "customer-*"`, a fetch
+   failure surfaces a 503 with the underlying error message. Falling
+   back to stored `inputData` would silently mask a misconfigured
+   warehouse — operator would see stale numbers thinking they were
+   fresh.
+
+3. **Default behaviour unchanged.** `dataSourceMode` defaults to
+   `"featbit-managed"` (set by the migration in PR 1), so every
+   existing run keeps using `queryAllMetrics` / track-service. The new
+   branch only fires for runs the operator has explicitly opted in.
+
+4. **Mode B fan-out groups by `(provider, path)`.** Multiple metrics
+   pointing at the same `(provider, path)` pair share a single HTTP
+   call. Loaded providers are batched into one Prisma `findMany`. All
+   calls fire in parallel via `Promise.all`. A single failure aborts
+   the whole batch — partial-success would silently drop guardrails,
+   which matters more than getting some numbers fast.
+
+5. **Variants list lifts the existing computation.** The route already
+   builds `[controlVariant, ...treatments]` for the analyser; the
+   fetcher just receives the same list. Bandit and A/B/N produce the
+   same shape, just with different N — already correct.
+
+6. **Bandit only sends the reward metric.** Per spec §3.3, bandit
+   experiments use `metrics: [{role: "reward"}]` with no guardrails.
+   The route checks `method === "bandit"` and trims `guardrails: []`
+   before passing to the fetcher.
+
+### Files changed
+
+- `src/lib/stats/customer-endpoint-fetcher.ts` (new) — orchestrator.
+  `fetchFromCustomerEndpoint(dataSourceMode, customerEndpointConfig, ctx)`
+  → `MetricsDict | error`. Handles both modes, parallel fan-out,
+  merging.
+- `src/app/api/experiments/[id]/analyze/route.ts` (modified):
+    - Added import of `fetchFromCustomerEndpoint`
+    - Added `isCustomerMode` early — relaxes the "no data source" 400
+      so customer mode is a valid data source
+    - Branch on `isCustomerMode` before the existing `canLiveFetch`
+      track-service branch
+    - On customer-fetch failure: 503 with the underlying error message
+      (no fallback to stored data)
+    - Response `dataSource` field now includes `"customer"` alongside
+      `"live"` and `"stored"`
+
+### Verification
+
+- `npx tsc --noEmit` clean.
+- Default-path behaviour preserved by construction: every existing
+  run has `dataSourceMode = "featbit-managed"` (DB default, applied
+  by PR 1's migration), which takes the unchanged `else if (canLiveFetch)`
+  branch. No code path that existing experiments hit was modified.
+- Customer-path verification needs a real customer endpoint or an
+  override (`ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1` + a localhost mock).
+  Deferred to operator end-to-end testing once PR 6 ships the Expert
+  setup wizard step that lets a UI flow create an experiment in
+  customer-* mode without manual DB editing.
 
 ---
 

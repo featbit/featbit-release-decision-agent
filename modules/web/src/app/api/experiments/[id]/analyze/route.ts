@@ -4,6 +4,7 @@ import { updateExperimentRun, parseGuardrailDefs } from "@/lib/data";
 import { runAnalysis } from "@/lib/stats/analyze";
 import { runBanditAnalysis } from "@/lib/stats/bandit";
 import { queryAllMetrics } from "@/lib/stats/track-client";
+import { fetchFromCustomerEndpoint } from "@/lib/stats/customer-endpoint-fetcher";
 
 export async function POST(
   req: NextRequest,
@@ -54,11 +55,13 @@ export async function POST(
       { status: 400 }
     );
   }
-  if (!canLiveFetch && !hasStoredInputData) {
+  const isCustomerMode =
+    run.dataSourceMode === "customer-single" || run.dataSourceMode === "customer-per-metric";
+  if (!isCustomerMode && !canLiveFetch && !hasStoredInputData) {
     return NextResponse.json(
       {
         error:
-          "No data available: either configure flag (featbitEnvId + flagKey) or paste observed data in expert setup.",
+          "No data available: configure flag (featbitEnvId + flagKey), paste observed data in expert setup, or set up a Customer Managed Data Endpoint.",
       },
       { status: 400 }
     );
@@ -83,24 +86,60 @@ export async function POST(
   const guardrailDefs = parseGuardrailDefs(run.guardrailEvents);
 
   // ── Step 1: Obtain per-variant stats ────────────────────────────────────────
-  // Prefer live track-service fetch when the flag is wired up. Fall back to
-  // stored inputData for "expert setup" experiments where the user pasted
-  // totals and there is no FeatBit flag to query yet.
+  // Three data-source paths (selected by ExperimentRun.dataSourceMode):
+  //   "customer-single"     → Customer Managed Data Endpoint, single endpoint
+  //   "customer-per-metric" → Customer Managed Data Endpoint, per-metric routing
+  //   "featbit-managed"     → FeatBit-managed track-service (default; legacy)
+  //   "manual"/"external-text"/null → no live fetch; stored inputData fallback only
   type MetricsDict = Record<string, Record<string, Record<string, number>>>;
   let metrics: MetricsDict | null = null;
-  let dataSource: "live" | "stored" = "live";
+  let dataSource: "live" | "customer" | "stored" = "live";
+  let customerError: string | null = null;
 
-  if (canLiveFetch) {
-    // Narrow Prisma's `string | null` to MetricSpec's canonical literal union.
-    // Run rows always have a value (DB default 'binary' / 'once'; the
-    // experiment-run POST validator rejects anything else), so a missing
-    // value here means a row that pre-dated the column — fall back to the
-    // same DB default.
-    const narrowType = (v: string | null | undefined): "binary" | "continuous" =>
-      v === "continuous" ? "continuous" : "binary";
-    const narrowAgg = (v: string | null | undefined): "once" | "count" | "sum" | "average" =>
-      v === "count" || v === "sum" || v === "average" ? v : "once";
+  // Narrow Prisma's `string | null` to MetricSpec's canonical literal union.
+  // Run rows always have a value (DB default 'binary' / 'once'); a missing
+  // value means a row predating the column — fall back to the same default.
+  const narrowType = (v: string | null | undefined): "binary" | "continuous" =>
+    v === "continuous" ? "continuous" : "binary";
+  const narrowAgg = (v: string | null | undefined): "once" | "count" | "sum" | "average" =>
+    v === "count" || v === "sum" || v === "average" ? v : "once";
 
+  const dataSourceMode = run.dataSourceMode ?? "featbit-managed";
+
+  if (isCustomerMode) {
+    const result = await fetchFromCustomerEndpoint(
+      dataSourceMode,
+      run.customerEndpointConfig,
+      {
+        experimentId:   experiment.id,
+        flagKey:        flagKey ?? "",
+        envId:          envId ?? "",
+        variants:       [controlVariant, ...treatments],
+        windowStart:    start.toISOString(),
+        windowEnd:      end.toISOString(),
+        experimentMode: method === "bandit" ? "bandit" : "ab",
+        primary: {
+          name:    run.primaryMetricEvent,
+          role:    method === "bandit" ? "reward" : "primary",
+          type:    narrowType(run.primaryMetricType),
+          agg:     narrowAgg(run.primaryMetricAgg),
+        },
+        guardrails: method === "bandit" ? [] : guardrailDefs.map((g) => ({
+          name:    g.event,
+          role:    "guardrail" as const,
+          type:    narrowType(g.metricType),
+          agg:     narrowAgg(g.metricAgg),
+          inverse: g.inverse,
+        })),
+      },
+    );
+    if (result.ok) {
+      metrics = result.metrics;
+      dataSource = "customer";
+    } else {
+      customerError = result.error;
+    }
+  } else if (canLiveFetch) {
     metrics = (await queryAllMetrics({
       envId: envId as string,
       flagKey: flagKey as string,
@@ -122,8 +161,20 @@ export async function POST(
     })) as MetricsDict | null;
   }
 
+  // Customer-endpoint failure surfaces immediately — falling back to stored
+  // data would silently mask a misconfigured warehouse, since the operator
+  // explicitly chose customer-managed and would be looking at stale numbers
+  // without knowing it.
+  if (isCustomerMode && !metrics) {
+    return NextResponse.json(
+      { error: `Customer endpoint fetch failed: ${customerError ?? "unknown error"}` },
+      { status: 503 },
+    );
+  }
+
   if (!metrics) {
-    // Live fetch didn't work (or wasn't possible). Fall back to stored data.
+    // Live (track-service) fetch didn't work or wasn't possible. Fall back
+    // to stored data — only valid for the FeatBit-managed / manual paths.
     if (hasStoredInputData) {
       try {
         const parsed = JSON.parse(run.inputData as string);
