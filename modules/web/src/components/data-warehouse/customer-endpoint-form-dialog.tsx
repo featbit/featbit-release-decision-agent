@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, RotateCw, Trash2 } from "lucide-react";
+import { Loader2, RotateCw, Trash2, PlugZap, CheckCircle2, AlertCircle } from "lucide-react";
 import type { ProviderPublic, ProviderWithSecret } from "./types";
 
 type Mode =
@@ -55,12 +55,18 @@ export function CustomerEndpointFormDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [testResult, setTestResult] = useState<
+    | { ok: true; attempts: number }
+    | { ok: false; message: string; kind: string; status?: number; attempts: number }
+    | null
+  >(null);
 
   // Reset form when (re)opening, or load values when switching to edit mode.
   useEffect(() => {
     if (!open) return;
     setError(null);
     setConfirmDelete(false);
+    setTestResult(null);
     if (mode.kind === "add") {
       setName("");
       setBaseUrl("");
@@ -157,6 +163,35 @@ export function CustomerEndpointFormDialog({
     }
   }
 
+  async function handleTest() {
+    if (mode.kind !== "edit") return;
+    setError(null);
+    setTestResult(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`${apiPath}/test`, { method: "POST" });
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        throw new Error(typeof json.error === "string" ? json.error : `HTTP ${res.status}`);
+      }
+      if (json.ok === true) {
+        setTestResult({ ok: true, attempts: Number(json.attempts ?? 1) });
+      } else {
+        setTestResult({
+          ok:       false,
+          kind:     String(json.kind ?? "unknown"),
+          status:   typeof json.status === "number" ? json.status : undefined,
+          message:  String(json.message ?? "Unknown error"),
+          attempts: Number(json.attempts ?? 1),
+        });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleDelete() {
     if (mode.kind !== "edit") return;
     setError(null);
@@ -239,7 +274,40 @@ export function CustomerEndpointFormDialog({
 
           {mode.kind === "edit" && (
             <div className="rounded-md border p-3 space-y-2 bg-muted/20">
-              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Connection
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTest}
+                  disabled={busy}
+                >
+                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <PlugZap className="size-3.5" />}
+                  Test
+                </Button>
+              </div>
+              {testResult?.ok === true && (
+                <div className="flex items-start gap-2 text-xs text-emerald-700">
+                  <CheckCircle2 className="size-3.5 mt-0.5 shrink-0" />
+                  <span>
+                    OK — endpoint responded with a valid v1 schema after {testResult.attempts} attempt{testResult.attempts === 1 ? "" : "s"}.
+                  </span>
+                </div>
+              )}
+              {testResult?.ok === false && (
+                <div className="flex items-start gap-2 text-xs text-destructive">
+                  <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
+                  <span className="break-all">
+                    <strong className="capitalize">{testResult.kind}</strong>
+                    {testResult.status ? ` (${testResult.status})` : ""}: {testResult.message}
+                    {testResult.attempts > 1 && ` (after ${testResult.attempts} attempts)`}
+                  </span>
+                </div>
+              )}
+              <div className="border-t border-border/60 pt-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Signing secret
               </div>
               <div className="flex items-center justify-between gap-2">

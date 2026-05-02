@@ -17,7 +17,7 @@
 | 1   | Prisma: `CustomerEndpointProvider` model + `ExperimentRun` data-source fields       | —          | **applied to prod** (Azure PG `featbit-ai`, 2026-05-02) |
 | 2   | API: `/api/projects/[projectKey]/customer-endpoints` CRUD                            | 1          | done (Test endpoint deferred to PR 4) |
 | 3   | Data Warehouse page UI: third top-level card + provider list / add / edit / rotate / delete | 1, 2       | done (test button still deferred to PR 4) |
-| 4   | `lib/stats/customer-endpoint-client.ts`: HMAC + fetch + retry + stats normalisation | 1          | not started |
+| 4   | `lib/stats/customer-endpoint-client.ts` + Test endpoint API + Test button UI         | 1          | done        |
 | 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode`              | 1, 4       | not started |
 | 6   | Expert experiment setup: Data source as its own step + provider picker              | 1, 2       | not started |
 | 7   | `/data-warehouse/customer-endpoints/schema` doc page (renders the spec markdown)    | —          | not started |
@@ -392,9 +392,94 @@ tooling here can't drive the dialog flow. Human checklist:
 
 ---
 
-## PR 4 — customer-endpoint-client.ts
+## PR 4 — customer-endpoint-client + Test endpoint
 
-(Not started.)
+### Goal
+
+Stand up the outbound HTTP client that talks to customer endpoints and use
+it to back the Test button in the provider edit dialog. Wiring into the
+analyse route is still PR 5.
+
+### Decisions taken
+
+1. **`node:crypto` for HMAC, not Web Crypto.** Matches the existing
+   `lib/track/env-secret.ts` pattern. Cloudflare Workers `nodejs_compat`
+   supports it; the web app deploys via Containers (Docker on Workers) so
+   full Node is available regardless.
+
+2. **Static SSRF guard with env override.** `checkPrivateAddress()` blocks
+   loopback, RFC1918 private IPv4, link-local (incl. AWS/Azure IMDS at
+   169.254.169.254), IPv6 loopback / unique-local / link-local, plus
+   non-`https://` schemes. Override: `ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1`
+   in the env disables the entire check, for dev iteration against
+   `https://localhost`-style URLs. Documented limitation: does NOT defend
+   against DNS rebinding.
+
+3. **Timeouts not retried.** Per spec §8: 503 + network errors retried
+   up to 2× with `[1s, 4s]` backoff; timeouts fail immediately. Reasoning:
+   timeouts almost always mean the endpoint is overloaded, and retrying
+   compounds the problem. Easy to flip to retried later if real usage
+   shows otherwise.
+
+4. **Test ping POSTs to `baseUrl` directly.** Not appended with any
+   per-experiment path (none exists at provider level). Customer's root
+   handler at `baseUrl` must recognise `experimentId === "featbit-ping"`
+   and return the §8 sentinel response. Spec §8 updated to reflect.
+
+5. **Test button gated to edit mode only.** Provider must be saved (so
+   the signing secret exists in DB) before the button appears.
+
+6. **`/test` route returns HTTP 200 even on failure**, with `ok: false`
+   in the body. Reason: the failure is "the customer's endpoint
+   misbehaved", not "FeatBit's API misbehaved". The UI surfaces the
+   error inline with the rendered cause; using HTTP non-2xx would force
+   the front-end to special-case parsing.
+
+### Files changed
+
+- `src/lib/stats/customer-endpoint-client.ts` (new) — public API:
+  `signRequest`, `checkPrivateAddress`, `normaliseResponse`,
+  `callCustomerEndpoint`, `pingCustomerEndpoint`.
+- `src/app/api/projects/[projectKey]/customer-endpoints/[id]/test/route.ts`
+  (new) — POST handler that loads the provider and calls
+  `pingCustomerEndpoint`. Returns flat `{ok, kind, message, ...}` shape.
+- `src/components/data-warehouse/customer-endpoint-form-dialog.tsx`
+  (modified) — added "Test" button to the edit-mode "Connection" panel,
+  with inline success/failure rendering.
+- `scripts/verify-customer-endpoint-client.ts` (new) — pure-function
+  smoke test (no network, no DB). Run with
+  `npx tsx scripts/verify-customer-endpoint-client.ts`.
+- `docs/customer-managed-data-endpoints-v1.md` (modified) — §8 updated
+  to clarify the ping POSTs to `baseUrl` directly + retry policy.
+
+### Verification
+
+- `npx tsc --noEmit` clean.
+- `npx tsx scripts/verify-customer-endpoint-client.ts` — 27/27 checks
+  pass:
+    - HMAC signature matches reference implementation
+    - SSRF guard rejects 15 documented bad URLs (loopback, all RFC1918
+      ranges, IPv6 loopback / link-local / ULA, IMDS, malformed, http://)
+    - SSRF guard allows 3 documented good URLs (public hostnames,
+      public IPv4)
+    - `normaliseResponse` produces correct shape for binary,
+      `{n, mean, stddev}` (variance = stddev²), and `{n, sum, sum_squares}`
+      (computed mean and sample variance)
+    - 6 malformed response shapes rejected with clear errors
+- End-to-end smoke against the new `/test` route via curl:
+    - Created a temp provider pointing at a non-existent host with
+      `timeoutMs: 3000`
+    - POST `/test` returned `{ok: false, kind: "timeout", attempts: 1,
+      durationMs: 3011}` — single attempt (no retry on timeout, as
+      designed), duration matches the configured timeout to the ms
+    - 404 for unknown provider id
+    - Cleanup deleted the temp provider; `migrate status` still clean
+
+**Browser verification still required by operator** — in the edit
+dialog of any provider, clicking Test should fire the request and
+render the result inline (green check on success, red error block on
+failure). The dev server must be running with HMR for the new route to
+be available.
 
 ---
 

@@ -473,15 +473,24 @@ won't need to change anything when it does.
 ## 8. Test endpoint (recommended, not required)
 
 The provider config UI ships a **Test** button that POSTs a fixed sample
-request with `experimentId: "featbit-ping"` and `metrics: []`. The customer
-should:
+request to **the provider's `baseUrl` directly** (no per-experiment path
+appended), with `experimentId: "featbit-ping"`, `flagKey: "featbit-ping"`,
+empty `variants`, and `metrics: []`. The customer should:
 
 - Verify the signature.
-- Return `200` with `{ "schemaVersion": 1, "experimentId": "featbit-ping", "metrics": {} }`.
+- Recognise the magic `experimentId === "featbit-ping"` and return `200` with
+  `{ "schemaVersion": 1, "experimentId": "featbit-ping", "computedAt": "<now>", "metrics": {} }`.
 
 This proves transport + auth without needing a real experiment to exist
-warehouse-side. The Test button is gated behind successful save of the
-provider so secrets are stored before they're used.
+warehouse-side, and runs against the provider as a whole — no per-experiment
+config required.
+
+The Test button is gated behind successful save of the provider so the
+signing secret exists in the DB before any signed request is sent.
+
+**Retry policy for the ping**: same as a normal call — 503 + network errors
+retried up to 2× with `[1s, 4s]` backoff. Timeouts are **not** retried (they
+suggest the endpoint is overloaded; retrying compounds the problem).
 
 ---
 
