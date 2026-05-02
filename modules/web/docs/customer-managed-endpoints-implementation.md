@@ -15,7 +15,7 @@
 | #   | PR                                                                                  | Depends on | Status |
 |-----|-------------------------------------------------------------------------------------|------------|--------|
 | 1   | Prisma: `CustomerEndpointProvider` model + `ExperimentRun` data-source fields       | —          | **applied to prod** (Azure PG `featbit-ai`, 2026-05-02) |
-| 2   | API: `/api/projects/[key]/customer-endpoints` CRUD + Test endpoint                  | 1          | not started |
+| 2   | API: `/api/projects/[projectKey]/customer-endpoints` CRUD                            | 1          | done (Test endpoint deferred to PR 4) |
 | 3   | Data Warehouse page UI: provider list / add / edit / delete / test                  | 1, 2       | not started |
 | 4   | `lib/stats/customer-endpoint-client.ts`: HMAC + fetch + retry + stats normalisation | 1          | not started |
 | 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode`              | 1, 4       | not started |
@@ -190,7 +190,82 @@ Same caveat as the forward migration: ALTER takes AccessExclusiveLock briefly.
 
 ## PR 2 — Provider CRUD API
 
-(Not started — section will be filled when PR 1 merges.)
+### Goal
+
+Stand up the HTTP surface that PR 3's UI will hit. Pure CRUD over
+`CustomerEndpointProvider` rows, plus secret rotation. The "test endpoint"
+button (§8 of the spec) is deferred to PR 4 because it needs the HMAC client.
+
+### Routes
+
+| Verb     | Path                                                                  | Body / response                                          |
+|----------|-----------------------------------------------------------------------|----------------------------------------------------------|
+| `GET`    | `/api/projects/[projectKey]/customer-endpoints`                       | List, secrets masked.                                    |
+| `POST`   | `/api/projects/[projectKey]/customer-endpoints`                       | `{name, baseUrl, timeoutMs?}` → 201 with full secret in `signingSecretPlaintext` (returned ONCE). |
+| `GET`    | `/api/projects/[projectKey]/customer-endpoints/[id]`                  | Single, secrets masked. 404 if not found.                |
+| `PATCH`  | `/api/projects/[projectKey]/customer-endpoints/[id]`                  | `{action: "update" \| "rotate-secret" \| "clear-secondary", ...}`. Rotate returns full secret ONCE. |
+| `DELETE` | `/api/projects/[projectKey]/customer-endpoints/[id]`                  | 204. Referential check on `ExperimentRun.customerEndpointConfig` is deferred to PR 5 — JSON column makes the query awkward and the analyser must handle "endpoint disappeared" gracefully anyway. |
+
+### Decisions taken
+
+1. **Server generates `signingSecret`, not the client.** Higher entropy than
+   anything an operator would type, and removes a footgun. Format:
+   `fbsk_<base64url(crypto.randomBytes(32))>` — the `fbsk_` prefix makes the
+   token kind obvious in customer logs and config files.
+
+2. **Mask everywhere except create / rotate.** List and get responses include
+   `signingSecretMasked: "fbsk_••••<last4>"` plus a `hasSecondarySecret`
+   boolean. The plaintext only appears in the create / rotate response and is
+   never echoed again. UI must surface it once with a "copy and confirm"
+   workflow.
+
+3. **Rotation = swap, not just append.** `PATCH {action: "rotate-secret"}`
+   moves the current `signingSecret` into `secondarySecret` and writes a new
+   primary. A second rotation drops the old secondary. Customers may accept
+   either secret during the grace window; FeatBit always signs with the
+   primary. `PATCH {action: "clear-secondary"}` ends the grace window.
+
+4. **HTTPS-only baseUrl validation in PR 2.** Full SSRF protection
+   (rejecting private/loopback/metadata-service IPs) is deferred to PR 4
+   where the actual outbound `fetch()` happens. Two layers of defence is
+   correct, but the authoritative check belongs at the call site.
+
+5. **Auth pattern matches existing project-scoped routes.** No
+   `requireSession()` call — `projectKey` is trusted from the URL, same as
+   `api/memory/project/[projectKey]`. Authz hardening across all
+   project-scoped APIs is its own cross-cutting concern; not solving it
+   inside this feature.
+
+### Files changed
+
+- `src/lib/customer-endpoint-providers.ts` (new) — data access + secret
+  generation + masking + DTO conversion.
+- `src/app/api/projects/[projectKey]/customer-endpoints/route.ts` (new) —
+  GET (list) and POST (create).
+- `src/app/api/projects/[projectKey]/customer-endpoints/[id]/route.ts` (new)
+  — GET, PATCH (with `action` discriminator), DELETE.
+
+### Verification
+
+`npx tsc --noEmit` clean. End-to-end smoke test via `curl` against
+`localhost:3000` with prod DB backing — created a temp provider under a
+unique projectKey, exercised every verb + every error branch, deleted at the
+end. All 9 cases passed:
+
+| #  | Case                                | Result          |
+|----|-------------------------------------|-----------------|
+| 1  | GET empty list                      | `[]`, 200       |
+| 2  | POST create                         | 201, plaintext + masked both present |
+| 3  | GET list                            | masked only     |
+| 4  | GET single                          | masked, 200     |
+| 5  | PATCH rotate-secret                 | new plaintext, `hasSecondarySecret: true` |
+| 6  | PATCH baseUrl=`http://...`          | 400 with clear msg |
+| 7  | POST duplicate name                 | 409             |
+| 8  | DELETE                              | 204             |
+| 9  | GET after DELETE                    | 404             |
+
+No persistent DB pollution: the temp row was deleted in step 8. Confirmed
+via `prisma migrate status` still clean.
 
 ---
 
