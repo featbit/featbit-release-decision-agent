@@ -12,7 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Plus, X, Beaker, Target, ShieldCheck, Sigma, Database, Calendar, HelpCircle } from "lucide-react";
+import { Plus, X, Beaker, Target, ShieldCheck, Sigma, Database, Calendar, HelpCircle, Cable } from "lucide-react";
+import { DataSourceStepContent, type DataSourceMode, type CustomerEndpointConfigA } from "./data-source-step";
+import { useAuth } from "@/lib/featbit-auth/auth-context";
 import { cn } from "@/lib/utils";
 import { saveExpertSetupAction } from "@/lib/actions";
 import {
@@ -969,6 +971,7 @@ function RequiredStar() {
 /* ── Wizard steps ── */
 const STEPS = [
   { key: "algorithm",   label: "Algorithm + variants", icon: Beaker },
+  { key: "datasource",  label: "Data source",          icon: Cable },
   { key: "observation", label: "Observation window",   icon: Calendar },
   { key: "metric",      label: "Primary metric",       icon: Target },
   { key: "prior",       label: "Prior & stopping",     icon: Sigma },
@@ -1124,6 +1127,25 @@ function ExpertSetupForm({
   const isFirst = currentIdx === 0;
   const isLast = currentIdx === STEPS.length - 1;
 
+  // Project-level data source — owned by the new "Data source" step. Pre-fill
+  // from the existing run so re-opening the wizard preserves the choice.
+  const initialMode: DataSourceMode =
+    existingRun?.dataSourceMode === "customer-single"  ? "customer-single"  :
+    existingRun?.dataSourceMode === "manual"           ? "manual"           :
+    existingRun?.dataSourceMode === "external-text"    ? "external-text"    :
+    "featbit-managed";
+  let initialCustomerConfig: CustomerEndpointConfigA | null = null;
+  if (initialMode === "customer-single" && existingRun?.customerEndpointConfig) {
+    try {
+      const parsed = JSON.parse(existingRun.customerEndpointConfig) as CustomerEndpointConfigA;
+      if (parsed && typeof parsed === "object" && parsed.providerId && parsed.path) {
+        initialCustomerConfig = parsed;
+      }
+    } catch {/* ignore malformed */}
+  }
+  const { currentProject } = useAuth();
+  const projectKey = currentProject?.key ?? null;
+
   return (
     <TooltipProvider delay={150}>
     <form
@@ -1200,6 +1222,22 @@ function ExpertSetupForm({
             </p>
           </div>
         </div>
+      </Section>
+      </div>
+
+      {/* ── Data source ── */}
+      <div hidden={currentStep !== "datasource"} className="space-y-4">
+      <Section
+        icon={<Cable className="size-3.5" />}
+        title="Where does the metric data come from?"
+        subtitle="Picks the path the analyser will use to fetch per-variant statistics for this run."
+      >
+        <DataSourceStepContent
+          projectKey={projectKey}
+          initialMode={initialMode}
+          initialCustomerConfig={initialCustomerConfig}
+          initialExternalNote=""
+        />
       </Section>
       </div>
 

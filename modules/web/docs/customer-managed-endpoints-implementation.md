@@ -19,7 +19,7 @@
 | 3   | Data Warehouse page UI: third top-level card + provider list / add / edit / rotate / delete | 1, 2       | done (test button still deferred to PR 4) |
 | 4   | `lib/stats/customer-endpoint-client.ts` + Test endpoint API + Test button UI         | 1          | done        |
 | 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode` (+ fetcher)  | 1, 4       | done        |
-| 6   | Expert experiment setup: Data source as its own step + provider picker              | 1, 2       | not started |
+| 6   | Expert experiment setup: new "Data source" step + Mode A provider picker             | 1, 2       | done (Mode B deferred) |
 | 7   | `/data-warehouse/customer-endpoints/schema` doc page (renders the spec markdown)    | —          | not started |
 
 ---
@@ -565,9 +565,111 @@ that `runAnalysis()` / `runBanditAnalysis()` already consume.
 
 ---
 
-## PR 6 — Expert experiment setup wizard
+## PR 6 — Expert experiment setup: Data source step
 
-(Not started.)
+### Goal
+
+Add a wizard step that lets the operator pick the project-level data
+source per run (FeatBit Managed / Customer Managed Endpoint / Manual /
+External text). Persist the choice so PR 5's analyse-route branching
+fires for runs the wizard creates.
+
+### Decisions taken
+
+1. **New step lives between Algorithm and Observation.** Reasoning:
+   data-source choice depends on which variants exist (set in
+   Algorithm) but doesn't depend on metric specifics (set later). The
+   user picks "where will I get the numbers from" before they specify
+   what numbers to ask for.
+
+2. **Mode A only in this PR.** Customer Endpoint = single endpoint
+   serving all metrics. Mode B (per-metric routing) is more complex —
+   needs to know all metrics (primary + guardrails) to render its UI,
+   which means forward dependency on later wizard steps. Ship Mode A,
+   gather feedback, add Mode B if real users want it.
+
+3. **Step component lives in its own file** (`data-source-step.tsx`)
+   rather than inside the 1500-line `expert-setup-dialog.tsx`. The
+   step has its own state, sub-fetches, and Test-button orchestration
+   — no point bloating the main file.
+
+4. **Existing per-metric `DataSourcePicker` left in place.** The
+   project-level mode is the canonical setting (analyse route reads
+   `dataSourceMode` authoritatively); per-metric pickers are now
+   somewhat redundant but harmless. Cleaning them up is its own PR
+   so the diff here stays scoped to "add the new step + persist the
+   value".
+
+5. **Test button on the step pings via the same Test API as PR 4.**
+   No new server route — the existing `/test` endpoint takes the
+   provider id, which the step already has. UI rendering matches the
+   form-dialog pattern (inline result, kind + status + message).
+
+6. **Static params is a JSON object string in the UI**, validated
+   inline. Stored as part of `customerEndpointConfig` JSON. The
+   fetcher passes it through verbatim — no schema for it on FeatBit
+   side, it's customer-defined.
+
+### Files changed
+
+- `src/components/experiment/data-source-step.tsx` (new) — the step
+  body component. Loads providers via `/api/projects/[projectKey]/customer-endpoints`
+  on mount when in customer mode. Owns: mode picker (4 options),
+  provider dropdown, path input, static-params JSON textarea with
+  inline validation, Test button.
+- `src/components/experiment/expert-setup-dialog.tsx` (modified):
+    - Added `Cable` icon import + `DataSourceStepContent` /
+      `DataSourceMode` / `CustomerEndpointConfigA` re-imports
+    - `useAuth()` now imported here too, so the step can pass
+      projectKey to the child
+    - New STEPS entry `"datasource"` between `"algorithm"` and
+      `"observation"`
+    - New pre-fill of `initialMode` and `initialCustomerConfig`
+      from `existingRun?.dataSourceMode` / `existingRun?.customerEndpointConfig`
+    - New `<div hidden={currentStep !== "datasource"}>` block that
+      renders the step body inside a Section
+- `src/lib/actions.ts` (modified): `saveExpertSetupAction` now reads
+  `dataSourceMode` (validated against the closed set) and
+  `customerEndpointConfig` (opaque JSON, only kept when mode is
+  customer-*) from the form, and writes both to the run row.
+
+### Verification
+
+- `npx tsc --noEmit` clean.
+- `next dev` compiles all changed files cleanly. `/data-warehouse`
+  returns 307 → /login → 200 (auth middleware healthy, no SSR crash).
+
+**Operator browser checklist** (manual flow can't be automated here):
+
+- [ ] Open Expert setup on any experiment. Confirm the sidebar shows 6
+      steps and "Data source" sits between Algorithm and Observation.
+- [ ] Click "Data source". Confirm 4 mode cards render. Default selection
+      should be "FeatBit Managed" for new experiments (or whatever was
+      previously saved).
+- [ ] Pick "Customer Managed Endpoint". Confirm the provider dropdown
+      loads (uses existing PR 2 API). Pick a provider, fill path, fill
+      optional staticParams JSON.
+- [ ] Click Test. Confirm inline success / failure rendering matches the
+      Test button on the Data Warehouse edit dialog.
+- [ ] Save the wizard. Re-open. Confirm the Data source step pre-fills
+      with the same provider / path / staticParams.
+- [ ] In the dev DB, confirm the run row's `data_source_mode` and
+      `customer_endpoint_config` columns contain what you expect.
+
+### Known incomplete / deferred
+
+- **Mode B (per-metric routing)**: not surfaced in the UI. Spec contract
+  is already implemented end-to-end (fetcher in PR 5 handles it,
+  `dataSourceMode = "customer-per-metric"` is accepted), but no UI
+  produces that config. Add later when needed.
+- **Per-metric `DataSourcePicker` cleanup**: still rendered on the
+  Primary metric and Guardrail rows. Now redundant when the project
+  mode is anything other than "manual". Hide / repurpose in a follow-up
+  PR.
+- **Validation that customer-mode runs have a usable config**: the
+  wizard accepts customer-single mode without a provider selected —
+  the analyse route then 503s with a clear "missing providerId" error.
+  Could pre-validate at save time, deferred for now.
 
 ---
 

@@ -439,6 +439,25 @@ export async function saveExpertSetupAction(formData: FormData) {
   const observationStartRaw = (formData.get("observationStart") as string | null)?.trim();
   const observationEndRaw = (formData.get("observationEnd") as string | null)?.trim();
 
+  // Project-level data source (from the Data source wizard step). Validated
+  // against the closed set the analyse route understands; anything else
+  // collapses to the default. customerEndpointConfig is opaque JSON validated
+  // by the fetcher at analyse time, so we only do shape-level checks here.
+  const dataSourceModeRaw = (formData.get("dataSourceMode") as string | null)?.trim();
+  const dataSourceMode =
+    dataSourceModeRaw === "customer-single" ||
+    dataSourceModeRaw === "customer-per-metric" ||
+    dataSourceModeRaw === "manual" ||
+    dataSourceModeRaw === "external-text"
+      ? dataSourceModeRaw
+      : "featbit-managed";
+  const customerEndpointConfigRaw = (formData.get("customerEndpointConfig") as string | null)?.trim() || null;
+  const customerEndpointConfig =
+    (dataSourceMode === "customer-single" || dataSourceMode === "customer-per-metric") &&
+    customerEndpointConfigRaw
+      ? customerEndpointConfigRaw
+      : null;
+
   const controlVariant = (formData.get("controlVariant") as string | null)?.trim() || "control";
   const treatmentVariant = (formData.get("treatmentVariant") as string | null)?.trim() || "treatment";
   const dataRowsRaw = (formData.get("dataRows") as string | null) ?? "[]";
@@ -662,6 +681,8 @@ export async function saveExpertSetupAction(formData: FormData) {
     primaryMetricAgg: metricAgg,
     observationStart,
     observationEnd,
+    dataSourceMode,
+    customerEndpointConfig,
     status: inputData ? "analyzing" : "draft",
   };
 
