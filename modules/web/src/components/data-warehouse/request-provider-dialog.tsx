@@ -66,10 +66,23 @@ function StyledCheckbox({
   );
 }
 
+/**
+ * Email-based "request a managed connector" dialog. Two usage modes:
+ *
+ *   <RequestProviderDialog trigger={<button .../>} />        // uncontrolled
+ *   <RequestProviderDialog open={open} onOpenChange={...} /> // controlled
+ *
+ * Controlled form is used by the AddDataSourceChooserDialog which opens this
+ * dialog programmatically after the user picks "External Data Warehouse".
+ */
 export function RequestProviderDialog({
   trigger,
+  open,
+  onOpenChange,
 }: {
-  trigger: React.ReactElement;
+  trigger?: React.ReactElement;
+  open?: boolean;
+  onOpenChange?: (next: boolean) => void;
 }) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [other, setOther] = useState("");
@@ -107,8 +120,8 @@ export function RequestProviderDialog({
   )}&body=${encodeURIComponent(body)}`;
 
   return (
-    <Dialog>
-      <DialogTrigger render={trigger} />
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {trigger && <DialogTrigger render={trigger} />}
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Request a data warehouse</DialogTitle>

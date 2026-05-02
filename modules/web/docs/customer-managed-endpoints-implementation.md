@@ -300,10 +300,27 @@ deferred to PR 7 (no live page to link to yet).
    add navigation friction for no clarity gain. PR 7's docs page is
    the only sub-route under `/data-warehouse/`.
 
-2. **Anchor link, not button-with-state.** The third card is a plain
-   `<a href="#customer-endpoints">` anchor. Keeps the card declarative
-   (no client-side state to render the top section) and works without
-   JS.
+2. **Page redesigned as a unified list with type filters.** The original
+   3-cards-on-top + section-below layout was abandoned after iterating
+   through several broken UX shapes (clickable anchor card that felt
+   inert; passive status panel that felt static; expand-on-click toggle
+   that hid useful info by default). Final shape: a single list of
+   data-source rows of three types, with a type-filter chip row above
+   it and a single "Request a data warehouse" button on the right. Row
+   types:
+     - **FeatBit Managed** (always 1 row) — clicks open `/data/apis-sdks`
+       in a new tab, since SDK setup is the actual onboarding flow for
+       the managed warehouse.
+     - **Customer Managed Data Endpoint** (0..N rows) — clicks open the
+       edit dialog (PR 3 form, unchanged).
+     - **External Data Warehouse** — *not stored as rows*. Requesting a
+       managed connector stays fire-and-forget email; the existing
+       `RequestProviderDialog` is now opened via the chooser instead of
+       its own card. No `External` filter chip, since there are no
+       External rows.
+   The "Request a data warehouse" button opens an `AddDataSourceChooserDialog`
+   with two options: pick "Customer Managed Endpoint" → opens the add
+   form; pick "External Data Warehouse" → opens the email dialog.
 
 3. **Two-step delete confirmation inline.** "Delete" button reveals a
    "Confirm delete" button in the same dialog; no modal-on-modal. Avoids
@@ -328,17 +345,26 @@ deferred to PR 7 (no live page to link to yet).
   of `ProviderPublic` / `ProviderWithSecret` to avoid pulling the
   server-only `@/lib/customer-endpoint-providers` module into client
   bundles.
-- `src/components/data-warehouse/customer-endpoints-section.tsx` (new) —
-  list orchestrator. Fetches providers, manages dialog state, holds
-  the one-shot revealed-secret state.
+- `src/components/data-warehouse/data-warehouse-client.tsx` (new) —
+  unified list view. Owns filter state, fetches Customer Endpoints,
+  orchestrates the chooser / add-form / edit-form / secret-reveal
+  dialog stack. Hosts the FeatBit-Managed and Customer Endpoint row
+  components inline.
 - `src/components/data-warehouse/customer-endpoint-form-dialog.tsx`
   (new) — handles both add and edit modes via a discriminated `mode`
   prop. Edit mode includes rotate, clear-secondary, and delete-with-
   confirm.
 - `src/components/data-warehouse/secret-reveal-dialog.tsx` (new) —
   blocking modal for the one-shot plaintext-secret display.
-- `src/app/(dashboard)/data-warehouse/page.tsx` — added the third card
-  and the section anchor.
+- `src/components/data-warehouse/add-data-source-chooser-dialog.tsx`
+  (new) — two-option chooser between "Customer Managed Endpoint" and
+  "External Data Warehouse" (request a connector).
+- `src/components/data-warehouse/request-provider-dialog.tsx`
+  (modified) — accepts both `trigger` (uncontrolled) and
+  `open`/`onOpenChange` (controlled) so the chooser can open it
+  programmatically.
+- `src/app/(dashboard)/data-warehouse/page.tsx` — thin wrapper around
+  `<DataWarehouseClient />` plus a header.
 
 ### Verification
 
