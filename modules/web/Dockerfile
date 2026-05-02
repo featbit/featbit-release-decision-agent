@@ -47,6 +47,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # Prisma generated client + native query engine binary
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated/prisma ./src/generated/prisma
 
+# Markdown specs read at runtime by /data-warehouse/customer-endpoints/schema.
+# Standalone build doesn't bundle source files outside .next/, so copy
+# explicitly. Tiny (a handful of KB).
+COPY --from=builder --chown=nextjs:nodejs /app/docs ./docs
+
 USER nextjs
 
 EXPOSE 3000

@@ -20,7 +20,7 @@
 | 4   | `lib/stats/customer-endpoint-client.ts` + Test endpoint API + Test button UI         | 1          | done        |
 | 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode` (+ fetcher)  | 1, 4       | done        |
 | 6   | Expert experiment setup: new "Data source" step + Mode A provider picker             | 1, 2       | done (Mode B deferred) |
-| 7   | `/data-warehouse/customer-endpoints/schema` doc page (renders the spec markdown)    | —          | not started |
+| 7   | `/data-warehouse/customer-endpoints/schema` doc page (renders the spec markdown)    | —          | done        |
 
 ---
 
@@ -675,7 +675,145 @@ fires for runs the wizard creates.
 
 ## PR 7 — Schema docs page
 
-(Not started.)
+### Goal
+
+Render `customer-managed-data-endpoints-v1.md` as a live page inside the
+app, so customers implementing the spec don't need to leave to GitHub.
+The markdown file stays the single source of truth — the page is just a
+view of it.
+
+### Decisions taken
+
+1. **`fs.readFileSync` at module load, not bundler markdown loader.**
+   `react-markdown` is already in the deps; configuring the bundler to
+   load `.md` as text adds boilerplate. Reading the file at module init
+   is one line, runs once per cold start, and the file is small enough
+   (~25KB) that any caching nuance is irrelevant. The trade-off is that
+   the `docs/` folder must exist at runtime — see Dockerfile change
+   below.
+
+2. **No edit / commit / preview UI.** This is a *view* of the spec, not
+   a CMS. Edits go through the markdown file in source control like any
+   other doc.
+
+3. **Reuse `react-markdown` + `remark-gfm` already in the codebase.**
+   The chat panel uses them with chat-bubble typography; this page uses
+   them with docs typography. Two component bodies, one library.
+
+4. **Dockerfile copies `docs/` into the runner image.** Standalone
+   Next.js output doesn't include arbitrary source files outside `.next/`,
+   so without this the runtime `readFileSync` would 500. Tiny cost
+   (handful of KB), no other consequences.
+
+5. **Link from the chooser dialog only.** The right moment to read the
+   spec is when the user is about to set up a customer endpoint — i.e.
+   in the AddDataSourceChooserDialog. Adding the link to other surfaces
+   would clutter without adding value.
+
+### Files changed
+
+- `src/app/(dashboard)/data-warehouse/customer-endpoints/schema/page.tsx`
+  (new) — server component. Reads the markdown via `fs.readFileSync` and
+  hands it to the client renderer. Header strip with "Back to Data
+  Warehouse" + "Raw on GitHub" links.
+- `src/app/(dashboard)/data-warehouse/customer-endpoints/schema/schema-markdown.tsx`
+  (new) — client `SchemaMarkdown` component using react-markdown +
+  remark-gfm with docs typography (bigger headings, table widths,
+  blockquote treatment for the "important" callouts in the spec).
+- `src/components/data-warehouse/add-data-source-chooser-dialog.tsx`
+  (modified) — added a small "Read the v1 schema spec before
+  implementing" link above the External option, opens the new docs
+  page in a new tab.
+- `Dockerfile` (modified) — added
+  `COPY --from=builder /app/docs ./docs` so the runtime fs read works
+  in the production image.
+
+### Verification
+
+- `npx tsc --noEmit` clean.
+- `next dev` compiles the new route. `GET /data-warehouse/customer-endpoints/schema`
+  → 200 (auth-redirect path), no errors in dev log.
+- `readFileSync` resolves correctly: `process.cwd()` from `next dev`
+  is `modules/web/` and `docs/customer-managed-data-endpoints-v1.md`
+  exists there. Verified by listing the folder.
+
+**Operator browser checklist**:
+- [ ] Visit `/data-warehouse/customer-endpoints/schema`. Page loads
+      with header strip + rendered spec inside a card.
+- [ ] Headings hierarchy looks right (H1 / H2 underlined / H3 / H4
+      caps), tables render with borders, code blocks have monospace
+      and a subtle background, blockquotes use the amber callout style.
+- [ ] "Raw on GitHub" opens the GitHub raw URL in a new tab.
+- [ ] "Back to Data Warehouse" returns to `/data-warehouse`.
+- [ ] On `/data-warehouse`, click "Request a data warehouse" →
+      chooser dialog now shows a small "Read the v1 schema spec…"
+      link, opens the schema page in a new tab.
+
+### Known incomplete / deferred
+
+- **No build-time markdown bundling.** `readFileSync` runs each cold
+  start. Fine for now; if perf becomes an issue, switch to a build-time
+  loader.
+- **No anchor scroll-to-section.** Spec sections (§3.2, §4.2, etc.)
+  don't currently get HTML ids — react-markdown can be configured for
+  this with `rehype-slug` if linking from elsewhere becomes useful.
+
+---
+
+## All seven PRs shipped
+
+This closes the vertical slice. End-to-end, an operator can now:
+
+1. Open `/data-warehouse`, click "Request a data warehouse" → "Customer
+   Managed Endpoint" → register a provider with auto-generated HMAC
+   secret.
+2. Open the schema spec from the same dialog and implement the v1
+   contract on their warehouse side.
+3. Click Test on the provider to verify HMAC + transport before any
+   experiment uses it.
+4. Open Expert experiment setup → "Data source" step → pick the
+   provider + endpoint path + optional static params.
+5. Run analyse — the route now hits the customer endpoint, FeatBit
+   normalises the response, and the existing analyser (Bayesian or
+   bandit) runs against the customer's data.
+
+### What gets promoted to AGENTS.md
+
+When the next architectural change touches this area, these go into
+`modules/web/AGENTS.md` (with the existing "Metric Vocabulary &
+Fan-out Contract" section since they're cross-cutting):
+
+- The two valid data source paths in the analyse route, branched by
+  `ExperimentRun.dataSourceMode` (`featbit-managed` | `customer-single`
+  | `customer-per-metric` | `manual` | `external-text`). Default is
+  `featbit-managed`.
+- The same fan-out rule as the metric columns: writes that originate
+  at the experiment-level UI must propagate to the latest
+  `ExperimentRun`. The expert-setup wizard's `saveExpertSetupAction`
+  writes directly to the run; no helper needed.
+- HMAC signing format: `signing_string = "${ts}.${rawBody}"`,
+  `header = "sha256=${hex(HMAC_SHA256(secret, signing_string))}"`. New
+  outbound integrations should match.
+- Stats-shape normalisation: customer endpoint may return either
+  `{n, mean, stddev}` (recommended) or `{n, sum, sum_squares}` for
+  continuous; downstream of `customer-endpoint-client.normaliseResponse`
+  everything is `{n, mean, variance}`. `metricMoments()` in
+  `bayesian.ts:51-53` consumes this directly — unchanged across this
+  whole feature.
+- SSRF guard env override: `ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1` for dev
+  iteration against localhost endpoints. Off by default in prod.
+
+### Known follow-ups not blocking ship
+
+- Mode B (per-metric routing) UI in the wizard. Spec + fetcher already
+  support it; just no UI surface yet.
+- Per-metric `DataSourcePicker` cleanup in expert-setup-dialog.tsx —
+  redundant with the project-level mode but harmless. One-PR cleanup.
+- Encrypted-at-rest signing secrets. Stored plain in v1; phase 2 would
+  AES with an env key or move to the existing `Vault` model.
+- Bandit scheduler infrastructure (the OTHER orthogonal feature
+  mentioned at the start of this work). Customer endpoints contract is
+  ready to be called by it; the scheduler itself is a separate effort.
 
 ---
 

@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Cable, Mail, ChevronRight } from "lucide-react";
+import { Cable, Mail, ChevronRight, FileText, ExternalLink } from "lucide-react";
 
 /**
  * Two-option chooser surfaced when the user clicks "Request a data warehouse".
@@ -62,6 +62,17 @@ export function AddDataSourceChooserDialog({
               <ChevronRight className="size-4 shrink-0 text-muted-foreground group-hover:text-brand transition-colors" />
             </div>
           </button>
+
+          <a
+            href="/data-warehouse/customer-endpoints/schema"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <FileText className="size-3" />
+            Read the v1 schema spec before implementing
+            <ExternalLink className="size-3" />
+          </a>
 
           <button
             type="button"
