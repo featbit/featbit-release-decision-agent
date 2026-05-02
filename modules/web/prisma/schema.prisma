@@ -96,6 +96,14 @@ model ExperimentRun {
   layerId               String?    @map("layer_id")
   audienceFilters       String?    @map("audience_filters")
   trafficOffset         Int?       @default(0) @map("traffic_offset")
+  // Data source for metric stats. Branches the analyse route between
+  // FeatBit-managed track-service and a Customer Managed Data Endpoint.
+  // Values: "featbit-managed" | "customer-single" | "customer-per-metric" | "manual" | "external-text"
+  dataSourceMode         String?    @default("featbit-managed") @map("data_source_mode")
+  // JSON-encoded endpoint routing. Shape varies by dataSourceMode:
+  //   customer-single:     { "providerId": "...", "path": "/...", "staticParams": {...} }
+  //   customer-per-metric: { "<metric_event>": { "providerId": "...", "path": "/...", "staticParams": {...} }, ... }
+  customerEndpointConfig String?    @map("customer_endpoint_config")
   experiment            Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
 
   @@unique([experimentId, slug])
@@ -162,6 +170,30 @@ model Vault {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("vault")
+}
+
+// Customer Managed Data Endpoint provider — see docs/customer-managed-data-endpoints-v1.md.
+// Project-scoped (matches Experiment.featbitProjectKey). Holds transport + auth only;
+// per-experiment endpoint path/params live on ExperimentRun.customerEndpointConfig.
+model CustomerEndpointProvider {
+  id              String   @id @default(uuid())
+  projectKey      String   @map("project_key")
+  name            String
+  baseUrl         String   @map("base_url")
+  // HMAC signing secret. Plaintext in v1; phase-2 hardening = AES at app layer
+  // or move to Vault. See docs/customer-managed-endpoints-implementation.md.
+  signingSecret   String   @map("signing_secret")
+  // Optional rotation secret. When set, customer accepts either secret;
+  // FeatBit signs with the primary (signingSecret) only.
+  secondarySecret String?  @map("secondary_secret")
+  schemaVersion   Int      @default(1) @map("schema_version")
+  timeoutMs       Int      @default(15000) @map("timeout_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([projectKey, name])
+  @@index([projectKey])
+  @@map("customer_endpoint_provider")
 }
 
 model UserProjectMemory {
