@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
-import { Database, CheckCircle2, Plus } from "lucide-react";
+import { Database, CheckCircle2, Plus, Cable } from "lucide-react";
 import { RequestProviderDialog } from "@/components/data-warehouse/request-provider-dialog";
+import { CustomerEndpointsSection } from "@/components/data-warehouse/customer-endpoints-section";
 
 export default function DataWarehousePage() {
   return (
@@ -9,13 +10,13 @@ export default function DataWarehousePage() {
         <h1 className="text-lg font-semibold">Data warehouses</h1>
         <p className="text-sm text-muted-foreground max-w-xl">
           Where your flag evaluations and metric events live. FeatBit Managed is
-          active by default. Need another connector? Request it below — we
-          prioritize by demand.
+          active by default. Bring your own warehouse via a Customer Managed Data
+          Endpoint, or request a new connector.
         </p>
       </header>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {/* Active provider */}
+        {/* FeatBit-managed */}
         <div className="rounded-xl border p-4 bg-card ring-1 ring-brand/40">
           <div className="flex items-start gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
@@ -39,7 +40,29 @@ export default function DataWarehousePage() {
           </div>
         </div>
 
-        {/* Request-a-warehouse card (acts as dialog trigger) */}
+        {/* Customer Managed Data Endpoints — overview card.
+            The full list/CRUD lives in the section below. */}
+        <a
+          href="#customer-endpoints"
+          className="group rounded-xl border p-4 bg-card hover:border-brand/50 transition-colors text-left"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
+              <Cable className="size-5" />
+            </div>
+            <div className="min-w-0 flex-1 space-y-1">
+              <h3 className="text-sm font-semibold leading-tight">
+                Customer Managed Data Endpoints
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Plug FeatBit&apos;s analyser into your own warehouse via an HTTPS
+                endpoint that returns experiment statistics on demand.
+              </p>
+            </div>
+          </div>
+        </a>
+
+        {/* Request a new warehouse */}
         <RequestProviderDialog
           trigger={
             <button
@@ -63,6 +86,10 @@ export default function DataWarehousePage() {
             </button>
           }
         />
+      </div>
+
+      <div id="customer-endpoints" className="scroll-mt-6">
+        <CustomerEndpointsSection />
       </div>
     </div>
   );

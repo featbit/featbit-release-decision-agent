@@ -16,7 +16,7 @@
 |-----|-------------------------------------------------------------------------------------|------------|--------|
 | 1   | Prisma: `CustomerEndpointProvider` model + `ExperimentRun` data-source fields       | —          | **applied to prod** (Azure PG `featbit-ai`, 2026-05-02) |
 | 2   | API: `/api/projects/[projectKey]/customer-endpoints` CRUD                            | 1          | done (Test endpoint deferred to PR 4) |
-| 3   | Data Warehouse page UI: provider list / add / edit / delete / test                  | 1, 2       | not started |
+| 3   | Data Warehouse page UI: third top-level card + provider list / add / edit / rotate / delete | 1, 2       | done (test button still deferred to PR 4) |
 | 4   | `lib/stats/customer-endpoint-client.ts`: HMAC + fetch + retry + stats normalisation | 1          | not started |
 | 5   | Wire `analyze/route.ts` to customer-endpoint-client by `dataSourceMode`              | 1, 4       | not started |
 | 6   | Expert experiment setup: Data source as its own step + provider picker              | 1, 2       | not started |
@@ -271,7 +271,98 @@ via `prisma migrate status` still clean.
 
 ## PR 3 — Data Warehouse page UI
 
-(Not started.)
+### Goal
+
+Make the CRUD surface from PR 2 reachable. Match the user's mock from the
+original brief: a third top-level card next to "FeatBit Managed" and
+"Request a warehouse", plus a full list/manage section beneath.
+
+### Layout
+
+Page top: three cards side-by-side (one row on large screens, stacking on
+narrow):
+
+1. **FeatBit Managed Data Warehouse** — unchanged, "Connected" badge.
+2. **Customer Managed Data Endpoints** — new, anchor link to
+   `#customer-endpoints` further down the page. Uses `Cable` icon to
+   distinguish visually from the `Database` icon of the managed warehouse.
+3. **Request a data warehouse** — unchanged.
+
+Below the cards, a section component (`CustomerEndpointsSection`) handles
+the entire provider lifecycle: list, empty state, add, edit, rotate
+secret, clear secondary, delete. The "View schema spec" affordance is
+deferred to PR 7 (no live page to link to yet).
+
+### Decisions taken
+
+1. **Single-page, all inline.** No sub-route for the provider list.
+   Customers will have at most a handful of providers, sub-pages would
+   add navigation friction for no clarity gain. PR 7's docs page is
+   the only sub-route under `/data-warehouse/`.
+
+2. **Anchor link, not button-with-state.** The third card is a plain
+   `<a href="#customer-endpoints">` anchor. Keeps the card declarative
+   (no client-side state to render the top section) and works without
+   JS.
+
+3. **Two-step delete confirmation inline.** "Delete" button reveals a
+   "Confirm delete" button in the same dialog; no modal-on-modal. Avoids
+   the visual noise of a separate confirm dialog while still preventing
+   one-click destruction.
+
+4. **Secret-reveal modal blocks until acknowledged.** `SecretRevealDialog`
+   suppresses backdrop-click and Escape-to-close until the operator
+   ticks "I've saved this secret somewhere I can retrieve it later."
+   The full secret is shown once and never persisted in component state
+   past `onClose()`.
+
+5. **Auth + project context via existing `useAuth()`.** Same pattern as
+   `AiMemoryClient` — `currentProject?.key` is the projectKey for the
+   API URL. Section renders an "select a project" placeholder if there's
+   no current project (shouldn't happen inside `(dashboard)` layout,
+   defensive only).
+
+### Files changed
+
+- `src/components/data-warehouse/types.ts` (new) — client-side mirrors
+  of `ProviderPublic` / `ProviderWithSecret` to avoid pulling the
+  server-only `@/lib/customer-endpoint-providers` module into client
+  bundles.
+- `src/components/data-warehouse/customer-endpoints-section.tsx` (new) —
+  list orchestrator. Fetches providers, manages dialog state, holds
+  the one-shot revealed-secret state.
+- `src/components/data-warehouse/customer-endpoint-form-dialog.tsx`
+  (new) — handles both add and edit modes via a discriminated `mode`
+  prop. Edit mode includes rotate, clear-secondary, and delete-with-
+  confirm.
+- `src/components/data-warehouse/secret-reveal-dialog.tsx` (new) —
+  blocking modal for the one-shot plaintext-secret display.
+- `src/app/(dashboard)/data-warehouse/page.tsx` — added the third card
+  and the section anchor.
+
+### Verification
+
+- `npx tsc --noEmit` clean.
+- `next dev` compiles all new files without warnings or errors
+  (verified via `.next/dev/logs/next-development.log` after a request
+  triggered build of the data-warehouse route — no entries beyond the
+  unrelated middleware-deprecation warning).
+- `GET /data-warehouse` returns 307 → `/login?redirect=/data-warehouse`
+  (auth middleware behaving normally, no SSR crash).
+
+**Browser verification still required by the operator** — automated
+tooling here can't drive the dialog flow. Human checklist:
+
+- [ ] Open `/data-warehouse`. Confirm three cards appear in the top row.
+- [ ] Confirm the section below renders the empty state when the project
+      has no providers.
+- [ ] Click "Add provider", create one, confirm the secret-reveal modal
+      blocks until the checkbox is ticked.
+- [ ] Confirm the new provider appears in the list with masked secret.
+- [ ] Open Edit, click Rotate, confirm a new secret reveals and
+      "Rotation grace" badge appears on the list row.
+- [ ] Open Edit, click Clear secondary, confirm the badge disappears.
+- [ ] Open Edit, Delete → Confirm delete, verify removal from the list.
 
 ---
 
