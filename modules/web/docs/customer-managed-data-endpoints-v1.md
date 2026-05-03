@@ -1,11 +1,11 @@
-# Customer Managed Data Endpoints — Schema v1 (DRAFT)
+# Customer Managed Data Endpoints — Schema v1
 
-> Status: **draft for review**. Nothing is wired up yet. This is the public
-> contract between FeatBit's analysis engine and a customer-hosted HTTP endpoint
-> that returns experiment statistics from the customer's own data warehouse.
+> The public contract between FeatBit's analysis engine and a customer-hosted
+> HTTP endpoint that returns experiment statistics from the customer's own
+> data warehouse.
 >
-> Once published, every field below is part of a versioned API. Additive
-> changes ship as `v1`; anything that removes/renames a field bumps to `v2`.
+> Every field below is part of a versioned API. Additive changes ship as
+> `v1`; anything that removes/renames a field bumps to `v2`.
 
 ---
 

@@ -187,13 +187,13 @@ The customer endpoint contract accepts either `{n, mean, stddev}`
 already consumes natively. Downstream code stays unchanged across all
 shapes — never special-case the response shape outside the client.
 
-### SSRF guard with env override
+### SSRF guard at the fetch layer
 
-`checkPrivateAddress` blocks loopback / RFC1918 / link-local (incl. IMDS at
-`169.254.169.254`) / IPv6 ULA, plus non-`https://` schemes. For dev
-iteration against a localhost mock customer endpoint, set
-`ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1` in the environment. Off by default in
-prod. Documented limitation: no DNS-rebinding defence in v1.
+`checkPrivateAddress` in `customer-endpoint-client.ts` blocks loopback /
+RFC1918 / link-local (incl. IMDS) / IPv6 ULA / non-`https://` schemes
+before any outbound request. Documented limitation: no DNS-rebinding
+defence in v1. Source comment on the function lists every blocked range
+plus the dev-mode override flag.
 
 ## Sandbox0 Agent Ops
 
