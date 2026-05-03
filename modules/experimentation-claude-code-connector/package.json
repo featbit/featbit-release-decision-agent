@@ -1,0 +1,58 @@
+{
+  "name": "@featbit/experimentation-claude-code-connector",
+  "version": "0.1.0",
+  "description": "Local bridge that exposes the user's Claude Code CLI to the FeatBit experimentation web app over SSE.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "featbit-experimentation-claude-code-connector": "dist/bin/cli.js"
+  },
+  "main": "dist/server.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/featbit/featbit-release-decision-agent.git",
+    "directory": "modules/experimentation-claude-code-connector"
+  },
+  "homepage": "https://github.com/featbit/featbit-release-decision-agent/tree/main/modules/experimentation-claude-code-connector#readme",
+  "bugs": {
+    "url": "https://github.com/featbit/featbit-release-decision-agent/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "tsx watch src/bin/cli.ts",
+    "build": "tsc",
+    "start": "node dist/bin/cli.js",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.2.92",
+    "cors": "2.8.6",
+    "express": "5.2.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.6",
+    "@types/node": "25.5.2",
+    "tsx": "4.21.0",
+    "typescript": "6.0.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "featbit",
+    "experimentation",
+    "claude-code",
+    "feature-flags",
+    "ab-testing",
+    "agent"
+  ]
+}

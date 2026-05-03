@@ -25,31 +25,40 @@ See [`WHITE_PAPER.md`](WHITE_PAPER.md) for the product thesis.
 
 ## Architecture
 
-Five services under `modules/`, plus a skill catalog and a Helm chart:
+Four services under `modules/`, a published npm bridge, plus a skill catalog and a Helm chart:
 
 ```
                     ┌──────────────────────────────────────────────┐
                     │  modules/web  (Next.js 16 + Prisma)  :3000   │
                     │  Dashboard, REST API, Bayesian/Bandit        │
                     │  analysis engine, project + user memory      │
+                    │  Server-side /api/sandbox0/* → Managed Agents│
                     └────────┬───────────────┬─────────────────────┘
         TRACK_SERVICE_URL    │               │   MEMORY_API_BASE / SYNC_API_URL
                              ▼               ▼
-        ┌──────────────────────────┐   ┌────────────────────────┐   ┌────────────────────────┐
-        │  modules/track-service   │   │  modules/sandbox        │   │  modules/project-agent │
-        │  (.NET 10 + ClickHouse)  │   │  (Claude Agent SDK,SSE) │   │  (Codex CLI, SSE)      │
-        │  :5050  POST /api/track  │   │  :3100  POST /query     │   │  :3031  POST /query    │
-        │         POST /api/query/ │   │  Release-decision skill │   │  Project onboarding +  │
-        │              experiment  │   │  workflow               │   │  shared memory         │
-        └────────────┬─────────────┘   └─────────────────────────┘   └────────────────────────┘
+        ┌──────────────────────────┐                              ┌────────────────────────┐
+        │  modules/track-service   │                              │  modules/project-agent │
+        │  (.NET 10 + ClickHouse)  │                              │  (Codex CLI, SSE)      │
+        │  :5050  POST /api/track  │                              │  :3031  POST /query    │
+        │         POST /api/query/ │                              │  Project onboarding +  │
+        │              experiment  │                              │  shared memory         │
+        └────────────┬─────────────┘                              └────────────────────────┘
                      ▲
-        ┌────────────┴─────────────┐                ┌──────────────────────────────┐
-        │  modules/run-active-     │                │  modules/sandbox0-streaming  │
-        │  test-worker             │                │  (Hono → sandbox0 Managed    │
-        │  (Cloudflare Worker)     │                │   Agents, default chat       │
-        │  Cron: every minute      │                │   backend)                   │
-        │  → POST /api/track       │                └──────────────────────────────┘
+        ┌────────────┴─────────────┐
+        │  modules/run-active-     │
+        │  test-worker             │
+        │  (Cloudflare Worker)     │
+        │  Cron: every minute      │
+        │  → POST /api/track       │
         └──────────────────────────┘
+
+Browser-only paths (chat panel chooses one at runtime):
+  Managed mode → web /api/sandbox0/* → sandbox0 Managed Agents (cloud)
+  Local mode   → user's browser → http://127.0.0.1:3100
+                 ↑
+                 npx @featbit/experimentation-claude-code-connector
+                 (runs on the user's own machine, fronts their local
+                  Claude Code CLI via @anthropic-ai/claude-agent-sdk)
 
 Storage:
   PostgreSQL (Azure)   ← Prisma; experiments, runs, activity, memory, chat
@@ -58,14 +67,14 @@ Storage:
 
 ### Services at a glance
 
-| Service | Stack | Port | Role |
+| Component | Stack | Port | Role |
 |---|---|---|---|
-| `modules/web` | Next.js 16, Prisma, TypeScript | 3000 | Dashboard UI, REST API, in-process analysis engine, memory API |
+| `modules/web` | Next.js 16, Prisma, TypeScript | 3000 | Dashboard UI, REST API, in-process analysis engine, memory API, server-side proxy to sandbox0 Managed Agents |
 | `modules/track-service` | .NET 10, ClickHouse | 5050 → 8080 | Event ingest (`/api/track`) and per-experiment metric query (`/api/query/experiment`) |
-| `modules/sandbox` | Node.js, `@anthropic-ai/claude-agent-sdk`, Express SSE | 3100 → 3000 | Hosts the release-decision agent; mounts `/skills` read-only |
-| `modules/sandbox0-streaming` | Node.js, Hono, sandbox0 Managed Agents | 3100 | Default chat backend — brokers conversations between the web UI and sandbox0; one session per experiment |
 | `modules/project-agent` | Node.js, OpenAI Codex CLI, SSE | 3031 | Project-level onboarding assistant; reads/writes shared project memory |
 | `modules/run-active-test-worker` | Cloudflare Worker, cron | — | Synthetic event generator + end-to-end health probe for the `run-active-test` canary experiment |
+| `@featbit/experimentation-claude-code-connector` ([npm](https://www.npmjs.com/package/@featbit/experimentation-claude-code-connector)) | Node.js, `@anthropic-ai/claude-agent-sdk`, Express SSE | 3100 (loopback) | Optional npm package the user runs on their own machine to expose their local Claude Code CLI to the web UI's "Local Claude Code" chat mode. Source in `modules/experimentation-claude-code-connector/`. |
+| `modules/sandbox` *(deprecated)* | Node.js, Express SSE | — | Pre-connector containerised sandbox; kept for reference, no longer started by `docker compose` |
 
 ### Storage
 
@@ -74,12 +83,14 @@ Storage:
 | **PostgreSQL** (single `release_decision` DB) | Prisma migrations in `modules/web/prisma/` | `Experiment`, `ExperimentRun`, `Activity`, `Message`, `ManagedAgent`, `Vault`, project + user memory |
 | **ClickHouse** | `modules/track-service/sql/schema.sql` | `flag_evaluations`, `metric_events` (raw, joined per query) |
 
-### Two chat backends, one UI
+### Two chat modes, one UI
 
-The web UI talks to whichever backend is configured by `NEXT_PUBLIC_AGENT_BACKEND`:
+The chat panel inside an experiment exposes a runtime toggle (persisted per-browser in localStorage):
 
-- **`sandbox0`** *(default)* — the browser hits web's own `/api/sandbox0/*` routes, which proxy to sandbox0 Managed Agents through `modules/sandbox0-streaming`. No direct browser → sandbox URL needed.
-- **`classic`** — the browser hits `modules/sandbox` directly via `NEXT_PUBLIC_SANDBOX_URL`. Used for local Claude Agent SDK runs.
+- **Managed** *(default)* — the browser hits web's own `/api/sandbox0/*` routes, which proxy to sandbox0 Managed Agents in the cloud. One sandbox0 session per experiment, shared across all users on that experiment. No client-side install required.
+- **Local Claude Code** — the browser hits `http://127.0.0.1:3100` directly. The user must first run `npx @featbit/experimentation-claude-code-connector` on their own machine; the connector wraps the locally-installed Claude Code CLI. Per-user agent context (each user has their own `~/.claude/projects/<cwd>/<uuid>.jsonl`); the chat panel keeps everyone in sync by replaying the DB-persisted message delta into each local session before each prompt.
+
+There is no compile-time agent backend env var. Both modes are always available; the active mode is whatever the user picked last in this browser.
 
 ---
 
@@ -93,10 +104,14 @@ featbit-release-decision-agent/
 ├─ LICENSE
 │
 ├─ modules/                           ← all runtime services
-│  ├─ docker-compose.yml              ← prod-like five-service stack
+│  ├─ docker-compose.yml              ← prod-like four-service stack
 │  ├─ docker-compose.local.yml        ← local override
 │  ├─ web/                            ← Next.js dashboard + API
 │  │  ├─ src/app/api/experiments/…    ← experiment CRUD, /analyze, /state, /activity
+│  │  ├─ src/app/api/sandbox0/…       ← server-side proxy to Managed Agents (chat)
+│  │  ├─ src/hooks/use-sandbox0-chat  ← Managed-mode chat hook
+│  │  ├─ src/hooks/use-local-agent-chat ← Local-mode chat hook
+│  │  ├─ src/lib/agent-mode.ts        ← localStorage runtime mode toggle
 │  │  ├─ src/lib/stats/               ← analyze.ts, bandit.ts, bayesian.ts, track-client.ts
 │  │  ├─ src/lib/memory/              ← project + user memory helpers
 │  │  ├─ prisma/                      ← schema + migrations
@@ -104,8 +119,11 @@ featbit-release-decision-agent/
 │  ├─ track-service/                  ← .NET 10 ingest + query
 │  │  ├─ Endpoints/, Services/        ← BatchIngestWorker, query handlers
 │  │  └─ sql/schema.sql               ← ClickHouse DDL
-│  ├─ sandbox/                        ← Claude Agent SDK SSE server
-│  ├─ sandbox0-streaming/             ← Hono broker for sandbox0 Managed Agents
+│  ├─ experimentation-claude-code-connector/
+│  │                                  ← npm package source: local SSE bridge
+│  │                                    that exposes the user's Claude Code CLI
+│  │                                    to the web UI on 127.0.0.1:3100
+│  ├─ sandbox/                        ← deprecated; kept for reference only
 │  ├─ project-agent/                  ← Codex CLI SSE server
 │  └─ run-active-test-worker/         ← Cloudflare cron data generator
 │
@@ -139,8 +157,7 @@ Day-to-day work uses each service's native dev loop. Reach for docker compose on
 |---|---|
 | `modules/web` | `npm run dev` (Next.js HMR on :3000) |
 | `modules/track-service` | `dotnet run` from the project directory (:5050) |
-| `modules/sandbox` | `npm run dev` (:3100) |
-| `modules/sandbox0-streaming` | `npm run dev` (:3100) |
+| `modules/experimentation-claude-code-connector` | `npm run dev` (tsx watch on :3100) — only when working on the connector itself; end users install it via `npx @featbit/experimentation-claude-code-connector` |
 | `modules/project-agent` | `npm run dev` (:3031) |
 | `modules/run-active-test-worker` | `npm run dev` (`wrangler dev`) |
 
@@ -151,7 +168,7 @@ For `modules/web`, the lightest verification is `npx tsc --noEmit && npm run lin
 ```bash
 cd modules
 
-# Bring up all five services (web, track-service, sandbox, project-agent, run-active-test)
+# Bring up the four runtime services (web, track-service, project-agent, run-active-test)
 docker compose up -d
 
 # Rebuild a single service after code changes
@@ -170,9 +187,12 @@ The compose file expects a `.env` next to it with at minimum:
 DATABASE_URL=postgresql://…/release_decision
 CLICKHOUSE_CONNECTION_STRING=Host=…;Port=9000;User=…;Password=…
 TRACK_SERVICE_SIGNING_KEY=<shared HMAC key>
-GLM_API_KEY=<for sandbox / Claude routing>
+SANDBOX0_BASE_URL=https://agents.sandbox0.ai
+SANDBOX0_API_KEY=<for Managed-mode chat in web>
 OPENAI_API_KEY=<for project-agent / Codex>
 ```
+
+The `Local Claude Code` chat mode does not need any server-side env var — each user runs `npx @featbit/experimentation-claude-code-connector` on their own machine and the browser connects to it on `127.0.0.1:3100`.
 
 ClickHouse and PostgreSQL are **not** provisioned by compose — point `DATABASE_URL` and `CLICKHOUSE_CONNECTION_STRING` at managed instances (Azure PostgreSQL, an Azure VM running ClickHouse, etc.). Apply the schema once with:
 
@@ -272,7 +292,7 @@ POST /api/experiments/{id}/activity
 - [**WHITE_PAPER.md**](WHITE_PAPER.md) — product thesis and market positioning
 - [**charts/README.md**](charts/README.md) — Helm chart + cloud examples
 - [**skills/featbit-release-decision/**](skills/featbit-release-decision/) — release-decision workflow and CF-01 → CF-08 phase definitions
-- [**modules/sandbox0-streaming/README.md**](modules/sandbox0-streaming/README.md) — sandbox0 Managed Agents broker, identity model, skill sync
+- [**modules/experimentation-claude-code-connector/README.md**](modules/experimentation-claude-code-connector/README.md) — Local-mode bridge: install, config, SSE contract, publishing
 - [**tutorial/**](tutorial/) — Bayesian and experimentation learning notes (EN / 中文)
 
 ---

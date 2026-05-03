@@ -1,0 +1,10 @@
+node_modules
+dist
+*.log
+.env
+.env.local
+
+# Repo root .gitignore has `bin/` for .NET build artifacts; we want to
+# keep src/bin/ (the npm package entry point) tracked.
+!src/bin/
+!src/bin/**

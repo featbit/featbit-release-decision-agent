@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchMessagesAfterAction, persistMessagesAction } from "@/lib/actions";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -13,38 +14,83 @@ export interface ChatMessage {
   createdAt: Date;
 }
 
-interface UseSandboxChatOptions {
+interface UseLocalAgentChatOptions {
   /** The experiment ID used to scope the agent session */
   experimentId: string;
-  /** Base URL of the sandbox server (default: http://localhost:3100) */
-  sandboxUrl?: string;
+  /**
+   * Override the connector URL. Defaults to `http://127.0.0.1:3100`, which
+   * is where `npx @featbit/experimentation-claude-code-connector` listens.
+   */
+  connectorUrl?: string;
   /** Max agent turns per request */
   maxTurns?: number;
   /** Working directory for the agent */
   cwd?: string;
   /** Existing messages from DB to seed chat history */
   initialMessages?: ChatMessage[];
-  /** Called when a stream completes with the user prompt and assistant reply */
-  onStreamComplete?: (userContent: string, assistantContent: string) => void;
 }
 
 export type ConnectionStatus = "checking" | "connected" | "disconnected";
 
-interface UseSandboxChatReturn {
+interface UseLocalAgentChatReturn {
   messages: ChatMessage[];
   isStreaming: boolean;
   error: string | null;
   connectionStatus: ConnectionStatus;
   /**
-   * Short label describing what the agent is doing right now
-   * ("Thinking…", "Running Bash…", etc.). Null when idle or when the
-   * agent is streaming plain text into the message bubble.
+   * Short label describing what the agent is doing right now ("Thinking…",
+   * "Running Bash…"). Null when idle or streaming plain text.
    */
   activity: string | null;
-  /** Send a message (empty string triggers session init) */
+  /** Send a message (empty string triggers session bootstrap) */
   sendMessage: (content: string) => void;
   /** Abort the current stream */
   abort: () => void;
+}
+
+// ── Defaults ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_CONNECTOR_URL = "http://127.0.0.1:3100";
+
+/**
+ * Per-browser cursor of the most recent DB message this machine's agent has
+ * already seen. Reset means: replay all history into the agent on next send.
+ * Scope is per-experiment, since each experiment has its own jsonl session.
+ */
+function cursorStorageKey(experimentId: string): string {
+  return `featbit:local-agent-msg-cursor:${experimentId}`;
+}
+
+function readCursor(experimentId: string): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(cursorStorageKey(experimentId));
+}
+
+function writeCursor(experimentId: string, iso: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(cursorStorageKey(experimentId), iso);
+}
+
+/**
+ * Render a delta of DB messages as a single context block to splice into the
+ * front of the next user prompt. The format is plain markdown — the model
+ * treats it as a normal turn-by-turn transcript.
+ */
+function renderDeltaAsContext(
+  delta: Array<{ role: string; content: string }>,
+): string {
+  const lines = delta
+    .map((m) => `**${m.role}:** ${m.content}`)
+    .join("\n\n");
+  return [
+    "The following messages were added to this experiment's conversation",
+    "thread by other participants (or earlier sessions on a different machine)",
+    "since your last turn. Treat them as part of the conversation history:",
+    "",
+    lines,
+    "",
+    "---",
+  ].join("\n");
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -54,51 +100,79 @@ function nextId() {
   return `msg-${Date.now()}-${++msgCounter}`;
 }
 
-export function useSandboxChat({
+/**
+ * Connects the chat panel to a local Claude Code instance via the
+ * `@featbit/experimentation-claude-code-connector` process running on the
+ * user's machine.
+ *
+ * Cross-user sync: the local jsonl on this machine is per-user, but the DB
+ * is shared. Before each user prompt we fetch all DB messages newer than
+ * our local cursor and prepend them as context, so the local agent always
+ * sees what other collaborators wrote even though their messages never hit
+ * this machine's session file.
+ */
+export function useLocalAgentChat({
   experimentId,
-  sandboxUrl = process.env.NEXT_PUBLIC_SANDBOX_URL ?? "https://sandbox.featbit.ai",
+  connectorUrl = DEFAULT_CONNECTOR_URL,
   maxTurns = 50,
   cwd,
   initialMessages = [],
-  onStreamComplete,
-}: UseSandboxChatOptions): UseSandboxChatReturn {
+}: UseLocalAgentChatOptions): UseLocalAgentChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("checking");
   const [activity, setActivity] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const isInitialized = useRef(false);
-  const streamAccRef = useRef(""); // accumulate assistant text during stream
-  const onCompleteRef = useRef(onStreamComplete);
-  onCompleteRef.current = onStreamComplete;
+  const streamAccRef = useRef("");
+  const cursorRef = useRef<string | null>(null);
 
-  // Health check on mount
+  // Initialise cursor from localStorage. Deliberately do NOT seed it from
+  // `initialMessages` — those messages may have been written by another user
+  // on a different machine, so the agent on this machine has not actually
+  // seen them yet. Cursor stays null until this user sends a message.
+  useEffect(() => {
+    cursorRef.current = readCursor(experimentId);
+  }, [experimentId]);
+
+  // Health probe — repeats every 5s while disconnected so the UI flips to
+  // "connected" the moment the user runs `npx ...` without needing a reload.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const probe = async () => {
       try {
-        const res = await fetch(`${sandboxUrl}/health`, { signal: AbortSignal.timeout(3000) });
-        if (!cancelled) setConnectionStatus(res.ok ? "connected" : "disconnected");
+        const res = await fetch(`${connectorUrl}/health`, {
+          signal: AbortSignal.timeout(2500),
+        });
+        if (cancelled) return;
+        setConnectionStatus(res.ok ? "connected" : "disconnected");
       } catch {
-        if (!cancelled) setConnectionStatus("disconnected");
+        if (cancelled) return;
+        setConnectionStatus("disconnected");
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(probe, 5000);
+        }
       }
-    })();
-    return () => { cancelled = true; };
-  }, [sandboxUrl]);
+    };
+
+    probe();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [connectorUrl]);
 
   const appendAssistantDelta = useCallback((text: string) => {
     streamAccRef.current += text;
     setMessages((prev) => {
       const last = prev[prev.length - 1];
       if (last && last.role === "assistant" && last.id.startsWith("stream-")) {
-        // Append to in-progress assistant message
-        return [
-          ...prev.slice(0, -1),
-          { ...last, content: last.content + text },
-        ];
+        return [...prev.slice(0, -1), { ...last, content: last.content + text }];
       }
-      // Start a new assistant message
       return [
         ...prev,
         {
@@ -111,7 +185,6 @@ export function useSandboxChat({
     });
   }, []);
 
-  /** Append to the thinking field of the current streaming assistant message. */
   const appendAssistantThinking = useCallback((text: string) => {
     setMessages((prev) => {
       const last = prev[prev.length - 1];
@@ -136,19 +209,20 @@ export function useSandboxChat({
 
   const sendMessage = useCallback(
     (content: string) => {
-      // Don't send while already streaming
       if (abortRef.current) return;
 
       setError(null);
 
-      // Add user message to chat (skip for empty init)
-      if (content.trim()) {
+      const trimmed = content.trim();
+      const isBootstrap = !trimmed;
+
+      if (trimmed) {
         setMessages((prev) => [
           ...prev,
           {
             id: nextId(),
             role: "user",
-            content: content.trim(),
+            content: trimmed,
             createdAt: new Date(),
           },
         ]);
@@ -159,22 +233,43 @@ export function useSandboxChat({
       setIsStreaming(true);
       streamAccRef.current = "";
 
-      // Build request body
-      const body: Record<string, unknown> = {
-        projectId: experimentId,
-        maxTurns,
-      };
-      if (content.trim()) {
-        body.prompt = content.trim();
-      }
-      if (cwd) {
-        body.cwd = cwd;
-      }
-
-      // Start SSE fetch
       (async () => {
         try {
-          const res = await fetch(`${sandboxUrl}/query`, {
+          // Step 1: pull DB delta. Skip on bootstrap — the slash command
+          // already loads experiment state from PG, no need to also splice
+          // raw messages into the prompt.
+          let promptToSend = trimmed;
+          if (!isBootstrap) {
+            try {
+              const { messages: delta, latestCreatedAt } = await fetchMessagesAfterAction(
+                experimentId,
+                cursorRef.current,
+              );
+              if (delta.length > 0) {
+                promptToSend = `${renderDeltaAsContext(delta)}\n\n${trimmed}`;
+              }
+              // Optimistically advance the cursor so a fast-follow send does
+              // not re-prepend the same delta. The post-persist update below
+              // will move it forward again to include our own pair.
+              if (latestCreatedAt) {
+                cursorRef.current = latestCreatedAt;
+                writeCursor(experimentId, latestCreatedAt);
+              }
+            } catch (deltaErr) {
+              console.warn("[local-agent] delta fetch failed:", deltaErr);
+              // Fall through and send the user's prompt without delta — the
+              // agent's local jsonl alone is better than failing the send.
+            }
+          }
+
+          const body: Record<string, unknown> = {
+            experimentId,
+            maxTurns,
+          };
+          if (promptToSend) body.prompt = promptToSend;
+          if (cwd) body.cwd = cwd;
+
+          const res = await fetch(`${connectorUrl}/query`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -198,9 +293,8 @@ export function useSandboxChat({
 
             buffer += decoder.decode(value, { stream: true });
 
-            // Parse SSE frames from buffer
             const lines = buffer.split("\n");
-            buffer = lines.pop() ?? ""; // Keep incomplete line in buffer
+            buffer = lines.pop() ?? "";
 
             let currentEvent = "";
             for (const line of lines) {
@@ -212,7 +306,7 @@ export function useSandboxChat({
                   const data = JSON.parse(jsonStr);
                   handleSseEvent(currentEvent, data);
                 } catch {
-                  // Ignore malformed JSON
+                  // ignore malformed JSON
                 }
                 currentEvent = "";
               } else if (line === "") {
@@ -221,17 +315,29 @@ export function useSandboxChat({
             }
           }
 
-          // Mark session as initialized after first successful exchange
-          isInitialized.current = true;
           setConnectionStatus("connected");
 
-          // Notify caller for persistence
+          // Step 3: persist our pair and move the cursor past it. We persist
+          // the user's *original* trimmed content (not the spliced-with-delta
+          // prompt), since the delta was already in the DB before we ran.
           if (streamAccRef.current) {
-            onCompleteRef.current?.(content.trim(), streamAccRef.current);
+            try {
+              const { latestCreatedAt } = await persistMessagesAction(
+                experimentId,
+                trimmed,
+                streamAccRef.current,
+              );
+              if (latestCreatedAt) {
+                cursorRef.current = latestCreatedAt;
+                writeCursor(experimentId, latestCreatedAt);
+              }
+            } catch (persistErr) {
+              console.warn("[local-agent] persist failed:", persistErr);
+            }
           }
         } catch (err: unknown) {
           if (err instanceof DOMException && err.name === "AbortError") {
-            // User aborted — not an error
+            // user aborted — not an error
           } else {
             const message = err instanceof Error ? err.message : String(err);
             setError(message);
@@ -248,12 +354,9 @@ export function useSandboxChat({
         const d = data as Record<string, unknown>;
 
         if (event === "stream_event") {
-          // Partial SDK message — progressive token streaming.
           const inner = d.event as Record<string, unknown> | undefined;
           if (!inner) return;
 
-          // Track what the agent is currently doing, so the UI can show
-          // "Thinking…" / "Running Bash…" instead of a silent spinner.
           if (inner.type === "content_block_start") {
             const block = inner.content_block as Record<string, unknown> | undefined;
             const blockType = block?.type as string | undefined;
@@ -263,13 +366,11 @@ export function useSandboxChat({
               const name = (block?.name as string | undefined) ?? "tool";
               setActivity(`Running ${name}…`);
             } else if (blockType === "text") {
-              // Actual user-facing text is starting — let the bubble take over
               setActivity(null);
             }
             return;
           }
 
-          // Token deltas — stream into the assistant bubble.
           if (inner.type !== "content_block_delta") return;
           const delta = inner.delta as Record<string, unknown> | undefined;
           if (delta?.type === "text_delta" && typeof delta.text === "string") {
@@ -278,7 +379,6 @@ export function useSandboxChat({
             appendAssistantThinking(delta.thinking);
           }
         } else if (event === "result") {
-          // Final result — agent finished. Surface terminal errors if any.
           if (d.is_error === true) {
             const errs = (d.errors as string[] | undefined) ?? [];
             setError(errs[0] ?? "Agent error");
@@ -287,11 +387,9 @@ export function useSandboxChat({
           const msg = (d as { message?: string }).message ?? "Unknown error";
           setError(msg);
         }
-        // `message`, `system`, `tool_progress`, `done` — ignored for chat display
-        // (text already streamed via stream_event; metadata not user-visible).
       }
     },
-    [experimentId, sandboxUrl, maxTurns, cwd, appendAssistantDelta, appendAssistantThinking]
+    [experimentId, connectorUrl, maxTurns, cwd, appendAssistantDelta, appendAssistantThinking],
   );
 
   const abort = useCallback(() => {
@@ -302,3 +400,5 @@ export function useSandboxChat({
 
   return { messages, isStreaming, error, connectionStatus, activity, sendMessage, abort };
 }
+
+export const LOCAL_AGENT_CONNECTOR_URL = DEFAULT_CONNECTOR_URL;

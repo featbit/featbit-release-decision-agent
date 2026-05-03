@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, ConnectionStatus } from "@/hooks/use-sandbox-chat";
+import type { ChatMessage, ConnectionStatus } from "@/hooks/use-local-agent-chat";
 
 /**
  * Poll-based chat hook for the sandbox0 (Managed Agents) backend.
  *
- * Mirrors the public shape of `useSandboxChat` so `ChatPanel` can swap
- * between the two transparently based on a build-time flag. The main
- * difference is that events arrive in batches via polling, not as
- * token-by-token SSE deltas — so assistant messages land as whole turns
- * rather than streaming in character-by-character.
+ * Mirrors the public shape of `useLocalAgentChat` so `ChatPanel` can swap
+ * between the two transparently at runtime. The main difference is that
+ * events arrive in batches via polling, not as token-by-token SSE deltas —
+ * so assistant messages land as whole turns rather than streaming in
+ * character-by-character.
  */
 
 interface UseSandbox0ChatOptions {

@@ -118,6 +118,22 @@ export async function getMessages(experimentId: string) {
   });
 }
 
+/**
+ * Return messages strictly newer than `after`. When `after` is null, return
+ * the full history. Used by the local-agent chat hook to compute the "delta"
+ * that must be prepended to the next prompt so the local Claude Code session
+ * stays in sync with messages persisted by other users.
+ */
+export async function getMessagesAfter(experimentId: string, after: Date | null) {
+  return prisma.message.findMany({
+    where: {
+      experimentId,
+      ...(after ? { createdAt: { gt: after } } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function addMessage(
   experimentId: string,
   data: { role: string; content: string; metadata?: string }

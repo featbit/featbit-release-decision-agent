@@ -44,35 +44,13 @@ services:
       TICK_MS:    "5000"
       MAX_EVENTS: "8"
 
-  # Claude Agent SDK server — streams agent responses over SSE.
-  # Routes Claude Code traffic through GLM via ~/.claude/settings.json written
-  # by docker-entrypoint.sh at container start (see sandbox/docker-entrypoint.sh).
-  agent-sandbox:
-    build:
-      context: ./sandbox
-      dockerfile: Dockerfile
-    image: featbit/agent-sandbox:local
-    container_name: agent-sandbox
-    restart: unless-stopped
-    ports:
-      # Host 3100 → container 3000. The browser (not another container)
-      # is what talks to this service, so the host port matters.
-      - "3100:3000"
-    environment:
-      GLM_API_KEY:   ${GLM_API_KEY}
-      PORT:          3000
-      CORS_ORIGINS:  ${SANDBOX_CORS_ORIGINS:-*}
-      API_KEY:       ${SANDBOX_API_KEY:-}
-      # project-sync skill's sync.ts calls the web app's /api/experiments/*
-      # endpoints. Inside the docker network the web service is reachable
-      # as http://web:3000 (localhost would hit sandbox itself).
-      SYNC_API_URL:      "http://web:3000"
-      MEMORY_API_BASE:   "http://web:3000"
-    volumes:
-      - ./sandbox/data:/app/data
-      # Global skills — mounted read-only from repo root /skills.
-      # Claude Code SDK loads user-level skills from ~/.claude/skills/.
-      - ../skills:/root/.claude/skills:ro
+  # The previous `agent-sandbox` service ran the Claude Agent SDK in a
+  # container. It has been replaced by `@featbit/experimentation-claude-code-connector`,
+  # which users start themselves on their own machine via:
+  #     npx @featbit/experimentation-claude-code-connector
+  # and the web UI's "Local Claude Code" mode connects to it on
+  # http://127.0.0.1:3100. The original modules/sandbox sources are kept in
+  # the repo for reference but no longer participate in `docker compose up`.
 
   # Project-level AI agent — onboarding + shared project memory over SSE.
   # Codex binary needs seccomp:unconfined for Linux landlock sandbox.
@@ -108,17 +86,11 @@ services:
       args:
         # NEXT_PUBLIC_* is baked in at build time and executed in the browser,
         # so this URL must be reachable from the user's machine — NOT from
-        # inside the docker network. http://agent-sandbox:3000 would not work.
-        NEXT_PUBLIC_SANDBOX_URL: ${NEXT_PUBLIC_SANDBOX_URL:-http://localhost:3100}
-        # FeatBit backend that handles authentication (login, OAuth, SSO).
-        # Same constraint: must be browser-reachable.
+        # inside the docker network.
         NEXT_PUBLIC_FEATBIT_API_URL: ${NEXT_PUBLIC_FEATBIT_API_URL:-https://app-api.featbit.co}
     image: featbit/web:local
     container_name: web
     restart: unless-stopped
-    depends_on:
-      agent-sandbox:
-        condition: service_started
     ports:
       - "3000:3000"
     environment:

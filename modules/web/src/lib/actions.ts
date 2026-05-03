@@ -11,6 +11,7 @@ import {
   updateExperimentStage,
   addActivity,
   addMessage,
+  getMessagesAfter,
   updateExperimentRun,
   propagateMetricsToLatestRun,
 } from "@/lib/data";
@@ -220,32 +221,69 @@ export async function sendMessageAction(experimentId: string, content: string) {
  * Persist a user+assistant message pair from an SSE stream to the database.
  * Called by ChatPanel after each sandbox stream completes.
  * Best-effort — silently skips if experiment no longer exists.
+ *
+ * Returns the ISO timestamp of the latest persisted row so the caller can
+ * advance its local sync cursor without an extra round-trip.
  */
 export async function persistMessagesAction(
   experimentId: string,
   userContent: string,
-  assistantContent: string
-) {
+  assistantContent: string,
+): Promise<{ latestCreatedAt: string | null }> {
   try {
     const experiment = await import("@/lib/data").then((m) =>
-      m.getExperiment(experimentId)
+      m.getExperiment(experimentId),
     );
-    if (!experiment) return;
+    if (!experiment) return { latestCreatedAt: null };
 
+    let latest: Date | null = null;
     if (userContent) {
-      await addMessage(experimentId, { role: "user", content: userContent });
+      const row = await addMessage(experimentId, { role: "user", content: userContent });
+      latest = row.createdAt;
     }
     if (assistantContent) {
-      await addMessage(experimentId, {
+      const row = await addMessage(experimentId, {
         role: "assistant",
         content: assistantContent,
       });
+      latest = row.createdAt;
     }
     revalidatePath(`/experiments/${experimentId}`);
+    return { latestCreatedAt: latest ? latest.toISOString() : null };
   } catch {
     // Persistence is best-effort — SSE chat works regardless
     console.warn(`[persistMessages] Failed for experiment ${experimentId}`);
+    return { latestCreatedAt: null };
   }
+}
+
+/**
+ * Fetch messages persisted after the given cursor. Used by the local-agent
+ * chat hook to compute the "delta" that must be prepended to the next prompt
+ * so the local Claude Code session stays in sync with anything other users
+ * (or earlier sessions on this account) wrote to the DB.
+ *
+ * `afterIso` is the createdAt of the most recent message the caller has
+ * already shown the agent — pass `null` to get the full history.
+ */
+export async function fetchMessagesAfterAction(
+  experimentId: string,
+  afterIso: string | null,
+): Promise<{
+  messages: Array<{ id: string; role: string; content: string; createdAt: string }>;
+  latestCreatedAt: string | null;
+}> {
+  const after = afterIso ? new Date(afterIso) : null;
+  const rows = await getMessagesAfter(experimentId, after);
+  return {
+    messages: rows.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      createdAt: m.createdAt.toISOString(),
+    })),
+    latestCreatedAt: rows.length > 0 ? rows[rows.length - 1].createdAt.toISOString() : null,
+  };
 }
 
 export async function updateExperimentRunAudienceAction(formData: FormData) {

@@ -145,12 +145,17 @@ emits at the moment).
 No CI today — both images are built locally and pushed by hand. Replace
 `<acr>` with the ACR login server (e.g. `featbitrdawu3.azurecr.io`).
 
-The web image only needs `NEXT_PUBLIC_FEATBIT_API_URL` baked in. The default
-agent backend is **sandbox0** (Managed Agents) — chat traffic flows through
-the web app's own `/api/sandbox0/*` routes, no browser-side sandbox URL
-needed. The legacy `NEXT_PUBLIC_SANDBOX_URL` is only meaningful when an
-operator explicitly sets `NEXT_PUBLIC_AGENT_BACKEND=classic` to fall back
-to the SSE backend.
+The web image only needs `NEXT_PUBLIC_FEATBIT_API_URL` baked in. The chat
+panel exposes two modes that are chosen per-browser at runtime — there is
+no compile-time agent backend env var:
+
+- **Managed** (default in fresh browsers) — traffic flows through the web
+  app's own `/api/sandbox0/*` routes to sandbox0 Managed Agents. Configure
+  via runtime env vars `SANDBOX0_BASE_URL` / `SANDBOX0_API_KEY`.
+- **Local Claude Code** — the user's browser hits
+  `http://127.0.0.1:3100` directly, fronted by the npm package
+  `@featbit/experimentation-claude-code-connector` running on their own
+  machine. The hosted web image needs no extra config for this path.
 
 ```bash
 # track-service

@@ -4,74 +4,32 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  useSandboxChat,
+  useLocalAgentChat,
   type ChatMessage,
   type ConnectionStatus,
-} from "@/hooks/use-sandbox-chat";
+} from "@/hooks/use-local-agent-chat";
 import { useSandbox0Chat } from "@/hooks/use-sandbox0-chat";
 import { persistMessagesAction } from "@/lib/actions";
-
-/**
- * Global agent-backend switch (compile-time, env-driven, never changes at
- * runtime). Defaults to `sandbox0` (Managed-Agents integration). Set
- * `NEXT_PUBLIC_AGENT_BACKEND=classic` to fall back to the classic
- * Claude-Agent-SDK server at `NEXT_PUBLIC_SANDBOX_URL`.
- */
-const AGENT_BACKEND =
-  (process.env.NEXT_PUBLIC_AGENT_BACKEND ?? "sandbox0") === "classic"
-    ? ("classic" as const)
-    : ("sandbox0" as const);
+import { useAgentMode, type AgentMode } from "@/lib/agent-mode";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Send, Square, Bot, User, AlertCircle, WifiOff, Loader2, CheckCircle2 } from "lucide-react";
+import {
+  Send,
+  Square,
+  Bot,
+  User,
+  AlertCircle,
+  WifiOff,
+  Loader2,
+  CheckCircle2,
+  Cloud,
+  Laptop,
+  Copy,
+  Check,
+} from "lucide-react";
 import type { Message } from "@/generated/prisma";
 
-/**
- * Compact markdown renderer for assistant bubbles. Inherits bubble typography
- * and adds sensible defaults for headings, code, lists, and tables.
- */
-function AssistantMarkdown({ children }: { children: string }) {
-  return (
-    <div className="text-sm leading-relaxed space-y-2 [&_p]:my-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-medium [&_strong]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_hr]:my-3 [&_hr]:border-border">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: (props) => (
-            <a {...props} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 dark:text-blue-400" />
-          ),
-          code: ({ className, children, ...props }) => {
-            const isBlock = className?.includes("language-");
-            return isBlock ? (
-              <code className={cn(className, "block")} {...props}>
-                {children}
-              </code>
-            ) : (
-              <code className="rounded bg-foreground/10 px-1 py-0.5 text-xs font-mono" {...props}>
-                {children}
-              </code>
-            );
-          },
-          pre: (props) => (
-            <pre className="rounded-md bg-foreground/5 border border-border p-2 overflow-x-auto text-xs font-mono" {...props} />
-          ),
-          table: (props) => (
-            <div className="overflow-x-auto my-2">
-              <table className="text-xs border-collapse" {...props} />
-            </div>
-          ),
-          th: (props) => (
-            <th className="border border-border px-2 py-1 font-medium bg-foreground/5 text-left" {...props} />
-          ),
-          td: (props) => (
-            <td className="border border-border px-2 py-1" {...props} />
-          ),
-        }}
-      >
-        {children}
-      </ReactMarkdown>
-    </div>
-  );
-}
+const LOCAL_AGENT_NPX_COMMAND = "npx @featbit/experimentation-claude-code-connector";
 
 /** Map persisted DB messages to the hook's ChatMessage shape */
 function toChat(msg: Message): ChatMessage {
@@ -82,6 +40,8 @@ function toChat(msg: Message): ChatMessage {
     createdAt: new Date(msg.createdAt),
   };
 }
+
+// ── Outer ────────────────────────────────────────────────────────────────────
 
 export function ChatPanel({
   experimentId,
@@ -95,48 +55,171 @@ export function ChatPanel({
   triggerMessage?: string | null;
   onTriggerConsumed?: () => void;
 }) {
+  const [mode, setMode] = useAgentMode();
+
+  // Re-mount inner component on mode change so the previous hook fully tears
+  // down (probes, abort controllers, accumulated state) before the new one
+  // mounts. This keeps the rules-of-hooks invariant intact.
+  const inner =
+    mode === "local" ? (
+      <LocalChatPanel
+        key="local"
+        mode={mode}
+        setMode={setMode}
+        experimentId={experimentId}
+        initialMessages={initialMessages}
+        triggerMessage={triggerMessage}
+        onTriggerConsumed={onTriggerConsumed}
+      />
+    ) : (
+      <ManagedChatPanel
+        key="managed"
+        mode={mode}
+        setMode={setMode}
+        experimentId={experimentId}
+        initialMessages={initialMessages}
+        triggerMessage={triggerMessage}
+        onTriggerConsumed={onTriggerConsumed}
+      />
+    );
+
+  return inner;
+}
+
+// ── Mode-specific wrappers ───────────────────────────────────────────────────
+
+interface InnerProps {
+  mode: AgentMode;
+  setMode: (m: AgentMode) => void;
+  experimentId: string;
+  initialMessages: Message[];
+  triggerMessage?: string | null;
+  onTriggerConsumed?: () => void;
+}
+
+function ManagedChatPanel(props: InnerProps) {
+  const chat = useSandbox0Chat({
+    experimentId: props.experimentId,
+    initialMessages: props.initialMessages.map(toChat),
+    onStreamComplete: (userContent, assistantContent) => {
+      persistMessagesAction(props.experimentId, userContent, assistantContent);
+    },
+  });
+
+  return (
+    <ChatPanelView
+      mode={props.mode}
+      setMode={props.setMode}
+      experimentId={props.experimentId}
+      initialMessagesCount={props.initialMessages.length}
+      triggerMessage={props.triggerMessage}
+      onTriggerConsumed={props.onTriggerConsumed}
+      messages={chat.messages}
+      isStreaming={chat.isStreaming}
+      error={chat.error}
+      connectionStatus={chat.connectionStatus}
+      activity={chat.activity}
+      sendMessage={chat.sendMessage}
+      abort={chat.abort}
+      sessionId={chat.sessionId}
+      sessionIsNew={chat.sessionIsNew}
+      autoBootstrap="always"
+    />
+  );
+}
+
+function LocalChatPanel(props: InnerProps) {
+  const chat = useLocalAgentChat({
+    experimentId: props.experimentId,
+    initialMessages: props.initialMessages.map(toChat),
+    // Persistence + DB-delta sync are handled inside the hook itself, not via
+    // an onStreamComplete callback like the managed mode — the hook owns the
+    // sync cursor and needs to advance it from `persistMessagesAction`'s
+    // return value.
+  });
+
+  return (
+    <ChatPanelView
+      mode={props.mode}
+      setMode={props.setMode}
+      experimentId={props.experimentId}
+      initialMessagesCount={props.initialMessages.length}
+      triggerMessage={props.triggerMessage}
+      onTriggerConsumed={props.onTriggerConsumed}
+      messages={chat.messages}
+      isStreaming={chat.isStreaming}
+      error={chat.error}
+      connectionStatus={chat.connectionStatus}
+      activity={chat.activity}
+      sendMessage={chat.sendMessage}
+      abort={chat.abort}
+      sessionId={null}
+      sessionIsNew={null}
+      autoBootstrap="when-empty"
+    />
+  );
+}
+
+// ── Shared view ──────────────────────────────────────────────────────────────
+
+interface ViewProps {
+  mode: AgentMode;
+  setMode: (m: AgentMode) => void;
+  experimentId: string;
+  initialMessagesCount: number;
+  triggerMessage?: string | null;
+  onTriggerConsumed?: () => void;
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  error: string | null;
+  connectionStatus: ConnectionStatus;
+  activity: string | null;
+  sendMessage: (content: string) => void;
+  abort: () => void;
+  sessionId: string | null;
+  sessionIsNew: boolean | null;
+  /**
+   * Managed mode fires the empty-prompt bootstrap unconditionally so the
+   * hook resolves a session id on mount. Local mode only bootstraps when
+   * there is no chat history yet, since the SDK creates a fresh session
+   * implicitly on the first message.
+   */
+  autoBootstrap: "always" | "when-empty";
+}
+
+function ChatPanelView({
+  mode,
+  setMode,
+  initialMessagesCount,
+  triggerMessage,
+  onTriggerConsumed,
+  messages: liveMessages,
+  isStreaming,
+  error,
+  connectionStatus,
+  activity,
+  sendMessage,
+  abort,
+  sessionId,
+  sessionIsNew,
+  autoBootstrap,
+}: ViewProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initRef = useRef(false);
 
-  const chatOpts = {
-    experimentId,
-    initialMessages: initialMessages.map(toChat),
-    onStreamComplete: (userContent: string, assistantContent: string) => {
-      persistMessagesAction(experimentId, userContent, assistantContent);
-    },
-  };
-  // `AGENT_BACKEND` is a compile-time constant — the branch is stable for the
-  // lifetime of the app, which satisfies the rules-of-hooks invariant even
-  // though the static checker can't see it.
-  //
-  const chat =
-    AGENT_BACKEND === "sandbox0"
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      ? useSandbox0Chat(chatOpts)
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      : useSandboxChat(chatOpts);
-  const { messages: liveMessages, isStreaming, error, connectionStatus, activity, sendMessage, abort } = chat;
-  const sandbox0Extras = AGENT_BACKEND === "sandbox0" ? (chat as ReturnType<typeof useSandbox0Chat>) : null;
-  const sessionId: string | null = sandbox0Extras?.sessionId ?? null;
-  const sessionIsNew: boolean | null = sandbox0Extras?.sessionIsNew ?? null;
-
-  // liveMessages already contains the DB history + any new messages
   const displayMessages = liveMessages;
 
-  // Auto-grow the textarea: 1 row default, expand with content up to 5 rows,
-  // scroll inside after that. Runs after input changes and after reset.
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
     const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
-    const maxHeight = lineHeight * 5 + 16; // 5 rows + vertical padding
+    const maxHeight = lineHeight * 5 + 16;
     el.style.height = Math.min(el.scrollHeight, maxHeight) + "px";
   }, [input]);
 
-  // Auto-scroll on new messages or streaming content
   const lastContent = displayMessages[displayMessages.length - 1]?.content;
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -145,27 +228,18 @@ export function ChatPanel({
     });
   }, [displayMessages.length, lastContent]);
 
-  // Auto-initialize session on mount (empty prompt → triggers greeting)
+  // Auto-bootstrap on mount.
   useEffect(() => {
     if (initRef.current) return;
     initRef.current = true;
-    // For sandbox0 backend, fire the empty-prompt path unconditionally so
-    // the hook resolves a session id (new or resumed) on open and the UI
-    // can display the session status. The hook early-returns on resume
-    // without any server-side side effects.
-    if (AGENT_BACKEND === "sandbox0" && !triggerMessage) {
+    if (triggerMessage) return; // external trigger will fire its own send
+    if (autoBootstrap === "always") {
       sendMessage("");
-      return;
-    }
-    // Classic backend: only bootstrap if there are no persisted messages
-    // AND no external trigger is about to fire (e.g. expert-setup priming
-    // message) — otherwise we'd duplicate the greeting.
-    if (initialMessages.length === 0 && !triggerMessage) {
+    } else if (initialMessagesCount === 0) {
       sendMessage("");
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-send external trigger messages (e.g. from the "Analyze" button)
   useEffect(() => {
     if (!triggerMessage) return;
     sendMessage(triggerMessage);
@@ -178,7 +252,6 @@ export function ChatPanel({
     if (!content || isStreaming) return;
     setInput("");
     sendMessage(content);
-    // Re-focus textarea
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
@@ -189,15 +262,19 @@ export function ChatPanel({
     }
   }
 
+  const showLocalSetupCard =
+    mode === "local" && connectionStatus === "disconnected" && displayMessages.length === 0;
+
   return (
     <div className="flex h-full flex-col bg-card/55">
-      {/* Connection status bar */}
-      <ConnectionStatusBar status={connectionStatus} />
+      {/* Mode selector — always visible */}
+      <AgentModeSelector mode={mode} setMode={setMode} />
 
-      {/* Sandbox0 session indicator — always rendered for the sandbox0
-          backend so the user always knows the current session state
-          (connecting / resumed / new / errored). */}
-      {AGENT_BACKEND === "sandbox0" && (
+      {/* Connection status bar */}
+      <ConnectionStatusBar mode={mode} status={connectionStatus} />
+
+      {/* Managed-mode session indicator */}
+      {mode === "managed" && (
         <Sandbox0SessionBar
           sessionId={sessionId}
           sessionIsNew={sessionIsNew}
@@ -207,7 +284,9 @@ export function ChatPanel({
 
       {/* Messages area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        {displayMessages.length === 0 && !isStreaming ? (
+        {showLocalSetupCard ? (
+          <LocalAgentSetupCard />
+        ) : displayMessages.length === 0 && !isStreaming ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
             <div className="flex size-14 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
               <Bot className="size-7" />
@@ -228,7 +307,7 @@ export function ChatPanel({
               key={msg.id}
               className={cn(
                 "flex gap-3 text-sm",
-                msg.role === "user" && "justify-end"
+                msg.role === "user" && "justify-end",
               )}
             >
               {msg.role !== "user" && (
@@ -245,7 +324,7 @@ export function ChatPanel({
                     ? "bg-primary text-primary-foreground whitespace-pre-wrap ring-primary/20"
                     : msg.role === "system"
                       ? "bg-muted/70 text-muted-foreground text-xs italic whitespace-pre-wrap ring-border/70"
-                      : "bg-card text-card-foreground ring-border/80"
+                      : "bg-card text-card-foreground ring-border/80",
                 )}
               >
                 {msg.role === "assistant" && msg.thinking && (
@@ -277,31 +356,26 @@ export function ChatPanel({
           ))
         )}
 
-        {/* Streaming indicator — shown whenever the agent is still working.
-            Kept visible even when a stream- bubble is growing or a message
-            was just committed: the bubbles describe *what* the agent is
-            doing, the dots say *it is still going*. */}
         {isStreaming && (
-            <div className="flex gap-3 text-sm">
-              <div className="flex shrink-0 items-start pt-0.5">
-                <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
-                  <Bot className="size-4" />
-                </div>
-              </div>
-              <div className="bg-card rounded-lg px-3.5 py-2.5 flex items-center gap-2 shadow-sm shadow-foreground/5 ring-1 ring-border/80">
-                <span className="inline-flex gap-1">
-                  <span className="animate-bounce [animation-delay:0ms]">·</span>
-                  <span className="animate-bounce [animation-delay:150ms]">·</span>
-                  <span className="animate-bounce [animation-delay:300ms]">·</span>
-                </span>
-                {activity && (
-                  <span className="text-xs text-muted-foreground">{activity}</span>
-                )}
+          <div className="flex gap-3 text-sm">
+            <div className="flex shrink-0 items-start pt-0.5">
+              <div className="flex size-8 items-center justify-center rounded-lg bg-accent text-primary ring-1 ring-primary/15">
+                <Bot className="size-4" />
               </div>
             </div>
-          )}
+            <div className="bg-card rounded-lg px-3.5 py-2.5 flex items-center gap-2 shadow-sm shadow-foreground/5 ring-1 ring-border/80">
+              <span className="inline-flex gap-1">
+                <span className="animate-bounce [animation-delay:0ms]">·</span>
+                <span className="animate-bounce [animation-delay:150ms]">·</span>
+                <span className="animate-bounce [animation-delay:300ms]">·</span>
+              </span>
+              {activity && (
+                <span className="text-xs text-muted-foreground">{activity}</span>
+              )}
+            </div>
+          </div>
+        )}
 
-        {/* Error display */}
         {error && (
           <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 rounded-lg px-3 py-2">
             <AlertCircle className="size-3.5 shrink-0" />
@@ -346,14 +420,110 @@ export function ChatPanel({
   );
 }
 
+/* ── Markdown renderer ── */
+
+function AssistantMarkdown({ children }: { children: string }) {
+  return (
+    <div className="text-sm leading-relaxed space-y-2 [&_p]:my-0 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5 [&_h1]:text-base [&_h1]:font-semibold [&_h2]:text-sm [&_h2]:font-semibold [&_h3]:text-sm [&_h3]:font-medium [&_strong]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_hr]:my-3 [&_hr]:border-border">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: (props) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 dark:text-blue-400" />
+          ),
+          code: ({ className, children, ...props }) => {
+            const isBlock = className?.includes("language-");
+            return isBlock ? (
+              <code className={cn(className, "block")} {...props}>
+                {children}
+              </code>
+            ) : (
+              <code className="rounded bg-foreground/10 px-1 py-0.5 text-xs font-mono" {...props}>
+                {children}
+              </code>
+            );
+          },
+          pre: (props) => (
+            <pre className="rounded-md bg-foreground/5 border border-border p-2 overflow-x-auto text-xs font-mono" {...props} />
+          ),
+          table: (props) => (
+            <div className="overflow-x-auto my-2">
+              <table className="text-xs border-collapse" {...props} />
+            </div>
+          ),
+          th: (props) => (
+            <th className="border border-border px-2 py-1 font-medium bg-foreground/5 text-left" {...props} />
+          ),
+          td: (props) => (
+            <td className="border border-border px-2 py-1" {...props} />
+          ),
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+/* ── Mode selector ── */
+
+function AgentModeSelector({
+  mode,
+  setMode,
+}: {
+  mode: AgentMode;
+  setMode: (m: AgentMode) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-background/55 px-3 py-1.5 backdrop-blur">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Agent
+      </span>
+      <div className="inline-flex rounded-md border border-border bg-card/90 p-0.5 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setMode("managed")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
+            mode === "managed"
+              ? "bg-primary text-primary-foreground shadow"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Cloud className="size-3" />
+          Managed
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("local")}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
+            mode === "local"
+              ? "bg-primary text-primary-foreground shadow"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Laptop className="size-3" />
+          Local Claude Code
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Connection status bar ── */
-function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
+function ConnectionStatusBar({
+  mode,
+  status,
+}: {
+  mode: AgentMode;
+  status: ConnectionStatus;
+}) {
   const [show, setShow] = useState(status !== "connected");
   const prevStatus = useRef(status);
 
   useEffect(() => {
     if (prevStatus.current !== "connected" && status === "connected") {
-      // Just connected — show briefly then auto-hide
       const timer = setTimeout(() => setShow(false), 2000);
       prevStatus.current = status;
       return () => clearTimeout(timer);
@@ -361,7 +531,6 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
     prevStatus.current = status;
   }, [status]);
 
-  // Always show for non-connected states
   const visible = status !== "connected" || show;
   if (!visible) return null;
 
@@ -373,26 +542,26 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
           ? "bg-muted/50 text-muted-foreground"
           : status === "connected"
             ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
-            : "bg-destructive/10 text-destructive"
+            : "bg-destructive/10 text-destructive",
       )}
     >
       {status === "checking" ? (
         <>
           <Loader2 className="size-3 animate-spin" />
-          <span>Connecting to agent server…</span>
+          <span>Connecting to agent…</span>
         </>
       ) : status === "connected" ? (
         <>
           <CheckCircle2 className="size-3" />
-          <span>Connected to agent server</span>
+          <span>Connected to agent</span>
         </>
       ) : (
         <>
           <WifiOff className="size-3" />
           <span>
-            {AGENT_BACKEND === "sandbox0"
-              ? "Agent unavailable — check /api/sandbox0 routes and sandbox0 credentials"
-              : "Agent server unavailable — start sandbox on port 3100 to enable chat"}
+            {mode === "managed"
+              ? "Managed agent unavailable — check sandbox0 credentials"
+              : "Local connector not running on 127.0.0.1:3100"}
           </span>
         </>
       )}
@@ -400,7 +569,73 @@ function ConnectionStatusBar({ status }: { status: ConnectionStatus }) {
   );
 }
 
-/* ── sandbox0 session bar (always visible on sandbox0 backend) ── */
+/* ── Local-agent setup card ── */
+
+function LocalAgentSetupCard() {
+  const [copied, setCopied] = useState(false);
+
+  function copyCommand() {
+    navigator.clipboard?.writeText(LOCAL_AGENT_NPX_COMMAND).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  return (
+    <div className="mx-auto max-w-md rounded-lg border border-border/80 bg-card/90 p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <Laptop className="size-4 text-primary" />
+        <h3 className="text-sm font-semibold">Connect your local Claude Code</h3>
+      </div>
+      <ol className="text-xs text-muted-foreground space-y-2 list-decimal pl-4">
+        <li>
+          Make sure the{" "}
+          <a
+            href="https://docs.claude.com/claude-code"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline text-blue-600 dark:text-blue-400"
+          >
+            Claude Code CLI
+          </a>{" "}
+          is installed and you have logged in once with <code className="font-mono text-[11px] rounded bg-foreground/10 px-1 py-0.5">claude</code>.
+        </li>
+        <li>
+          Open a terminal and run the connector:
+          <div className="mt-1.5 flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+            <code className="flex-1 truncate font-mono text-[11px]">
+              {LOCAL_AGENT_NPX_COMMAND}
+            </code>
+            <button
+              type="button"
+              onClick={copyCommand}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              {copied ? (
+                <>
+                  <Check className="size-3" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="size-3" />
+                  Copy
+                </>
+              )}
+            </button>
+          </div>
+        </li>
+        <li>
+          Leave it running. This panel will detect it on{" "}
+          <code className="font-mono text-[11px] rounded bg-foreground/10 px-1 py-0.5">127.0.0.1:3100</code>{" "}
+          within a few seconds.
+        </li>
+      </ol>
+    </div>
+  );
+}
+
+/* ── sandbox0 session bar (always visible on managed mode) ── */
 function Sandbox0SessionBar({
   sessionId,
   sessionIsNew,
@@ -410,7 +645,6 @@ function Sandbox0SessionBar({
   sessionIsNew: boolean | null;
   error: string | null;
 }) {
-  // Error state: show red dot + message, takes priority over everything else.
   if (error && !sessionId) {
     return (
       <div className="flex items-center gap-2 border-b border-border/70 bg-destructive/10 px-3 py-1.5 text-[11px] font-medium text-destructive">
@@ -421,7 +655,6 @@ function Sandbox0SessionBar({
     );
   }
 
-  // Connecting state: no sessionId yet but no error either.
   if (!sessionId) {
     return (
       <div className="flex items-center gap-2 border-b border-border/70 bg-background/55 px-3 py-1.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
@@ -431,7 +664,6 @@ function Sandbox0SessionBar({
     );
   }
 
-  // Connected: green for resumed, blue for new.
   const isResumed = sessionIsNew === false;
   return (
     <div className="flex items-center gap-2 border-b border-border/70 bg-background/55 px-3 py-1.5 text-[11px] font-medium text-muted-foreground backdrop-blur">

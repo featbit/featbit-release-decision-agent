@@ -15,9 +15,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Build-time public env vars (injected by docker-compose build args)
-ARG NEXT_PUBLIC_SANDBOX_URL
-ENV NEXT_PUBLIC_SANDBOX_URL=${NEXT_PUBLIC_SANDBOX_URL}
-
 ARG NEXT_PUBLIC_FEATBIT_API_URL
 ENV NEXT_PUBLIC_FEATBIT_API_URL=${NEXT_PUBLIC_FEATBIT_API_URL}
 
