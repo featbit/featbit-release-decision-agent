@@ -777,31 +777,31 @@ This closes the vertical slice. End-to-end, an operator can now:
    normalises the response, and the existing analyser (Bayesian or
    bandit) runs against the customer's data.
 
-### What gets promoted to AGENTS.md
+### What gets promoted to AGENTS.md — done
 
-When the next architectural change touches this area, these go into
-`modules/web/AGENTS.md` (with the existing "Metric Vocabulary &
-Fan-out Contract" section since they're cross-cutting):
+Promoted into `modules/web/AGENTS.md` as the new
+**"Data Sources & Customer Endpoints"** section (after the existing
+"Metric Vocabulary & Fan-out Contract" — both deal with cross-cutting
+analyser-input rules):
 
-- The two valid data source paths in the analyse route, branched by
-  `ExperimentRun.dataSourceMode` (`featbit-managed` | `customer-single`
-  | `customer-per-metric` | `manual` | `external-text`). Default is
-  `featbit-managed`.
-- The same fan-out rule as the metric columns: writes that originate
-  at the experiment-level UI must propagate to the latest
-  `ExperimentRun`. The expert-setup wizard's `saveExpertSetupAction`
-  writes directly to the run; no helper needed.
-- HMAC signing format: `signing_string = "${ts}.${rawBody}"`,
-  `header = "sha256=${hex(HMAC_SHA256(secret, signing_string))}"`. New
-  outbound integrations should match.
-- Stats-shape normalisation: customer endpoint may return either
-  `{n, mean, stddev}` (recommended) or `{n, sum, sum_squares}` for
-  continuous; downstream of `customer-endpoint-client.normaliseResponse`
-  everything is `{n, mean, variance}`. `metricMoments()` in
-  `bayesian.ts:51-53` consumes this directly — unchanged across this
-  whole feature.
-- SSRF guard env override: `ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1` for dev
-  iteration against localhost endpoints. Off by default in prod.
+- The five `dataSourceMode` values in a table with required config per
+  value. Default `featbit-managed` documented.
+- Same fan-out rule as metric columns. `saveExpertSetupAction` writes
+  the new fields directly inside its own transaction; future write
+  sites should follow.
+- "Customer-mode failures do NOT fall back to stored data" (the 503
+  vs. silent-stale-data decision from PR 5).
+- HMAC signing format reproduced (so a future outbound integration
+  needing signing has a concrete reference).
+- Stats-shape normalisation rule (customer endpoint may return
+  `mean+stddev` or `sum+sum_squares`; everything downstream of
+  `normaliseResponse` is `{n, mean, variance}`; never special-case
+  outside the client).
+- SSRF guard env override `ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1` and
+  the documented "no DNS-rebinding defence" limitation.
+
+The full spec and per-PR rationale live in the two docs in this folder
+— AGENTS.md just has the rules a future agent must respect.
 
 ### Known follow-ups not blocking ship
 

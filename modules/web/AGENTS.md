@@ -127,6 +127,74 @@ When you add a new write site for the experiment-level metric JSON, you must cal
 
 The legacy bare `string[]` form is read-tolerated but never written. `analyze.ts` reads `metricAgg` and `inverse` from this column so guardrails analyse correctly even on the live track-service path (where the heuristic in `track-client.ts` cannot infer them from the response).
 
+## Data Sources & Customer Endpoints
+
+The analyse route (`/api/experiments/[id]/analyze`) branches on
+`ExperimentRun.dataSourceMode` to decide where per-variant statistics come
+from. Public contract:
+[`docs/customer-managed-data-endpoints-v1.md`](docs/customer-managed-data-endpoints-v1.md).
+Per-PR implementation history:
+[`docs/customer-managed-endpoints-implementation.md`](docs/customer-managed-endpoints-implementation.md).
+
+### `dataSourceMode` is a closed set
+
+| Value                  | Source of stats                                                  | Required config                                  |
+|------------------------|------------------------------------------------------------------|--------------------------------------------------|
+| `featbit-managed`      | track-service (legacy default; what every existing run uses)     | `featbitEnvId`, `flagKey`                        |
+| `customer-single`      | one Customer Managed Data Endpoint, all metrics in one call      | `customerEndpointConfig` = `{providerId, path, staticParams?}` |
+| `customer-per-metric`  | per-metric routing, one call per `(provider, path)` group        | `customerEndpointConfig` = `{ "<event>": { providerId, path, staticParams? }, ... }` |
+| `manual`               | totals pasted via Expert setup wizard, stored in `inputData`     | `inputData` JSON                                 |
+| `external-text`        | free-text note only — analyser won't live-fetch                  | none                                             |
+
+Default for new and pre-existing rows is `featbit-managed` (DB default
+applied by migration `20260502000000_add_customer_endpoint_provider`).
+
+### Same fan-out rule as the metric columns
+
+Writes that originate at the experiment-level UI must propagate
+`dataSourceMode` and `customerEndpointConfig` to the latest `ExperimentRun`.
+The expert-setup wizard's `saveExpertSetupAction` writes them into the run
+fields directly inside its own transaction; no helper needed. When a new
+write site appears, follow the same pattern (or extend
+`propagateMetricsToLatestRun`).
+
+### Customer-mode failures do NOT fall back to stored data
+
+When `dataSourceMode` is `customer-*`, a fetch failure from the customer
+endpoint surfaces a 503 with the underlying error message. Falling back to
+`inputData` would silently mask a misconfigured warehouse — operator chose
+customer mode explicitly.
+
+### HMAC signing format
+
+Outbound calls to customer endpoints are signed in
+`lib/stats/customer-endpoint-client.ts:signRequest`:
+
+```
+signing_string = `${X-FeatBit-Timestamp}.${rawBody}`
+header         = `sha256=${hex(HMAC_SHA256(signingSecret, signing_string))}`
+```
+
+If a future outbound integration needs request signing, reuse this format
+unless there's a strong reason not to.
+
+### Stats-shape normalisation
+
+The customer endpoint contract accepts either `{n, mean, stddev}`
+(recommended) or `{n, sum, sum_squares}` (legacy) for continuous metrics.
+`normaliseResponse` in `customer-endpoint-client.ts` converts both into the
+`{n, mean, variance}` shape that `metricMoments()` in `bayesian.ts:51-53`
+already consumes natively. Downstream code stays unchanged across all
+shapes — never special-case the response shape outside the client.
+
+### SSRF guard with env override
+
+`checkPrivateAddress` blocks loopback / RFC1918 / link-local (incl. IMDS at
+`169.254.169.254`) / IPv6 ULA, plus non-`https://` schemes. For dev
+iteration against a localhost mock customer endpoint, set
+`ALLOW_PRIVATE_CUSTOMER_ENDPOINTS=1` in the environment. Off by default in
+prod. Documented limitation: no DNS-rebinding defence in v1.
+
 ## Sandbox0 Agent Ops
 
 The chat panel runs against a sandbox0 (Managed Agents) custom agent that bundles repo-local skills. Operating it is two scripts:
