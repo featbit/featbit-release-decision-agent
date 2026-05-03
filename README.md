@@ -1,382 +1,280 @@
 # FeatBit Release Decision Agent
 
-**End-to-end experimentation system** that guides product teams from intent → hypothesis → exposure → measurement → analysis → decision → learning.
+**The A/B testing & experimentation system for FeatBit.**
 
-Powered by **Bayesian A/B testing**, **feature flags**, and **AI-assisted workflows**.
+A multi-service platform that turns a feature flag into a measured experiment — guiding teams through the full release-decision loop:
+
+> intent → hypothesis → exposure → measurement → analysis → decision → learning
+
+Powered by **Bayesian A/B testing**, **multi-armed bandits**, **FeatBit feature flags**, and **AI-assisted workflows** that drive each phase from a coding-agent-friendly skill catalog.
 
 ---
 
-## 🏗️ Architecture
+## What this project is
 
-Three production services working together:
+Most experimentation platforms are dashboards bolted onto a warehouse. This one is built around a different premise:
 
-| Service | Runtime | Role | Cloud |
+- **The coding agent is the primary user.** Skills under `skills/` script the workflow phases; the web UI is a viewer/editor over the same database.
+- **The control plane is the feature flag.** FeatBit decides who sees what, the agent and dashboard decide what happens next.
+- **Raw data stays in the customer's stack.** Events are ingested into ClickHouse; analysis runs in-process inside the web service. No third-party metric pipeline.
+- **Decisions are deterministic and auditable.** Every stage transition, hypothesis edit, and analysis result is appended to an activity log per experiment.
+
+See [`WHITE_PAPER.md`](WHITE_PAPER.md) for the product thesis.
+
+---
+
+## Architecture
+
+Five services under `modules/`, plus a skill catalog and a Helm chart:
+
+```
+                    ┌──────────────────────────────────────────────┐
+                    │  modules/web  (Next.js 16 + Prisma)  :3000   │
+                    │  Dashboard, REST API, Bayesian/Bandit        │
+                    │  analysis engine, project + user memory      │
+                    └────────┬───────────────┬─────────────────────┘
+        TRACK_SERVICE_URL    │               │   MEMORY_API_BASE / SYNC_API_URL
+                             ▼               ▼
+        ┌──────────────────────────┐   ┌────────────────────────┐   ┌────────────────────────┐
+        │  modules/track-service   │   │  modules/sandbox        │   │  modules/project-agent │
+        │  (.NET 10 + ClickHouse)  │   │  (Claude Agent SDK,SSE) │   │  (Codex CLI, SSE)      │
+        │  :5050  POST /api/track  │   │  :3100  POST /query     │   │  :3031  POST /query    │
+        │         POST /api/query/ │   │  Release-decision skill │   │  Project onboarding +  │
+        │              experiment  │   │  workflow               │   │  shared memory         │
+        └────────────┬─────────────┘   └─────────────────────────┘   └────────────────────────┘
+                     ▲
+        ┌────────────┴─────────────┐                ┌──────────────────────────────┐
+        │  modules/run-active-     │                │  modules/sandbox0-streaming  │
+        │  test-worker             │                │  (Hono → sandbox0 Managed    │
+        │  (Cloudflare Worker)     │                │   Agents, default chat       │
+        │  Cron: every minute      │                │   backend)                   │
+        │  → POST /api/track       │                └──────────────────────────────┘
+        └──────────────────────────┘
+
+Storage:
+  PostgreSQL (Azure)   ← Prisma; experiments, runs, activity, memory, chat
+  ClickHouse           ← track-service; flag_evaluations + metric_events
+```
+
+### Services at a glance
+
+| Service | Stack | Port | Role |
 |---|---|---|---|
-| **agent/web** | Next.js 16 (Node.js) | Dashboard UI, REST API, experiment state (Prisma ORM) | **Cloudflare Containers** |
-| **agent/tsdb-cloudflare** | CloudFlare Workers | Time-series data ingestion, metric queries, R2 storage management | **CloudFlare R2 + Scheduled Jobs** |
-| **agent/sandbox** | Node.js + Claude SDK | AI-powered release decision workflow automation | **Standalone or Cloud** |
+| `modules/web` | Next.js 16, Prisma, TypeScript | 3000 | Dashboard UI, REST API, in-process analysis engine, memory API |
+| `modules/track-service` | .NET 10, ClickHouse | 5050 → 8080 | Event ingest (`/api/track`) and per-experiment metric query (`/api/query/experiment`) |
+| `modules/sandbox` | Node.js, `@anthropic-ai/claude-agent-sdk`, Express SSE | 3100 → 3000 | Hosts the release-decision agent; mounts `/skills` read-only |
+| `modules/sandbox0-streaming` | Node.js, Hono, sandbox0 Managed Agents | 3100 | Default chat backend — brokers conversations between the web UI and sandbox0; one session per experiment |
+| `modules/project-agent` | Node.js, OpenAI Codex CLI, SSE | 3031 | Project-level onboarding assistant; reads/writes shared project memory |
+| `modules/run-active-test-worker` | Cloudflare Worker, cron | — | Synthetic event generator + end-to-end health probe for the `run-active-test` canary experiment |
 
-### Data Flow
+### Storage
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  User Dashboard (agent/web:3000)                                         │
-│  ├─ Create experiment, define hypothesis, set up metrics               │
-│  ├─ View real-time analysis results                                    │
-│  └─ Make release decisions: CONTINUE / PAUSE / ROLLBACK / INCONCLUSIVE │
-└────────────────────────┬────────────────────────────────────────────────┘
-                         │
-                         ↓
-┌─────────────────────────────────────────────────────────────────────────┐
-│  TSDB (agent/tsdb-cloudflare) — Hosts on tsdb.featbit.ai                │
-│  ├─ POST /api/track → buffer, flush to R2 PartitionWriter DO           │
-│  ├─ POST /api/query/experiment → scan R2, aggregate metrics            │
-│  └─ Scheduled Job (every 3h):                                          │
-│      1. Compact raw segments into daily rollups (R2 optimization)      │
-│      2. Fetch running experiments from web:3000/api/experiments/running│
-│      3. For each: query fresh metrics → POST web:3000/api/[id]/analyze│
-└────────────────────────────────────────────────────────────────────────┘
-                         │
-                         ↓
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Web Analysis API (agent/web:3000/api/experiments/{id}/analyze)        │
-│  ├─ Fetch fresh || cached metric summaries from TSDB                  │
-│  ├─ Run Bayesian A/B or Bandit analysis (TypeScript)                  │
-│  ├─ Store results in PostgreSQL (Experiment.analysisResult)           │
-│  └─ Return analysis JSON (Primary metric, guardrails, verdicts)       │
-└─────────────────────────────────────────────────────────────────────────┘
-                         │
-                         ↓
-┌─────────────────────────────────────────────────────────────────────────┐
-│  Agent Sandbox (agent/sandbox:3000) — Claude Code Integration         │
-│  ├─ Hosts Claude Code agent via SDK                                   │
-│  ├─ SSE endpoint for real-time streaming                              │
-│  └─ Calls web API to manage experiment lifecycle                      │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📊 Database
-
-**Single PostgreSQL instance** — `release_decision` database
-
-| Component | Manager | Purpose |
+| Store | Manager | Holds |
 |---|---|---|
-| Prisma tables (`project`, `experiment`, `experimentRun`, `activity`, `message`) | Prisma migrations | Application state, experiment metadata, experiment results, audit log, chat history |
-| Raw event tables (`flag_evaluations`, `metric_events`) | `docker/init-events.sql` (legacy reference) | **Not used** — raw events stored in R2 via TSDB |
+| **PostgreSQL** (single `release_decision` DB) | Prisma migrations in `modules/web/prisma/` | `Experiment`, `ExperimentRun`, `Activity`, `Message`, `ManagedAgent`, `Vault`, project + user memory |
+| **ClickHouse** | `modules/track-service/sql/schema.sql` | `flag_evaluations`, `metric_events` (raw, joined per query) |
+
+### Two chat backends, one UI
+
+The web UI talks to whichever backend is configured by `NEXT_PUBLIC_AGENT_BACKEND`:
+
+- **`sandbox0`** *(default)* — the browser hits web's own `/api/sandbox0/*` routes, which proxy to sandbox0 Managed Agents through `modules/sandbox0-streaming`. No direct browser → sandbox URL needed.
+- **`classic`** — the browser hits `modules/sandbox` directly via `NEXT_PUBLIC_SANDBOX_URL`. Used for local Claude Agent SDK runs.
 
 ---
 
-## 🚀 Deployment
-
-### Prerequisites
-
-- **Cloudflare Account** with:
-  - R2 bucket: `featbit-tsdb`
-  - Domain(s): `www.featbit.ai` (web), `tsdb.featbit.ai` (TSDB)
-  - Environment configured in `wrangler.toml`/`wrangler.jsonc`
-- **PostgreSQL** (any provider, e.g., Azure Database for PostgreSQL)
-- **Node.js 20+**, `npm`, Wrangler CLI (`npm install -g wrangler`)
-
-### Step 1: Deploy agent/web
-
-```bash
-cd agent/web
-
-# Set secrets
-npx wrangler secret put DATABASE_URL
-# Paste: postgresql://user:pass@host:5432/release_decision
-
-# Build & deploy to Cloudflare Containers
-npx wrangler deploy
-```
-
-**Result**: Next.js app runs at `https://www.featbit.ai` via Containers
-
-### Step 2: Deploy agent/tsdb-cloudflare
-
-```bash
-cd agent/tsdb-cloudflare
-
-# Verify R2 bucket exists: featbit-tsdb
-# Verify scheduled cron trigger in wrangler.jsonc: "0 */3 * * *" (every 3 hours)
-
-# Build & deploy to Cloudflare Workers
-npx wrangler deploy
-```
-
-**Result**: 
-- Data ingestion: `POST https://tsdb.featbit.ai/api/track`
-- Metric queries: `POST https://tsdb.featbit.ai/api/query/experiment`
-- Scheduled compaction & analysis: Runs automatically every 3 hours
-
-### Step 3 (Optional): Deploy agent/sandbox
-
-```bash
-cd agent/sandbox
-
-# Standalone Node.js server (optional for local Claude integration)
-npm install
-npm run build
-npm start
-```
-
-Or deploy to any cloud (AWS Lambda, Google Cloud, Azure, etc.).
-
----
-
-## 🔄 Periodic Jobs
-
-### R2 Data Compaction (Every 3 Hours)
-
-**Location**: `agent/tsdb-cloudflare/src/scheduled/handler.ts`  
-**Trigger**: Cloudflare Scheduled Event (`0 */3 * * *`)  
-**Process**:
-1. List all running experiment runs from `web:3000/api/experiments/running`
-2. For each experiment flag key, call `compact()` on R2:
-   - Scans raw segment files (`flag-evals/`, `metric-events/`)
-   - Merges into daily rollups (idempotent, skips today's in-flight data)
-   - Deletes obsolete raw segments
-3. Logs stats: `flagEval.created` new rollups, `flagEval.skipped` existing
-
-**Why**: Prevents R2 from accumulating millions of small segment files; keeps query performance linear.
-
-### Experiment Analysis (Every 3 Hours)
-
-**Location**: `agent/tsdb-cloudflare/src/scheduled/handler.ts`  
-**Trigger**: Same cron job (after compaction)  
-**Process**:
-1. For each running experiment run:
-   - Fetch fresh metrics from TSDB: `POST /api/query/experiment`
-   - Call `web:3000/api/experiments/{id}/analyze` with `{ runId, forceFresh: true }`
-   - Web API runs Bayesian analysis, stores results
-2. Returns verdicts for primary metric + guardrails
-
-**Why**: Continuous analysis without user intervention; experiment results always fresh.
-
-### Manual Analysis Refresh (On-Demand)
-
-**User-initiated**: Click "Refresh Latest Analysis" button in Full Analysis tab  
-**Flow**:
-- UI sends: `POST /api/experiments/{id}/analyze` with `{ runId, forceFresh: true }`
-- Web API fetches fresh TSDB data (no fallback to stale DB cache)
-- Returns latest verdict or clear error: "Failed to fetch fresh data from TSDB"
-
----
-
-## 📁 Project Structure
+## Repository layout
 
 ```
 featbit-release-decision-agent/
-├─ README.md                           ← You are here
-├─ AGENTS.md                           ← Service details, environment vars
-├─ docker-compose.yml                  ← Legacy: Used for local E2E testing only
+├─ README.md                          ← you are here
+├─ AGENTS.md                          ← deep service map, env vars, contracts
+├─ WHITE_PAPER.md                     ← product thesis
+├─ LICENSE
 │
-├─ agent/web/
-│  ├─ src/
-│  │  ├─ app/
-│  │  │  ├─ (dashboard)/              ← Dashboard pages
-│  │  │  ├─ (project)/                ← Project/experiment pages
-│  │  │  └─ api/
-│  │  │     ├─ experiments/            ← Experiment CRUD
-│  │  │     ├─ experiments/[id]/analyze/route.ts ← Analysis engine
-│  │  │     └─ experiments/running/    ← Running experiments (used by cron)
-│  │  ├─ lib/
-│  │  │  ├─ stats/
-│  │  │  │  ├─ analyze.ts             ← Bayesian A/B orchestrator
-│  │  │  │  ├─ bandit.ts              ← Multi-armed bandit analysis
-│  │  │  │  ├─ bayesian.ts            ← Bayesian math (Beta-Binomial, Normal)
-│  │  │  │  └─ tsdb-client.ts         ← TSDB query client
-│  │  │  ├─ prisma.ts                 ← Database client
-│  │  │  └─ data.ts                   ← Experiment CRUD helpers
-│  │  └─ components/experiment/
-│  │     ├─ experiment-run-table.tsx   ← Experiment runs table + drawer
-│  │     ├─ analysis-markdown.tsx      ← Renders analysis JSON
-│  │     └─ (other UI components)
-│  ├─ prisma/
-│  │  ├─ schema.prisma                 ← Experiment, Activity, Message models
-│  │  └─ migrations/                   ← Applied schema changes
-│  ├─ Dockerfile                       ← Next.js container image
-│  ├─ wrangler.jsonc                   ← Cloudflare Containers config
-│  └─ package.json
+├─ modules/                           ← all runtime services
+│  ├─ docker-compose.yml              ← prod-like five-service stack
+│  ├─ docker-compose.local.yml        ← local override
+│  ├─ web/                            ← Next.js dashboard + API
+│  │  ├─ src/app/api/experiments/…    ← experiment CRUD, /analyze, /state, /activity
+│  │  ├─ src/lib/stats/               ← analyze.ts, bandit.ts, bayesian.ts, track-client.ts
+│  │  ├─ src/lib/memory/              ← project + user memory helpers
+│  │  ├─ prisma/                      ← schema + migrations
+│  │  └─ wrangler.jsonc               ← Cloudflare Containers config (optional path)
+│  ├─ track-service/                  ← .NET 10 ingest + query
+│  │  ├─ Endpoints/, Services/        ← BatchIngestWorker, query handlers
+│  │  └─ sql/schema.sql               ← ClickHouse DDL
+│  ├─ sandbox/                        ← Claude Agent SDK SSE server
+│  ├─ sandbox0-streaming/             ← Hono broker for sandbox0 Managed Agents
+│  ├─ project-agent/                  ← Codex CLI SSE server
+│  └─ run-active-test-worker/         ← Cloudflare cron data generator
 │
-├─ agent/tsdb-cloudflare/
-│  ├─ src/
-│  │  ├─ index.ts                      ← Worker entry, route handlers
-│  │  ├─ env.ts                        ← Env interface (TSDB_BUCKET, WEB_API_URL)
-│  │  ├─ endpoints/
-│  │  │  ├─ track.ts                   ← POST /api/track — ingest events
-│  │  │  ├─ query.ts                   ← POST /api/query/experiment — fetch metrics
-│  │  │  ├─ stats.ts                   ← GET /api/stats — R2 usage
-│  │  │  └─ compact.ts                 ← (internal, called by scheduled handler)
-│  │  ├─ scheduled/
-│  │  │  └─ handler.ts                 ← Cron job: compact + analyze
-│  │  ├─ durable-objects/
-│  │  │  └─ partition-writer.ts        ← PartitionWriterDO: buffers → R2
-│  │  ├─ query/
-│  │  │  ├─ experiment-engine.ts       ← Experiment query orchestrator
-│  │  │  ├─ flag-eval-scanner.ts       ← Scans flag eval segments
-│  │  │  └─ metric-event-scanner.ts    ← Scans metric event segments
-│  │  ├─ rollup/
-│  │  │  └─ compact.ts                 ← Compaction logic
-│  │  └─ storage/
-│  │     ├─ segment-writer.ts          ← Write compressed segments
-│  │     └─ segment-reader.ts          ← Read compressed segments
-│  ├─ wrangler.jsonc                   ← Cloudflare Workers config + cron
-│  ├─ package.json
-│  └─ tsconfig.json
+├─ skills/                            ← release-decision skill catalog (mounted into sandbox)
+│  ├─ featbit-release-decision/       ← hub: routes by current stage (CF-01 … CF-08)
+│  ├─ intent-shaping/                 ← CF-01 clarify the goal
+│  ├─ hypothesis-design/              ← CF-02 craft a falsifiable hypothesis
+│  ├─ reversible-exposure-control/    ← CF-03 / CF-04 design the flag + rollout
+│  ├─ measurement-design/             ← CF-05 primary metric + guardrails
+│  ├─ experiment-workspace/           ← CF-05+ manage runs, trigger analysis
+│  ├─ evidence-analysis/              ← CF-06 / CF-07 interpret + decide
+│  ├─ learning-capture/               ← CF-08 structured postmortem
+│  └─ project-sync/                   ← CLI: persist state to web DB
 │
-├─ agent/sandbox/
-│  ├─ src/
-│  │  ├─ server.ts                     ← Express + SSE endpoint
-│  │  ├─ agent.ts                      ← Claude Code agent runner
-│  │  └─ prompt.ts                     ← Slash command builder
-│  ├─ scripts/
-│  │  └─ sync.ts                       ← Project sync CLI
-│  ├─ Dockerfile
-│  ├─ docker-compose.yml               ← Standalone dev environment
-│  ├─ package.json
-│  └─ tsconfig.json
+├─ charts/featbit-rda/                ← Helm chart (umbrella, per-service templates)
+│  └─ examples/aks/                   ← AKS reference values + Key Vault SPC
 │
-├─ skills/
-│  ├─ featbit-release-decision/        ← Hub skill (routes by stage)
-│  ├─ intent-shaping/                  ← CF-01: clarify goal
-│  ├─ hypothesis-design/               ← CF-02: craft falsifiable hypothesis
-│  ├─ reversible-exposure-control/     ← CF-03/04: design flag + rollout
-│  ├─ measurement-design/              ← CF-05: define primary metric + guardrails
-│  ├─ experiment-workspace/            ← CF-05+: manage experiment records + run analysis
-│  ├─ evidence-analysis/               ← CF-06/07: interpret results → decision
-│  ├─ learning-capture/                ← CF-08: structured postmortem
-│  └─ project-sync/                    ← CLI: persist state to web DB
-│
-└─ docker/
-   └─ init-events.sql                  ← Legacy: unused (events now in R2)
+├─ tutorial/                          ← Bayesian + experimentation learning notes
+└─ skills-project/                    ← scaffolding for new skills
 ```
 
 ---
 
-## 🔧 Environment Variables & Secrets
+## Quick start
 
-### agent/web (Cloudflare Containers)
+Day-to-day work uses each service's native dev loop. Reach for docker compose only for cross-service integration.
 
-| Variable | Type | Required | Purpose |
-|---|---|---|---|
-| `DATABASE_URL` | Secret | Yes | PostgreSQL connection string |
-| `SANDBOX0_API_KEY` | Secret | Yes | Server-side auth for the default sandbox0 (Managed Agents) backend |
-| `SANDBOX0_BASE_URL` | Env | No | Defaults to `https://agents.sandbox0.ai` |
-| `NEXT_PUBLIC_FEATBIT_API_URL` | Build arg | Yes | FeatBit backend for auth |
-| `NEXT_PUBLIC_AGENT_BACKEND` | Build arg | No | `sandbox0` (default) or `classic`. Only set explicitly to override. |
-| `NEXT_PUBLIC_SANDBOX_URL` | Build arg | No | Only relevant when `NEXT_PUBLIC_AGENT_BACKEND=classic` |
+### Single-service dev loops
 
-Example `.env` (local dev):
+| Service | Loop |
+|---|---|
+| `modules/web` | `npm run dev` (Next.js HMR on :3000) |
+| `modules/track-service` | `dotnet run` from the project directory (:5050) |
+| `modules/sandbox` | `npm run dev` (:3100) |
+| `modules/sandbox0-streaming` | `npm run dev` (:3100) |
+| `modules/project-agent` | `npm run dev` (:3031) |
+| `modules/run-active-test-worker` | `npm run dev` (`wrangler dev`) |
+
+For `modules/web`, the lightest verification is `npx tsc --noEmit && npm run lint` plus a hand-exercised dev server.
+
+### Full stack via docker compose
+
+```bash
+cd modules
+
+# Bring up all five services (web, track-service, sandbox, project-agent, run-active-test)
+docker compose up -d
+
+# Rebuild a single service after code changes
+docker compose build web && docker compose up -d web
+
+# Tail logs
+docker compose logs -f web
+docker compose logs -f track-service
+
+docker compose down
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/release_decision
+
+The compose file expects a `.env` next to it with at minimum:
+
+```
+DATABASE_URL=postgresql://…/release_decision
+CLICKHOUSE_CONNECTION_STRING=Host=…;Port=9000;User=…;Password=…
+TRACK_SERVICE_SIGNING_KEY=<shared HMAC key>
+GLM_API_KEY=<for sandbox / Claude routing>
+OPENAI_API_KEY=<for project-agent / Codex>
 ```
 
-### agent/tsdb-cloudflare (Cloudflare Workers)
+ClickHouse and PostgreSQL are **not** provisioned by compose — point `DATABASE_URL` and `CLICKHOUSE_CONNECTION_STRING` at managed instances (Azure PostgreSQL, an Azure VM running ClickHouse, etc.). Apply the schema once with:
 
-| Variable | Type | Required | Purpose |
-|---|---|---|---|
-| `TSDB_BUCKET` | R2 binding | Yes | R2 bucket for raw events & rollups |
-| `WEB_API_URL` | Env var | Yes | Web API base URL for cron job (e.g., `https://www.featbit.ai`) |
-| `TSDB_MAX_BATCH_SIZE` | Env var | No | Max records per PartitionWriter flush (default: 10000) |
-| `TSDB_FLUSH_INTERVAL_MS` | Env var | No | Time-based flush trigger (default: 2000ms) |
+```bash
+clickhouse-client … --queries-file modules/track-service/sql/schema.sql
+```
 
-Set in `wrangler.jsonc`:
-```json
+---
+
+## Deployment
+
+Two supported targets:
+
+### 1. Docker Compose (small / single-host)
+
+`modules/docker-compose.yml` is production-shaped: every service has a healthcheck, the worker depends on track-service being healthy, and the agents wait for web. Set the `.env` above and `docker compose up -d`.
+
+### 2. Helm on Kubernetes (recommended for prod)
+
+A single umbrella chart in `charts/featbit-rda/` ships per-service Deployments, Services, Ingress, HPA, PDB, and Secret templates. The chart is deliberately cloud-neutral — it does not provision ClickHouse or apply DDL.
+
+Provision before `helm install`:
+
+1. **ClickHouse database + tables** (`schema.sql`)
+2. **PostgreSQL database**
+3. **A Secret holding the ClickHouse connection string** (referenced via `trackService.clickHouse.existingSecret`)
+
+AKS reference values, NGINX ingress, cert-manager, and Azure Key Vault SecretProviderClass examples live in `charts/featbit-rda/examples/aks/`. A local Docker Desktop smoke-test profile is in `examples/local/`.
+
+See [`charts/README.md`](charts/README.md) for the full deployment guide.
+
+---
+
+## How an experiment moves through the system
+
+1. **Setup** — UI or agent creates an `Experiment` row (flag key, env, goal, hypothesis, variants, primary metric, guardrails). Skills CF-01 → CF-05 cover this phase.
+2. **Exposure** — A FeatBit feature flag controls who sees what. The skill `reversible-exposure-control` produces the flag handoff. Variants emit `flag_evaluation` events to track-service.
+3. **Measurement** — Application code (or `run-active-test-worker`, for the canary) emits `metric_event` rows to track-service via `POST /api/track`. ClickHouse stores both event streams.
+4. **Analysis** — `POST /api/experiments/{id}/analyze` calls track-service's `/api/query/experiment`, joins flag evaluations to metric events per user, and runs Bayesian A/B (`bayesian.ts`) or Thompson-sampling bandit (`bandit.ts`) in-process. Results are stored on the `ExperimentRun` row.
+5. **Decision** — `evidence-analysis` reads the run row and frames the outcome as **CONTINUE**, **PAUSE**, **ROLLBACK CANDIDATE**, or **INCONCLUSIVE**. The decision is appended to the activity log.
+6. **Learning** — `learning-capture` writes a structured postmortem onto the run; the next iteration starts from evidence, not memory.
+
+The metric vocabulary is canonical across the whole system:
+
+| Field | Values |
+|---|---|
+| `metricType` | `binary` \| `continuous` |
+| `metricAgg` | `once` \| `count` \| `sum` \| `average` |
+| `direction` *(guardrail)* | `increase_bad` \| `decrease_bad` |
+
+Definitions live both on `Experiment` (setup truth) and on the latest `ExperimentRun` (analysis truth); `propagateMetricsToLatestRun()` in `modules/web/src/lib/data.ts` keeps them in sync. Details and the back-compat rules for the legacy `numeric` / `last` spellings are in [`AGENTS.md`](AGENTS.md).
+
+---
+
+## Key API contracts
+
+```bash
+# Web → track-service: query an experiment's metrics
+POST http://track-service:8080/api/query/experiment
 {
-  "vars": {
-    "TSDB_MAX_BATCH_SIZE": "10000",
-    "TSDB_FLUSH_INTERVAL_MS": "2000"
-  },
-  "r2_buckets": [{
-    "binding": "TSDB_BUCKET",
-    "bucket_name": "featbit-tsdb"
-  }]
+  "envId":       "pricing-env-123",
+  "flagKey":     "pricing-page",
+  "metricEvent": "page_view",
+  "startDate":   "2026-04-01",
+  "endDate":     "2026-04-14",
+  "metricType":  "binary",          // binary | continuous
+  "metricAgg":   "once"             // once | count | sum | average
 }
 ```
 
-### agent/sandbox (Node.js)
-
-| Variable | Type | Required | Purpose |
-|---|---|---|---|
-| `GLM_API_KEY` | Env | Yes | Zhipuai API key (for local Claude SDK testing) |
-| `SYNC_API_URL` | Env | Yes | Web API base URL (for skill operations) |
-
----
-
-## 🧪 Local Development
-
-For quick local testing (docker-compose):
-
 ```bash
-# Start PostgreSQL + web + sandbox
-docker-compose up --build
-
-# Open UI: http://localhost:3000
-# Open Sandbox SSE: http://localhost:3100
+# Web: run analysis (called by UI button + sandbox skills)
+POST /api/experiments/{id}/analyze
+{ "runId": "exp-run-123", "forceFresh": true }
 ```
 
-**Note**: This spins up old services (`tsdb`, `data`, `simulator`). They are **not used** in production; ignore their logs.
-
----
-
-## 📖 API Reference
-
-### Running Experiments
-
 ```bash
-# Fetch all running experiments (used by cron job)
+# Web: list running runs (used by automation / workers)
 GET /api/experiments/running
 ```
 
-### Analyze Experiment
-
 ```bash
-POST /api/experiments/{id}/analyze
-{
-  "runId": "exp-run-123",
-  "forceFresh": true  # If true, fail rather than return stale data
-}
-```
+# Sandbox / project-agent → web: project memory
+GET  /api/memory/project/{projectKey}
+POST /api/memory/project/{projectKey}
 
-Returns:
-```json
-{
-  "inputData": "{\"metrics\": {...}}",
-  "analysisResult": "{\"type\": \"bayesian\", \"primary_metric\": {...}, ...}",
-  "stale": false,
-  "warning": null
-}
+# Sandbox → web: experiment state + activity (project-sync skill)
+POST /api/experiments/{id}/state
+POST /api/experiments/{id}/activity
 ```
 
 ---
 
-## 📚 Further Reading
+## Further reading
 
-- **[AGENTS.md](AGENTS.md)** — Detailed service configuration and troubleshooting
-- **[skills/featbit-release-decision/SKILL.md](skills/featbit-release-decision/SKILL.md)** — Release decision workflow phases (CF-01 through CF-08)
-
----
-
-## ⚙️ Troubleshooting
-
-### TSDB `/api/query` returns no data
-- Check R2 bucket exists and has segments
-- Verify `WEB_API_URL` is accessible from TSDB Worker
-- Check Cloudflare logs for network errors
-
-### Analysis results not updating
-- Verify cron job runs: check Cloudflare Workers Analytics
-- Confirm `WEB_API_URL` environment variable is set correctly
-- Check web logs for `/api/experiments/running` and `/api/experiments/{id}/analyze` hits
-
-### UI shows "stale" analysis
-- Click "Refresh Latest Analysis" button for manual refresh
-- Or wait up to 3 hours for next automatic cron run
+- [**AGENTS.md**](AGENTS.md) — full service map, environment variables, troubleshooting, and the canonical metric storage contract
+- [**WHITE_PAPER.md**](WHITE_PAPER.md) — product thesis and market positioning
+- [**charts/README.md**](charts/README.md) — Helm chart + cloud examples
+- [**skills/featbit-release-decision/**](skills/featbit-release-decision/) — release-decision workflow and CF-01 → CF-08 phase definitions
+- [**modules/sandbox0-streaming/README.md**](modules/sandbox0-streaming/README.md) — sandbox0 Managed Agents broker, identity model, skill sync
+- [**tutorial/**](tutorial/) — Bayesian and experimentation learning notes (EN / 中文)
 
 ---
 
-**Version**: April 2026  
-**License**: TBD
+**License**: see [`LICENSE`](LICENSE)
