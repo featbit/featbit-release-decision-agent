@@ -31,7 +31,7 @@ npx tsx $HOME/.claude/skills/project-sync/scripts/sync.ts <command> [args]
 | Variable | Default | Purpose |
 |---|---|---|
 | `SYNC_API_URL` | `https://www.featbit.ai` | Base URL of the web app |
-| `ACCESS_TOKEN` | _(empty)_ | Bearer token sent as `Authorization` header. Web API does not validate today — scaffolding is ready for when it does. Pass via `--access-token` on the hub skill invocation. |
+| `ACCESS_TOKEN` | _(empty)_ | **Required.** Bearer token (`fbat_…`) sent as `Authorization` header. The web API validates this on every call to `/api/experiments/*` — requests without a valid, non-revoked, project-scoped token are rejected with 401/403. Issue a token from the web UI: `/data/env-settings` → **Agent tokens** → Issue token. |
 
 Set `SYNC_API_URL` if the web app is not running at the default `https://www.featbit.ai`.
 
@@ -331,4 +331,4 @@ def persist_stage_transition(experiment_id, fields, stage, activity_type, activi
 | **Project-level** (`update-state`, `set-stage`, `add-activity`, `get-experiment`) | Every stage transition in every satellite skill |
 | **Run-level** (`create-run`, `start-run`, `analyze-run`, `decide-run`, `archive-run`, `save-input`, `save-result`, `record-decision`, `save-learning`) | Only when an experiment run is being created, advanced, or closed |
 
-Auth scaffolding: if `ACCESS_TOKEN` is set (via `--access-token` on the hub skill or the env var), every HTTP request includes `Authorization: Bearer <token>`. The web API ignores it today but will validate it once the auth gate is enabled.
+Auth: if `ACCESS_TOKEN` is set in the connector's shell environment, every HTTP request includes `Authorization: Bearer <token>`. The web API validates the token hash, checks that it is not revoked, and (for experiment routes) verifies that the token's `projectKey` matches the experiment's project. A missing or revoked token returns 401; a wrong-project token returns 403.

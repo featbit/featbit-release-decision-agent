@@ -3,8 +3,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Check, KeyRound, Trash2, Plus, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/lib/featbit-auth/auth-context";
+import { authStorage } from "@/lib/featbit-auth/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
+function contextHeaders(): Record<string, string> {
+  const out: Record<string, string> = {};
+  const org = authStorage.getOrganization();
+  if (org?.id) out["Organization"] = org.id;
+  const profile = authStorage.getProfile();
+  if (profile?.workspaceId) out["Workspace"] = profile.workspaceId;
+  return out;
+}
 
 interface TokenRow {
   id: string;
@@ -57,7 +67,7 @@ export function AgentTokensCard() {
     try {
       const res = await fetch(
         `/api/agent-tokens?projectKey=${encodeURIComponent(projectKey)}`,
-        { credentials: "same-origin" },
+        { credentials: "same-origin", headers: contextHeaders() },
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -83,7 +93,7 @@ export function AgentTokensCard() {
     try {
       const res = await fetch("/api/agent-tokens", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...contextHeaders() },
         credentials: "same-origin",
         body: JSON.stringify({ projectKey, label: label.trim() }),
       });
@@ -106,6 +116,7 @@ export function AgentTokensCard() {
       const res = await fetch(`/api/agent-tokens/${id}`, {
         method: "DELETE",
         credentials: "same-origin",
+        headers: contextHeaders(),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

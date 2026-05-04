@@ -77,12 +77,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const allowed = await userCanAccessProject(
-    auth.token,
-    auth.organizationId,
-    auth.workspaceId,
-    projectKey,
-  );
+  const orgId = req.headers.get("organization") ?? auth.organizationId ?? null;
+  const wsId = req.headers.get("workspace") ?? auth.workspaceId ?? null;
+  const allowed = await userCanAccessProject(auth.token, orgId, wsId, projectKey);
   if (!allowed) {
     return NextResponse.json(
       { error: "You do not have access to this project" },
@@ -130,12 +127,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "projectKey is required" }, { status: 400 });
   }
 
-  const allowed = await userCanAccessProject(
-    auth.token,
-    auth.organizationId,
-    auth.workspaceId,
-    projectKey,
-  );
+  const orgId = req.headers.get("organization") ?? auth.organizationId ?? null;
+  const wsId = req.headers.get("workspace") ?? auth.workspaceId ?? null;
+  const allowed = await userCanAccessProject(auth.token, orgId, wsId, projectKey);
   if (!allowed) {
     return NextResponse.json(
       { error: "You do not have access to this project" },

@@ -38,7 +38,7 @@ async function userCanAccessProject(
 
 // DELETE /api/agent-tokens/[id] — revoke (soft delete via revokedAt).
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await requireAuth();
@@ -55,12 +55,9 @@ export async function DELETE(
 
   // Same project-membership gate as issuance — without it any logged-in user
   // could revoke tokens belonging to projects they aren't a member of.
-  const allowed = await userCanAccessProject(
-    auth.token,
-    auth.organizationId,
-    auth.workspaceId,
-    existing.projectKey,
-  );
+  const orgId = req.headers.get("organization") ?? auth.organizationId ?? null;
+  const wsId = req.headers.get("workspace") ?? auth.workspaceId ?? null;
+  const allowed = await userCanAccessProject(auth.token, orgId, wsId, existing.projectKey);
   if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

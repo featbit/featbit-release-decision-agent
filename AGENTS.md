@@ -4,6 +4,13 @@
 > each service's native dev loop (`npm run dev`, `dotnet run`); docker compose
 > is for cross-service integration and prod-like reproductions, not the default.
 
+**Sub-documents** — read these for deep-dives on specific topics:
+
+| Topic | File |
+|---|---|
+| Auth & security model, guard functions, agent tokens, route protection map | [`modules/web/AUTH.md`](modules/web/AUTH.md) |
+| Helm chart, cloud deployment, AKS examples | [`charts/README.md`](charts/README.md) |
+
 ---
 
 ## 🏗️ Architecture
@@ -241,14 +248,18 @@ This is why a fresh user opening a long-running experiment will see a long prepe
 
 When the user prompt is empty, the connector emits `/featbit-release-decision <experimentId> <accessToken>`, which loads the `featbit-release-decision` skill from `~/.claude/skills/`. That skill's `project-sync` subskill calls back into the web's REST API to load experiment state. Without this slash command on the first turn, the agent wakes up with no knowledge of what experiment it's looking at.
 
-### Environment variables (connector only)
+### Environment variables (connector shell)
+
+Set these in the shell **before** running `npx @featbit/experimentation-claude-code-connector`. The connector process inherits them, and Claude Code inherits them when running bash tools (including `sync.ts`).
 
 | Variable | Default | Notes |
 |---|---|---|
-| `PORT` | `3100` | Listen port |
-| `HOST` | `127.0.0.1` | Bind address. Keep on loopback unless you have a specific reason. |
-| `CORS_ORIGINS` | `https://app.featbit.ai,https://featbit.ai,http://localhost:3000` | Comma-separated list, or `*` to allow any origin. |
-| `PERMISSION_MODE` | `bypassPermissions` | `default` will block headless (no TTY for the SDK's interactive prompt). `acceptEdits` and `plan` also work but have not been wired into a web-mediated approval flow yet. |
+| `ACCESS_TOKEN` | _(empty)_ | **Required.** Agent token (`fbat_…`) issued from `/data/env-settings`. Passed as `Authorization: Bearer` by `sync.ts` on every web API call. |
+| `SYNC_API_URL` | `https://www.featbit.ai` | Override for local dev: `http://localhost:3000`. |
+| `PORT` | `3100` | Listen port for the connector SSE server. |
+| `HOST` | `127.0.0.1` | Bind address — keep on loopback. |
+| `CORS_ORIGINS` | `https://app.featbit.ai,https://featbit.ai,http://localhost:3000` | Comma-separated, or `*` to allow any origin. |
+| `PERMISSION_MODE` | `bypassPermissions` | `default` blocks headless (no TTY for interactive prompt). |
 
 ### Deprecated: `modules/sandbox/`
 
@@ -400,19 +411,26 @@ analyzer (`{n, k}` for binary, `{n, sum, sum_squares}` for continuous).
 
 Direct ADO.NET connection. Schema lives in `modules/track-service/sql/schema.sql`.
 
-### sandbox / project-agent → web (Memory + Sync)
+### Local agent → web (experiment sync via `sync.ts`)
+
+All routes below require authentication. Session callers (browser) use the `fb_session` cookie. Headless callers (`sync.ts`) pass an agent token as `Authorization: Bearer fbat_…`.
+
+Agent tokens are per-project scoped — a token issued for project A cannot write to an experiment in project B. Issue tokens at `/data/env-settings` → **Agent tokens**.
 
 ```bash
-# Read project memory
-GET http://web:3000/api/memory/project/{projectKey}
-
-# Write project memory
-POST http://web:3000/api/memory/project/{projectKey}
-
-# Sync experiment state
-POST http://web:3000/api/experiments/{id}/state
+# Experiment state (requireAuthForExperiment — agent token OK)
+GET  http://web:3000/api/experiments/{id}
+PUT  http://web:3000/api/experiments/{id}/state
+PUT  http://web:3000/api/experiments/{id}/stage
 POST http://web:3000/api/experiments/{id}/activity
+POST http://web:3000/api/experiments/{id}/experiment-run
+
+# Memory (requireAuth — browser session only)
+GET  http://web:3000/api/memory/project/{projectKey}
+POST http://web:3000/api/memory/project/{projectKey}
 ```
+
+See [`modules/web/AUTH.md`](modules/web/AUTH.md) for the full route protection map and guard function details.
 
 ---
 

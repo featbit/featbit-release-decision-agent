@@ -247,6 +247,24 @@ Definitions live both on `Experiment` (setup truth) and on the latest `Experimen
 
 ---
 
+## Security model
+
+`modules/web` uses two credential types:
+
+- **Browser sessions** — login creates an `AuthSession` row in PostgreSQL and sets an `fb_session` HttpOnly cookie. The FeatBit JWT is stored server-side only and never exposed to the browser.
+- **Agent tokens** — per-project bearer tokens (`fbat_…`) for the local Claude Code agent. Issue them from `/data/env-settings` → **Agent tokens**. The token hash is stored in the `AgentToken` table; plaintext is shown once and never persisted. Tokens are per-project scoped and revocable.
+
+Guard functions (`src/lib/server-auth/guard.ts`):
+- `requireAuth` — browser session only
+- `requireAuthOrAgent` — session or agent bearer token
+- `requireAuthForExperiment` — session or agent bearer, plus project-scope check
+
+The `/api/featbit-proxy/*` and `/api/auth/*` routes are intentionally unprotected — the proxy relies on the FeatBit backend's own auth enforcement; the auth routes exist to create and destroy sessions.
+
+Full details: [`modules/web/AUTH.md`](modules/web/AUTH.md)
+
+---
+
 ## Key API contracts
 
 ```bash
