@@ -3,6 +3,7 @@ import {
   deleteUserProjectMemory,
   getUserProjectMemoryEntry,
 } from "@/lib/memory";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function GET(
   _req: NextRequest,
@@ -12,6 +13,9 @@ export async function GET(
     params: Promise<{ projectKey: string; userId: string; key: string }>;
   }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, userId, key } = await params;
   const entry = await getUserProjectMemoryEntry(projectKey, userId, key);
   if (!entry) {
@@ -28,6 +32,9 @@ export async function DELETE(
     params: Promise<{ projectKey: string; userId: string; key: string }>;
   }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, userId, key } = await params;
   const existing = await getUserProjectMemoryEntry(projectKey, userId, key);
   if (!existing) {

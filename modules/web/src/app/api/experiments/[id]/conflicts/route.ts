@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExperiment } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 /**
  * GET /api/experiments/[id]/conflicts
@@ -17,6 +18,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { id } = await params;
 
   const experiment = await getExperiment(id);

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 /**
  * GET /api/agent-context/[projectKey]
  *
- * Server-side context endpoint for project-agent bootstrap (no cookie needed).
+ * Server-side context endpoint for project-agent bootstrap.
  * Returns a compact experiment snapshot:
  *   - running: all experiments with active runs (collecting / analyzing)
  *   - recent: last 3 completed experiments (decided / archived)
@@ -14,6 +15,9 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ projectKey: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey } = await params;
 
   const experiments = await prisma.experiment.findMany({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExperiment, createExperimentRun, updateExperimentRun } from "@/lib/data";
+import { requireAuth, requireAuthForExperiment } from "@/lib/server-auth/guard";
 
 const VALID_RUN_STATUSES = new Set(["draft", "collecting", "analyzing", "decided", "archived"]);
 const VALID_METHODS = new Set(["bayesian_ab", "frequentist", "bandit"]);
@@ -25,6 +26,9 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { id } = await params;
   const slug = req.nextUrl.searchParams.get("slug");
 
@@ -56,6 +60,9 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const auth = await requireAuthForExperiment(req, id);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await req.json();
   const { slug, ...rest } = body;
 

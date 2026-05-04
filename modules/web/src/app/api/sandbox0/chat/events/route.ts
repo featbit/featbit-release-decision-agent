@@ -10,8 +10,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionEvents, getSessionStatus } from "@/lib/sandbox0/client";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get("sessionId");

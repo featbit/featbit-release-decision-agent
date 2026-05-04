@@ -16,8 +16,12 @@ import {
   buildBootstrapMessage,
   sendMessage,
 } from "@/lib/sandbox0/session";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body: {
       experimentId?: string;

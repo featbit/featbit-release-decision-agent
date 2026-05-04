@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateExperiment, getExperiment, propagateMetricsToLatestRun } from "@/lib/data";
+import { requireAuthForExperiment } from "@/lib/server-auth/guard";
 
 const ALLOWED_FIELDS = new Set([
   "goal",
@@ -22,6 +23,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const auth = await requireAuthForExperiment(req, id);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await req.json();
 
   // Only allow known state fields

@@ -4,11 +4,15 @@ import {
   createProvider,
   validateBaseUrl,
 } from "@/lib/customer-endpoint-providers";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ projectKey: string }> },
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey } = await params;
   const providers = await listProviders(projectKey);
   return NextResponse.json(providers);
@@ -18,6 +22,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectKey: string }> },
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey } = await params;
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {

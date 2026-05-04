@@ -7,8 +7,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendChatMessage } from "@/lib/sandbox0/client";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   try {
     const body: { sessionId?: string; message?: string } = await req
       .json()

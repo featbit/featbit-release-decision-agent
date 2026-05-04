@@ -7,10 +7,14 @@ import {
   clearSecondarySecret,
   validateBaseUrl,
 } from "@/lib/customer-endpoint-providers";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 type Params = Promise<{ projectKey: string; id: string }>;
 
 export async function GET(_req: NextRequest, { params }: { params: Params }) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, id } = await params;
   const provider = await getProvider(projectKey, id);
   if (!provider) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -27,6 +31,9 @@ export async function GET(_req: NextRequest, { params }: { params: Params }) {
  * `action: "update"` is the default when omitted, for ergonomics.
  */
 export async function PATCH(req: NextRequest, { params }: { params: Params }) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, id } = await params;
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {
@@ -103,6 +110,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Params }) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Params }) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, id } = await params;
   const ok = await deleteProvider(projectKey, id);
   if (!ok) return NextResponse.json({ error: "Not found" }, { status: 404 });

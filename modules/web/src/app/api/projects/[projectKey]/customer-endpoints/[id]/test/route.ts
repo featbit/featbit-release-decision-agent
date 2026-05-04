@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pingCustomerEndpoint } from "@/lib/stats/customer-endpoint-client";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 type Params = Promise<{ projectKey: string; id: string }>;
 
@@ -18,6 +19,9 @@ type Params = Promise<{ projectKey: string; id: string }>;
  * to compute the HMAC) but never returned in the response.
  */
 export async function POST(_req: NextRequest, { params }: { params: Params }) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, id } = await params;
 
   const provider = await prisma.customerEndpointProvider.findUnique({ where: { id } });

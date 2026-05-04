@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 type Params = { params: Promise<{ projectKey: string; userId: string }> };
 
 export async function GET(_req: NextRequest, { params }: Params) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, userId } = await params;
   const session = await prisma.projectAgentSession.findUnique({
     where: { projectKey_userId: { projectKey, userId } },
@@ -16,6 +20,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey, userId } = await params;
   const body = (await req.json()) as {
     codexThreadId?: string;

@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/lib/featbit-auth/auth-context";
 import { EnvSecretCard } from "@/components/env-settings/env-secret-card";
+import { AgentTokensCard } from "@/components/env-settings/agent-tokens-card";
 import {
   Card,
   CardContent,
@@ -76,6 +77,22 @@ export default function EnvSettingsPage() {
           </CardHeader>
           <CardContent>
             <EnvSecretCard bare />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Agent tokens</CardTitle>
+            <CardDescription>
+              Per-project tokens for the local Claude Code agent. The agent
+              passes this as a <code>Bearer</code> token on every request to{" "}
+              <code>/api/experiments/*</code>; the server resolves it to a
+              project scope and rejects any request that crosses into another
+              project. Plaintext is shown once on issuance — copy it then.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AgentTokensCard />
           </CardContent>
         </Card>
 

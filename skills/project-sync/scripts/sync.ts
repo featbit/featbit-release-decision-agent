@@ -49,8 +49,11 @@
  *
  * Environment:
  *   SYNC_API_URL  — base URL of the web app (default: https://www.featbit.ai)
- *   ACCESS_TOKEN  — Bearer token sent as Authorization header (optional; web API
- *                   does not validate today, but scaffolding is ready for when it does)
+ *   ACCESS_TOKEN  — Bearer token sent as Authorization header. REQUIRED.
+ *                   Issue one from the web UI: /data/env-settings → Agent
+ *                   tokens → Issue token. The token is bound to the project
+ *                   it was minted under; any sync.ts call against an
+ *                   experiment in a different project returns 403.
  */
 
 const API_BASE = process.env.SYNC_API_URL ?? "https://www.featbit.ai";

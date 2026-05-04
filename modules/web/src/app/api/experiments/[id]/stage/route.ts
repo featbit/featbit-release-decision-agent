@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { updateExperimentStage, getExperiment } from "@/lib/data";
+import { requireAuthForExperiment } from "@/lib/server-auth/guard";
 
 const VALID_STAGES = new Set([
   "intent",
@@ -14,6 +15,9 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const auth = await requireAuthForExperiment(req, id);
+  if (auth instanceof NextResponse) return auth;
+
   const body = await req.json();
   const { stage } = body;
 

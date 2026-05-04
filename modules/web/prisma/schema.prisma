@@ -212,6 +212,28 @@ model UserProjectMemory {
   @@map("user_project_memory")
 }
 
+// Per-project access tokens used by the local Claude Code agent (and any
+// other headless caller of /api/experiments/*). Issued from the UI on
+// /data/env-settings, plaintext shown ONCE on creation. Server stores only
+// the SHA-256 hash. `projectKey` is the scope — a token only authorises
+// requests against experiments whose featbitProjectKey matches.
+model AgentToken {
+  id              String    @id @default(uuid())
+  tokenHash       String    @unique @map("token_hash")
+  projectKey      String    @map("project_key")
+  // First ~12 chars of the plaintext (e.g. "fbat_abc1234"), shown in the UI
+  // so users can identify which token a row corresponds to. Not a secret.
+  prefix          String
+  label           String
+  createdByUserId String?   @map("created_by_user_id")
+  issuedAt        DateTime  @default(now()) @map("issued_at")
+  lastUsedAt      DateTime? @map("last_used_at")
+  revokedAt       DateTime? @map("revoked_at")
+
+  @@index([projectKey])
+  @@map("agent_token")
+}
+
 model AuthSession {
   id              String   @id
   featbitToken    String   @map("featbit_token")

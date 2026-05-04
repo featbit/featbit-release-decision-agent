@@ -5,11 +5,15 @@ import {
   isProjectMemoryType,
   type ProjectMemoryType,
 } from "@/lib/memory";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ projectKey: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey } = await params;
   const typeParam = req.nextUrl.searchParams.get("type");
 
@@ -32,6 +36,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectKey: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { projectKey } = await params;
   const body = await req.json();
   const { key, type, content, sourceAgent, createdByUserId, editable } = body;

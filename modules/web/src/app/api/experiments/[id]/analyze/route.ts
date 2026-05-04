@@ -5,11 +5,15 @@ import { runAnalysis } from "@/lib/stats/analyze";
 import { runBanditAnalysis } from "@/lib/stats/bandit";
 import { queryAllMetrics } from "@/lib/stats/track-client";
 import { fetchFromCustomerEndpoint } from "@/lib/stats/customer-endpoint-fetcher";
+import { requireAuth } from "@/lib/server-auth/guard";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireAuth();
+  if (auth instanceof NextResponse) return auth;
+
   const { id: experimentId } = await params;
   const body = await req.json();
   const { runId, forceFresh } = body as { runId?: string; forceFresh?: boolean };
