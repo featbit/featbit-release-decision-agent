@@ -18,7 +18,7 @@ export type AgentMode = "managed" | "local";
 const STORAGE_KEY = "featbit:agent-mode";
 const MODE_CHANGE_EVENT = "featbit:agent-mode-change";
 
-export const DEFAULT_AGENT_MODE: AgentMode = "managed";
+export const DEFAULT_AGENT_MODE: AgentMode = "local";
 
 function parseMode(raw: string | null | undefined): AgentMode {
   return raw === "local" || raw === "managed" ? raw : DEFAULT_AGENT_MODE;

@@ -5,11 +5,13 @@ import { useAuth } from "@/lib/featbit-auth/auth-context";
 import { MemoryEntryCard } from "./memory-entry-card";
 import {
   PROJECT_TYPE_LABELS,
+  PROJECT_TYPE_DESCRIPTIONS,
   USER_TYPE_LABELS,
+  USER_TYPE_DESCRIPTIONS,
   type ProjectMemoryEntry,
   type UserProjectMemoryEntry,
 } from "./types";
-import { Users, User, RefreshCw, Plus, Loader2 } from "lucide-react";
+import { Users, User, RefreshCw, Plus, Loader2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -167,24 +169,9 @@ export function AiMemoryClient() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">
-          Project key: <code className="font-mono">{projectKey}</code>
-          {userId && (
-            <>
-              {"  ·  "}User: <code className="font-mono">{userId}</code>
-            </>
-          )}
-        </div>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={load}
-          disabled={loading}
-        >
-          <RefreshCw
-            className={`size-3.5 mr-1 ${loading ? "animate-spin" : ""}`}
-          />
+      <div className="flex justify-end">
+        <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
+          <RefreshCw className={`size-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
           Refresh
         </Button>
       </div>
@@ -204,6 +191,7 @@ export function AiMemoryClient() {
           </span>
           <AddEntryDialog
             typeLabels={PROJECT_TYPE_LABELS}
+            typeDescriptions={PROJECT_TYPE_DESCRIPTIONS}
             defaultType="product_facts"
             onSave={addProject}
           />
@@ -244,6 +232,7 @@ export function AiMemoryClient() {
           {userId && (
             <AddEntryDialog
               typeLabels={USER_TYPE_LABELS}
+              typeDescriptions={USER_TYPE_DESCRIPTIONS}
               defaultType="capability"
               onSave={addUser}
             />
@@ -282,11 +271,12 @@ export function AiMemoryClient() {
 
 interface AddEntryDialogProps {
   typeLabels: Record<string, string>;
+  typeDescriptions: Record<string, string>;
   defaultType: string;
   onSave: (key: string, type: string, content: string) => Promise<void>;
 }
 
-function AddEntryDialog({ typeLabels, defaultType, onSave }: AddEntryDialogProps) {
+function AddEntryDialog({ typeLabels, typeDescriptions, defaultType, onSave }: AddEntryDialogProps) {
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState("");
   const [type, setType] = useState(defaultType);
@@ -356,6 +346,12 @@ function AddEntryDialog({ typeLabels, defaultType, onSave }: AddEntryDialogProps
                   </option>
                 ))}
               </select>
+              {typeDescriptions[type] && (
+                <p className="flex items-start gap-1.5 text-xs text-muted-foreground mt-1">
+                  <Info className="size-3 mt-0.5 shrink-0" />
+                  {typeDescriptions[type]}
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label htmlFor="entry-content">Content</Label>
