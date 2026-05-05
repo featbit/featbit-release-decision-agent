@@ -172,4 +172,4 @@ http://127.0.0.1:3100`.
 
 ## License
 
-MIT
+Apache 2.0 — see the [LICENSE](../../LICENSE) and [NOTICE](../../NOTICE) at the repo root.

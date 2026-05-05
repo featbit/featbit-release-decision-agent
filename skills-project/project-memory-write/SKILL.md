@@ -1,7 +1,7 @@
 ---
 name: project-memory-write
 description: Upsert or delete a single memory entry — project-scoped (shared across users of the project) or user-scoped (private to one user in this project). Activate only when called from another skill that has a clear reason to persist a specific fact. Do not call speculatively from general conversation. Every write carries provenance (source_agent, created_by_user_id) so the origin of every entry is auditable.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "0.1.0"

@@ -1,7 +1,7 @@
 ---
 name: project-sync
 description: Sync release-decision experiment state to the web database. Provides the `sync.ts` CLI script that all other skills call to persist state changes (update fields, advance stage, log activities, manage experiment runs). Activate whenever a skill needs to write experiment state to the web DB. Triggers — "sync to web DB", "update experiment state", "push state", "set stage", "add activity", "create run", "start run", "analyze run", "decide run", "archive run", "record decision", "save learning", "get experiment".
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "2.0.0"

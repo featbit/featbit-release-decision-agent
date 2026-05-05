@@ -1,7 +1,7 @@
 ---
 name: measurement-design
 description: Defines the primary success metric, guardrails, and event instrumentation for a hypothesis before exposure begins. Activate when triggered by CF-05 from the release-decision framework, or when user asks "how do I measure this", "what metrics should I use", "what should I track", "how do I instrument this", "event design", "what is the primary metric". Do not use when metrics are already well-defined and instrumentation is complete.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.1.0"

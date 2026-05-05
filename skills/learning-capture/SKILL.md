@@ -1,7 +1,7 @@
 ---
 name: learning-capture
 description: Captures structured learnings at the end of an experiment or release cycle so the next iteration starts from evidence rather than memory. Activate when triggered by CF-08 from the release-decision framework, or when user says "what did we learn", "close this experiment", "we're done with this cycle", "next iteration", "this experiment is over", "capture learning". Activate immediately after a decision is made in evidence-analysis.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.1.0"

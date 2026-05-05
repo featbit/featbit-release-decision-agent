@@ -1,7 +1,7 @@
 ---
 name: project-memory-read
 description: Load project-scoped and user-scoped memory so the agent can ground every turn in facts it has already captured. Activate at session start, at the top of any new user turn that isn't a pure continuation, and whenever another skill explicitly needs to check what is already known before asking a question. Do not re-read within a single turn — cache the result in the session for the current reply.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "0.1.0"

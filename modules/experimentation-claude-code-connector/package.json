@@ -2,7 +2,7 @@
   "name": "@featbit/experimentation-claude-code-connector",
   "version": "0.1.0",
   "description": "Local bridge that exposes the user's Claude Code CLI to the FeatBit experimentation web app over SSE.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "bin": {
     "featbit-experimentation-claude-code-connector": "dist/bin/cli.js"

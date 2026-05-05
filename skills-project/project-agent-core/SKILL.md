@@ -1,7 +1,7 @@
 ---
 name: project-agent-core
 description: Backbone skill for project-agent. Defines the agent's true role (project context layer and skill router, not an experiment guide), the silent entry protocol, and the routing table for all downstream skills. Load this skill first on every session start before saying anything to the user.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.0.0"

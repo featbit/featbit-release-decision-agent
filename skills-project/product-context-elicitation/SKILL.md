@@ -1,7 +1,7 @@
 ---
 name: product-context-elicitation
 description: First-run intake that grounds the agent in the user's product before any experiment work begins. Starts with a platform welcome, collects project URLs (fetches and summarises their content), asks for a free-text intro, then calibrates user experience level. Downstream experiment skills depend on the memory entries this skill writes. Activate when product_description or experience_level are missing from memory; do not re-run when those entries already exist unless the user explicitly asks.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "0.3.0"

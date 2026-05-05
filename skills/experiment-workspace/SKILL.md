@@ -1,7 +1,7 @@
 ---
 name: experiment-workspace
 description: Creates and manages experiments as database-backed records — the unified replacement for an online A/B test dashboard. Activate when user is ready to start collecting data for a hypothesis, wants to set up an experiment, needs to pull or organize experiment data, wants to run analysis calculations, or asks "how do I track this experiment", "set up the experiment", "run the analysis", "pull results", "compute the stats". Sits between measurement-design (instrumentation confirmed) and evidence-analysis (results interpreted). Do not use before a hypothesis and primary metric exist.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "2.0.0"

@@ -1,7 +1,7 @@
 ---
 name: featbit-release-decision
 description: FeatBit release decision philosophy and control framework. Activate when the user is anywhere in the loop from intent to implementation to feedback to next iteration and needs the right decision lens, not a fixed workflow. Triggers — "release decision", "what should we build", "feature flag", "A/B test", "experiment design", "how do I measure this", "should I ship this", "rollout strategy", "analyze results", "continue or rollback", "how do I know it worked", "what did we learn", "next iteration", "optimize page", "increase adoption".
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "4.2.0"

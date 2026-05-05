@@ -1,7 +1,7 @@
 ---
 name: hypothesis-design
 description: Converts a clear business goal into a falsifiable hypothesis before implementation begins. Activate when triggered by CF-02 from the release-decision framework, or when a goal exists but there is no explicit causal claim linking a change to an expected outcome. Triggers — "write a hypothesis", "what do we expect", "what should we test", "we think this will work because". Do not use when the hypothesis is already sharp and falsifiable.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.1.0"

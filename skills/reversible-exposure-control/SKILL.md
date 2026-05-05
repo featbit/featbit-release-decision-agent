@@ -1,7 +1,7 @@
 ---
 name: reversible-exposure-control
 description: Makes product or AI changes reversible before they are visible, and defines who sees the change, how much traffic, and how expansion will be controlled. Activate when triggered by CF-03 or CF-04 from the release-decision framework, or when user says "feature flag", "should I ship this", "rollout strategy", "gradual rollout", "canary", "5% of users", "start exposing", "who sees this first", "create a flag", "add flag to code", or asks how to hand flag requirements to another team. Default to producing a clear implementation handoff when the current user does not own code or flag operations; FeatBit CLI and Web UI references are optional operator adapters.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.2.0"

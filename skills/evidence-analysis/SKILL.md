@@ -1,7 +1,7 @@
 ---
 name: evidence-analysis
 description: Evaluates collected data to determine if evidence is sufficient to decide, then frames the outcome as CONTINUE, PAUSE, ROLLBACK CANDIDATE, or INCONCLUSIVE. Activate when triggered by CF-06 or CF-07 from the release-decision framework, or when user says "analyze results", "should I ship this", "continue or rollback", "is this significant", "what do the results say", "has it been long enough". Do not use when data collection has not started.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.1.0"

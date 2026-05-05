@@ -1,7 +1,7 @@
 ---
 name: intent-shaping
 description: Extracts the real business outcome when the user has a vague direction or jumps to tactics before the goal is clear. Activate when triggered by CF-01 from the release-decision framework, or when user says "I want to improve X", "we should add Y", "increase adoption", "make it better", or describes a tactic without stating a goal. Do not use when the goal is already measurable and specific.
-license: MIT
+license: Apache-2.0
 metadata:
   author: FeatBit
   version: "1.1.0"

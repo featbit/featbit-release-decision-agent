@@ -2,7 +2,7 @@
 
 > Gives project-agent a memory and a voice — so every experiment recommendation is grounded in what your product actually does and what your team already knows.
 
-[![License: MIT][license-shield]][license-url]
+[![License: Apache 2.0][license-shield]][license-url]
 [![Version][version-shield]][version-url]
 [![Agent Skills][skills-shield]][skills-url]
 
@@ -77,13 +77,13 @@ The skills in this folder belong to **project-agent** (`modules/project-agent`).
 
 ## License
 
-MIT — See [LICENSE](LICENSE) for details.
+Apache 2.0 — see [LICENSE](LICENSE) and the root [NOTICE](../NOTICE) for attribution requirements.
 
 ---
 
 Crafted with [Readme Craft](https://github.com/motiful/readme-craft)
 
-[license-shield]: https://img.shields.io/badge/License-MIT-green.svg
+[license-shield]: https://img.shields.io/badge/License-Apache_2.0-blue.svg
 [license-url]: LICENSE
 [version-shield]: https://img.shields.io/badge/version-0.2.0-blue.svg
 [version-url]: product-context-elicitation/SKILL.md
