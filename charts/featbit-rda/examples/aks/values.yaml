@@ -107,14 +107,10 @@ trackService:
       secretName: "track-service-tls"
 
 # ── web ────────────────────────────────────────────────────────────────────────
-# NOTE: `NEXT_PUBLIC_FEATBIT_API_URL` is baked at `next build` time:
-#   docker build modules/web \
-#     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
-#     -t your-acr.azurecr.io/featbit/featbit-rda-web:<version>
-#
-# Server-side runtime envs (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) are NOT
-# build-time — pass them via `extraEnv` below or project them from Azure
-# Key Vault via the same SPC pattern used for the database secret.
+# All web config is runtime — the published image is canonical and pointed at
+# any FeatBit backend / track-service / sandbox0 via env vars. Set
+# `web.featbit.apiUrl` for self-hosted FeatBit; `extraEnv` (or a projected
+# Secret) for sandbox0 keys.
 web:
   enabled: true
   replicaCount: 2

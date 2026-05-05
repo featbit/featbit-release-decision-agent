@@ -57,6 +57,11 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL:        ${DATABASE_URL}
+      # FeatBit backend the web app authenticates against. Defaults to FeatBit
+      # SaaS; self-hosters of FeatBit set this to their own API URL in .env.
+      # Server-side only — never sent to the browser (browser goes through
+      # the same-origin /api/featbit-proxy route).
+      FEATBIT_API_URL:     ${FEATBIT_API_URL:-https://app-api.featbit.co}
       # Defaults to the in-network track-service so `docker compose up -d`
       # works as a full stack out of the box. To run web standalone against
       # an external track-service (or skip it via customer-managed-endpoint),

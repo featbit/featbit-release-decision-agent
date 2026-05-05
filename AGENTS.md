@@ -132,7 +132,7 @@ modules/web/src/
 | `TRACK_SERVICE_URL` | No (runtime) | Defaults to `http://track-service:8080` |
 | `SANDBOX0_API_KEY` | Yes (runtime, Managed mode) | Auth for sandbox0 Managed Agents (server-side; the `/api/sandbox0/*` routes use it). Used by the chat panel's "Managed" mode. |
 | `SANDBOX0_BASE_URL` | No (runtime) | Defaults to `https://agents.sandbox0.ai` |
-| `NEXT_PUBLIC_FEATBIT_API_URL` | Build arg | FeatBit backend for auth (default: `https://app-api.featbit.co`) |
+| `FEATBIT_API_URL` | No (runtime) | FeatBit backend for auth (default: `https://app-api.featbit.co`). Server-only — never sent to the browser. |
 
 The chat panel's "Managed" vs "Local Claude Code" toggle is per-browser localStorage (key `featbit:agent-mode`); there is no compile-time env var. Local mode hits `http://127.0.0.1:3100` directly and requires no server-side configuration — the user installs `npx @featbit/experimentation-claude-code-connector` themselves.
 

@@ -41,8 +41,8 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 // Production track-service endpoint — the real ingest URL for A/B testing
-// events. Distinct from NEXT_PUBLIC_FEATBIT_API_URL (which is the FeatBit
-// backend, not track-service). Matches the default in track-client.ts.
+// events. Distinct from FEATBIT_API_URL (which is the FeatBit backend, not
+// track-service). Matches the default in track-client.ts.
 const TRACK_BASE_URL = "https://track.featbit.ai";
 
 // ── Per-SDK snippets for the SDKs section ────────────────────────────────────

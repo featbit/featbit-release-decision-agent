@@ -14,12 +14,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time public env baked into the Next.js bundle. Defaults to the FeatBit
-# SaaS backend so the published image works out of the box for SaaS users.
-# Self-hosters of FeatBit override this with `--build-arg` when rebuilding.
-ARG NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co
-ENV NEXT_PUBLIC_FEATBIT_API_URL=${NEXT_PUBLIC_FEATBIT_API_URL}
-
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Generate Prisma client for the target platform (linux-musl / Alpine)

@@ -79,9 +79,6 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
-      # Build-time defaults (e.g. NEXT_PUBLIC_FEATBIT_API_URL for the web image)
-      # live in each module's Dockerfile, not in this workflow — keeps the
-      # release flow generic and lets self-hosters rebuild with --build-arg.
       - name: Build and push ${{ matrix.app }} (:${{ env.VERSION }})
         uses: docker/build-push-action@v5
         with:

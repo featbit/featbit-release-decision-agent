@@ -54,6 +54,8 @@ spec:
               value: {{ .Values.web.service.targetPort | quote }}
             - name: HOSTNAME
               value: "0.0.0.0"
+            - name: FEATBIT_API_URL
+              value: {{ .Values.web.featbit.apiUrl | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

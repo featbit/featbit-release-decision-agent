@@ -21,7 +21,7 @@ Both paths terminate at the same PostgreSQL database. There is no separate auth 
 
 ## Identity source: FeatBit backend
 
-All user identity comes from the FeatBit backend (`NEXT_PUBLIC_FEATBIT_API_URL`, default `https://app-api.featbit.co`).
+All user identity comes from the FeatBit backend (`FEATBIT_API_URL`, default `https://app-api.featbit.co`). Server-only env var — the URL is never sent to the browser, which always goes through the same-origin `/api/featbit-proxy` route.
 
 - **Login** (`POST /api/auth/login`) — forwards credentials to FeatBit `/identity/login`, which returns a short-lived JWT plus refresh cookies.
 - **Session storage** — the JWT and cookies are stored server-side in PostgreSQL (`AuthSession` table). The browser receives only an opaque `fb_session` HttpOnly cookie containing the session ID.

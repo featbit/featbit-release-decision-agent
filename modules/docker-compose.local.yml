@@ -27,11 +27,6 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-      args:
-        # NEXT_PUBLIC_* is baked into the client bundle at build time and is
-        # executed in the user's browser, so this URL must be reachable from
-        # the host — NOT the container network. Defaults to FeatBit SaaS.
-        NEXT_PUBLIC_FEATBIT_API_URL: ${NEXT_PUBLIC_FEATBIT_API_URL:-https://app-api.featbit.co}
     image: featbit/featbit-rda-web:local
     # Wait for in-network track-service to be healthy. TRACK_SERVICE_URL
     # already defaults to the in-network host in the base compose — no

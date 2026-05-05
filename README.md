@@ -25,7 +25,7 @@ The FeatBit Release Decision Agent is built **on top of** the FeatBit feature-fl
 
 **SaaS path** — sign up at **[featbit.co](https://featbit.co)** and you're done; FeatBit + RDA are bundled.
 
-**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). RDA's web bundle is built against `NEXT_PUBLIC_FEATBIT_API_URL` (defaults to `https://app-api.featbit.co`, the SaaS backend). To point web at your own FeatBit, set the variable in `modules/.env` and bring the stack up with the [local-build overlay](docs/deployment/docker.md#local-debug-overlay) — compose rebuilds web from source with your URL baked in. (`NEXT_PUBLIC_*` is a Next.js client-side build-time variable, so it must be baked in at build, not container runtime.)
+**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). To point RDA's web at your FeatBit, set `FEATBIT_API_URL=https://your-featbit-api` in `modules/.env` (or `web.featbit.apiUrl` in your Helm values). It's a runtime env var — no rebuild required, the published image works against any FeatBit backend.
 
 You'll also need:
 

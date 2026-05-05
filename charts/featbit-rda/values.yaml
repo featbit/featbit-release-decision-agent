@@ -156,11 +156,10 @@ trackService:
 # Connects to a remote PostgreSQL (Azure) over DATABASE_URL and to track-service
 # over TRACK_SERVICE_URL (defaults to the in-cluster Service when trackService.enabled).
 #
-# NOTE: `NEXT_PUBLIC_FEATBIT_API_URL` is the only build-arg the web image
-# accepts — it's baked into the bundle at `next build` time and CANNOT be
-# changed by this chart. Set it on the Docker image build, not here. The
-# server-side sandbox0 vars (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) for
-# the Managed-mode chat are runtime envs — pass them via `web.extraEnv` below.
+# Runtime env vars are passed via `web.featbit.apiUrl` (FeatBit backend),
+# `web.trackService.url`, `web.envSecret.*`, and `web.extraEnv` (anything else
+# like sandbox0 keys for the Managed-mode chat). No build-time variables —
+# the published web image is canonical and configurable at runtime.
 web:
   enabled: true
 
@@ -202,6 +201,12 @@ web:
     annotations: {}
 
   nodeEnv: production
+
+  # FeatBit backend the web app authenticates against. SaaS users keep the
+  # default; self-hosters of github.com/featbit/featbit set this to their
+  # own API URL. Server-only — never sent to the browser.
+  featbit:
+    apiUrl: "https://app-api.featbit.co"
 
   # PostgreSQL connection string for Prisma. Either set `connectionString`
   # (chart generates a Secret) or `existingSecret` to reference one you

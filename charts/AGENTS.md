@@ -142,36 +142,28 @@ emits at the moment).
 
 ### Build + push commands
 
-No CI today — both images are built locally and pushed by hand. Replace
-`<acr>` with the ACR login server (e.g. `featbitrdawu3.azurecr.io`).
+CI now publishes the canonical images via `.github/workflows/release.yml`
+(see `RELEASING.md`). The published web image has no build-time config —
+`FEATBIT_API_URL`, `SANDBOX0_API_KEY`, etc. are all runtime envs set in the
+chart (`web.featbit.apiUrl`, `web.extraEnv`).
 
-The web image only needs `NEXT_PUBLIC_FEATBIT_API_URL` baked in. The chat
-panel exposes two modes that are chosen per-browser at runtime — there is
-no compile-time agent backend env var:
-
-- **Managed** (default in fresh browsers) — traffic flows through the web
-  app's own `/api/sandbox0/*` routes to sandbox0 Managed Agents. Configure
-  via runtime env vars `SANDBOX0_BASE_URL` / `SANDBOX0_API_KEY`.
-- **Local Claude Code** — the user's browser hits
-  `http://127.0.0.1:3100` directly, fronted by the npm package
-  `@featbit/experimentation-claude-code-connector` running on their own
-  machine. The hosted web image needs no extra config for this path.
+If you ever need to push to a private ACR by hand:
 
 ```bash
-# track-service
-docker build -t <acr>/featbit/track-service:0.3.0 modules/track-service
-docker push  <acr>/featbit/track-service:0.3.0
+docker build -t <acr>/featbit/featbit-rda-track-service:<version> modules/track-service
+docker push  <acr>/featbit/featbit-rda-track-service:<version>
 
-# web — only the FeatBit auth URL is a build-time public env var
-docker build modules/web \
-  --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
-  -t <acr>/featbit/web:0.2.0
-docker push <acr>/featbit/web:0.2.0
+docker build -t <acr>/featbit/featbit-rda-web:<version> modules/web
+docker push  <acr>/featbit/featbit-rda-web:<version>
 ```
 
-Server-side runtime envs (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) are NOT
-build-time. `SANDBOX0_BASE_URL` defaults to `https://agents.sandbox0.ai`
-in code, so the prod wiring only needs to inject the API key. Wired via
+The chat panel exposes two modes chosen per-browser at runtime:
+
+- **Managed** (default) — traffic flows through web's `/api/sandbox0/*`
+  routes to sandbox0 Managed Agents. Configure via `SANDBOX0_API_KEY` /
+  `SANDBOX0_BASE_URL` (defaults to `https://agents.sandbox0.ai`).
+- **Local Claude Code** — the browser hits `http://127.0.0.1:3100` fronted
+  by the user's local `@featbit/experimentation-claude-code-connector`. Wired via
 the same Key Vault SPC as the other secrets:
 
 - KV secret name: `featbit-rda-sandbox0-api-key`
