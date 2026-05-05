@@ -16,6 +16,24 @@ See [`WHITE_PAPER.md`](WHITE_PAPER.md) for the product thesis.
 
 ## Quick Start
 
+### Prerequisites
+
+The FeatBit Release Decision Agent is built **on top of** the FeatBit feature-flag platform — it doesn't replace it. Before deploying RDA you need a running FeatBit instance, because the web app:
+
+- delegates **all authentication** to FeatBit (login, workspace, project)
+- reads / writes **feature flags** through FeatBit's API to drive experiment exposure
+
+**SaaS path** — sign up at **[featbit.co](https://featbit.co)** and you're done; FeatBit + RDA are bundled.
+
+**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). RDA's published web image bakes in `NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co`; if your FeatBit lives elsewhere you must rebuild the web image with `--build-arg NEXT_PUBLIC_FEATBIT_API_URL=<your-featbit-api>` (it's a Next.js public env, not changeable at runtime).
+
+You'll also need:
+
+- A reachable **PostgreSQL 14+** (web's primary store)
+- A reachable **ClickHouse** *(only if you keep `track-service`)* — initialised via [`modules/track-service/sql/schema.sql`](modules/track-service/sql/schema.sql)
+
+Step-by-step DB initialisation lives in the deployment guides below.
+
 ### Deployment
 
 #### 1. Try it online at featbit.co

@@ -21,19 +21,105 @@ For local-build / debug workflows, see [§ Local debug overlay](#local-debug-ove
 ## Prerequisites
 
 - Docker Engine 24+ with Compose v2
+- **A running FeatBit instance** — RDA's web app delegates all auth and flag evaluation to FeatBit. SaaS users get this for free at [featbit.co](https://featbit.co); self-hosters install [`github.com/featbit/featbit`](https://github.com/featbit/featbit) first and then **rebuild RDA's web image** with `--build-arg NEXT_PUBLIC_FEATBIT_API_URL=<your-featbit-api>` (the published image bakes in the SaaS URL).
 - A reachable PostgreSQL 14+ (Azure Database for PostgreSQL, Supabase, RDS, self-hosted, …)
-- *(Modes 2 + 4)* a reachable ClickHouse with the schema pre-applied:
+- *(Modes 2 + 4)* a reachable ClickHouse instance
 
-  ```bash
-  clickhouse-client \
-    --host <host> --port 9000 \
-    --user <user> --password <password> \
-    --queries-file modules/track-service/sql/schema.sql
-  ```
+---
 
-  ClickHouse DDL is **not** auto-applied — run it once before the first `docker compose up`.
+## Initialize PostgreSQL
 
-PostgreSQL DDL **is** auto-applied: the web container runs `prisma migrate deploy` on first boot.
+Web's container runs `prisma migrate deploy` automatically on every start, so it creates / migrates the **tables** for you. What it does **not** do: create the database itself or the role used to connect. You do that once.
+
+### Self-hosted PostgreSQL
+
+Connect as a PG superuser (typically `postgres`) and run:
+
+```sql
+CREATE DATABASE release_decision;
+CREATE USER featbit_app WITH ENCRYPTED PASSWORD 'CHANGE_ME';
+GRANT ALL PRIVILEGES ON DATABASE release_decision TO featbit_app;
+\c release_decision
+GRANT ALL ON SCHEMA public TO featbit_app;
+```
+
+The schema-level grant is required on PG 15+ — the default `public` schema permissions tightened in that release, and Prisma needs to `CREATE TABLE` there.
+
+Then in `modules/.env`:
+
+```env
+DATABASE_URL=postgresql://featbit_app:CHANGE_ME@HOST:5432/release_decision?sslmode=disable
+```
+
+### Cloud-hosted PostgreSQL (Azure / RDS / Supabase / Neon …)
+
+You already have an admin role. Use the provider's UI / CLI to:
+
+1. Create a database named `release_decision` (or any name — match it in the URL below).
+2. Optionally create a scoped role with table-create privileges; or just reuse the admin role for simplicity.
+3. Copy the connection string into `modules/.env`. Cloud providers require TLS:
+
+   ```env
+   DATABASE_URL=postgresql://USER:URL_ENCODED_PASSWORD@HOST:5432/release_decision?sslmode=require
+   ```
+
+   URL-encode special characters in the password (`@` → `%40`, `:` → `%3A`, etc.) — Prisma rejects unencoded reserved chars.
+
+4. *(Optional)* If your PG sits behind pgbouncer / a serverless pool, append `?connection_limit=5` to the URL to avoid exhausting the upstream pool.
+
+### Verify before bringing the stack up
+
+```bash
+docker run --rm -e URL="$DATABASE_URL" postgres:16 psql "$URL" -c "select 1"
+```
+
+---
+
+## Initialize ClickHouse
+
+*(Skip this section if you're running Mode 1 with Customer Managed Endpoints — track-service isn't in the loop.)*
+
+The schema file [`modules/track-service/sql/schema.sql`](../../modules/track-service/sql/schema.sql) is **idempotent** (uses `CREATE … IF NOT EXISTS`). It creates the database **and** the two tables track-service writes to:
+
+- `featbit.flag_evaluations` — per-evaluation rows (env, flag, user, variant, timestamp)
+- `featbit.metric_events`    — per-event rows (env, event, user, value, timestamp)
+
+Both tables ship with `MergeTree`, monthly partitioning, and a 365-day TTL — adjust the TTL clauses inside the schema file if you need a different retention.
+
+### Apply the schema
+
+Pick whichever client your CH cluster gives you:
+
+```bash
+# clickhouse-client (native TCP, port 9000)
+clickhouse-client \
+  --host HOST --port 9000 \
+  --user USER --password PASSWORD \
+  --queries-file modules/track-service/sql/schema.sql
+
+# Or HTTP (port 8123) — works with managed CH (Aiven, ClickHouse Cloud, …)
+curl --data-binary @modules/track-service/sql/schema.sql \
+  "https://USER:PASSWORD@HOST:8123/"
+```
+
+### Custom database / table names
+
+The schema file hardcodes `featbit` as the database and `flag_evaluations` / `metric_events` as the table names. If you need different names (because your CH already has a `featbit` database in use, etc.), edit the SQL **before** applying it, then override the matching env vars in `modules/.env`:
+
+```env
+CLICKHOUSE_DATABASE=my_warehouse
+CLICKHOUSE_FLAG_EVALUATIONS_TABLE=fb_flag_evaluations
+CLICKHOUSE_METRIC_EVENTS_TABLE=fb_metric_events
+```
+
+These map to the .NET `ClickHouse:Database` / `ClickHouse:FlagEvaluationsTable` / `ClickHouse:MetricEventsTable` config keys consumed by track-service.
+
+### Verify
+
+```bash
+curl "http://USER:PASSWORD@HOST:8123/?query=SELECT+count()+FROM+featbit.flag_evaluations"
+# → 0   (or whatever count you have; an HTTP 200 with a number means success)
+```
 
 ---
 
@@ -105,70 +191,7 @@ Web's `TRACK_SERVICE_URL` defaults to `http://track-service:8080` (the in-networ
 
 ---
 
-### Mode 3 — External PostgreSQL (always)
-
-PostgreSQL is **always** external in this stack — there is no `postgres` service in the compose file. Every mode needs `DATABASE_URL` set in `.env`.
-
-**Format**
-
-```env
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require
-```
-
-**Notes**
-
-- URL-encode special characters in the password (`@` → `%40`, `:` → `%3A`, etc.). Prisma rejects unencoded reserved characters.
-- `sslmode=require` is mandatory for cloud-hosted PG (Azure / RDS / Supabase / Neon). Self-hosted PG without TLS works with `sslmode=disable`, but only do this on a private network.
-- The `web` service runs `prisma migrate deploy` on every start. The role identified by `DATABASE_URL` therefore needs `CREATE` / `ALTER` privileges on the target schema.
-- Connection pooling: web uses Prisma's default pool. For PG behind a serverless / pgbouncer layer, append `?connection_limit=5` to the URL to avoid pool exhaustion.
-
-**Verify the URL works before bringing the stack up**
-
-```bash
-docker run --rm -e DATABASE_URL="$DATABASE_URL" postgres:16 \
-  psql "$DATABASE_URL" -c "select 1"
-```
-
----
-
-### Mode 4 — External ClickHouse (when track-service is enabled)
-
-ClickHouse is required only when `track-service` is in the loop (i.e. Mode 2). It is **always** external — no `clickhouse` service in compose.
-
-**Format**
-
-```env
-CLICKHOUSE_CONNECTION_STRING=Host=HOST;Port=9000;User=USER;Password=PASSWORD;Protocol=http;Database=featbit
-```
-
-The string is parsed by the .NET ClickHouse client. Common keys: `Host`, `Port` (9000 = native TCP, 8123 = HTTP), `User`, `Password`, `Protocol` (`http` / `tcp`), `Database`, `Compression`.
-
-**Apply the schema before first run** (idempotent — safe to re-run):
-
-```bash
-clickhouse-client \
-  --host HOST --port 9000 \
-  --user USER --password PASSWORD \
-  --queries-file modules/track-service/sql/schema.sql
-```
-
-This creates `flag_evaluations` and `metric_events` tables in the `featbit` database. If your CH database has a different name, override at runtime via env vars in `.env`:
-
-```env
-CLICKHOUSE_DATABASE=my_warehouse
-CLICKHOUSE_FLAG_EVALUATIONS_TABLE=fb_flag_evaluations
-CLICKHOUSE_METRIC_EVENTS_TABLE=fb_metric_events
-```
-
-These map to the .NET `ClickHouse:Database` / `ClickHouse:FlagEvaluationsTable` / `ClickHouse:MetricEventsTable` config keys consumed by track-service.
-
-**Verify the connection works** (HTTP):
-
-```bash
-curl "http://USER:PASSWORD@HOST:8123/?query=SELECT%201"
-```
-
----
+> **PostgreSQL** and **ClickHouse** are always external — see [§ Initialize PostgreSQL](#initialize-postgresql) and [§ Initialize ClickHouse](#initialize-clickhouse) above for setup. The compose stack never spins them up itself.
 
 ## Common operations
 
