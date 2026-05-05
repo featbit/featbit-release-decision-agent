@@ -141,7 +141,21 @@ jobs:
       - name: Publish to npm (with provenance)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public --provenance
+        # Prerelease versions (anything with a `-` suffix, e.g. 0.0.1-beta)
+        # must NOT take the `latest` dist-tag — otherwise `npm install` for
+        # users who don't pin a version pulls a prerelease. Tag them with the
+        # prerelease label (e.g. `beta`) so users explicitly opt in via
+        # `npm install @featbit/...@beta`.
+        run: |
+          if [[ "${VERSION}" == *-* ]]; then
+            TAG="${VERSION#*-}"      # 0.0.1-beta → beta, 1.2.3-rc.4 → rc.4
+            TAG="${TAG%%.*}"         # rc.4 → rc
+            echo "Publishing prerelease with --tag ${TAG}"
+            npm publish --access public --provenance --tag "${TAG}"
+          else
+            echo "Publishing stable as @latest"
+            npm publish --access public --provenance
+          fi
 
       - name: Commit version bump back to main
         # Runs from repo root, not the working-directory above.
@@ -212,9 +226,16 @@ jobs:
           \`\`\`
           EOF
           )
+          # Mark as prerelease when version has a `-suffix` (e.g. 0.0.1-beta)
+          # so it doesn't show up as the repo's "Latest release".
+          PRERELEASE_FLAG=""
+          if [[ "${VERSION}" == *-* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
           gh release create "v${VERSION}" \
             --title "v${VERSION}" \
             --notes "$NOTES" \
             --generate-notes \
+            $PRERELEASE_FLAG \
             "skills-${VERSION}.tar.gz" \
             "skills-${VERSION}.tar.gz.sha256"
