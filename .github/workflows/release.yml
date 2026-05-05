@@ -1,0 +1,225 @@
+name: Release
+
+# Coordinated release for the FeatBit Release Decision Agent. One run produces
+# (all tagged with the same `version` input):
+#   1. Docker Hub: featbit/featbit-rda-track-service:<version>
+#   2. Docker Hub: featbit/featbit-rda-web:<version>
+#   3. npm:        @featbit/experimentation-claude-code-connector@<version>
+#   4. GitHub Release v<version> — with skills-<version>.tar.gz attached and
+#      auto-generated changelog notes
+#
+# Required GitHub secrets (configure under the `Production` environment):
+#   - DOCKER_HUB_USERNAME       (= "featbit")
+#   - DOCKER_HUB_ACCESS_TOKEN   (Docker Hub PAT with Read/Write/Delete on the featbit namespace)
+#   - NPM_TOKEN                 (npm Automation token, publish rights on @featbit scope)
+#
+# Required workflow permissions:
+#   - "Read and write" under Settings → Actions → General
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (no leading v, e.g. 0.4.0). Used for image tags, npm version, GH Release tag v<version>, and skills tarball name."
+        required: true
+      next-public-featbit-api-url:
+        description: "NEXT_PUBLIC_FEATBIT_API_URL baked into the web image at build time"
+        required: false
+        default: "https://app-api.featbit.co"
+      build-latest:
+        description: "Also tag and push :latest to Docker Hub"
+        type: boolean
+        default: false
+        required: false
+
+env:
+  VERSION: ${{ github.event.inputs.version }}
+
+jobs:
+  # ── Pre-flight ───────────────────────────────────────────────────────────────
+  # Fail fast if the version is already released — avoids partial double-publish.
+  preflight:
+    name: Pre-flight checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject if tag v${{ env.VERSION }} already exists
+        run: |
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "::error::Tag v${VERSION} already exists. Pick a fresh version or delete the tag first."
+            exit 1
+          fi
+      - name: Reject if version string is malformed
+        run: |
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "::error::Version '${VERSION}' is not SemVer (expected: MAJOR.MINOR.PATCH[-PRERELEASE])."
+            exit 1
+          fi
+
+  # ── 1+2. Docker images ───────────────────────────────────────────────────────
+  docker:
+    name: Publish ${{ matrix.app }} image
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: Production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: featbit-rda-track-service
+            build-dir: modules/track-service
+          - app: featbit-rda-web
+            build-dir: modules/web
+    steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Build and push ${{ matrix.app }} (:${{ env.VERSION }})
+        uses: docker/build-push-action@v5
+        with:
+          context: "{{defaultContext}}:${{ matrix.build-dir }}"
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/${{ matrix.app }}:${{ env.VERSION }}
+          build-args: |
+            NEXT_PUBLIC_FEATBIT_API_URL=${{ github.event.inputs.next-public-featbit-api-url }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push ${{ matrix.app }} (:latest)
+        if: ${{ github.event.inputs.build-latest == 'true' }}
+        uses: docker/build-push-action@v5
+        with:
+          context: "{{defaultContext}}:${{ matrix.build-dir }}"
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ secrets.DOCKER_HUB_USERNAME }}/${{ matrix.app }}:latest
+          build-args: |
+            NEXT_PUBLIC_FEATBIT_API_URL=${{ github.event.inputs.next-public-featbit-api-url }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 3. npm package ───────────────────────────────────────────────────────────
+  # Bumps modules/experimentation-claude-code-connector/package.json to <version>,
+  # publishes to npm, then commits the bump back to main so the repo always
+  # reflects the latest published version.
+  npm:
+    name: Publish connector to npm
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: Production
+    permissions:
+      contents: write    # commit the package.json bump back to main
+      id-token: write    # npm provenance attestation
+    defaults:
+      run:
+        working-directory: modules/experimentation-claude-code-connector
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Bump package version to ${{ env.VERSION }}
+        run: npm version "${VERSION}" --no-git-tag-version --allow-same-version
+
+      - name: Install + build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm (with provenance)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
+
+      - name: Commit version bump back to main
+        # Runs from repo root, not the working-directory above.
+        working-directory: ${{ github.workspace }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add modules/experimentation-claude-code-connector/package.json
+          if git diff --cached --quiet; then
+            echo "package.json already at ${VERSION} — no commit needed."
+          else
+            git commit -m "chore(connector): bump to ${VERSION} [skip ci]"
+            git push origin HEAD:main
+          fi
+
+  # ── 4. Skills tarball + GitHub Release ───────────────────────────────────────
+  release:
+    name: Create GitHub Release v${{ github.event.inputs.version }}
+    needs: [docker, npm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pull the just-pushed connector bump from the npm job so the tag
+          # points at the right commit.
+          ref: main
+
+      - name: Package skills/
+        run: |
+          tar -czf "skills-${VERSION}.tar.gz" skills
+          ls -lh "skills-${VERSION}.tar.gz"
+          sha256sum "skills-${VERSION}.tar.gz" > "skills-${VERSION}.tar.gz.sha256"
+
+      - name: Tag commit and create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+        run: |
+          NOTES=$(cat <<EOF
+          # FeatBit Release Decision Agent v${VERSION}
+
+          ## Artifacts published in this release
+
+          ### Docker images
+          - \`${DOCKER_HUB_USERNAME}/featbit-rda-track-service:${VERSION}\`
+          - \`${DOCKER_HUB_USERNAME}/featbit-rda-web:${VERSION}\`
+
+          \`\`\`bash
+          docker pull ${DOCKER_HUB_USERNAME}/featbit-rda-track-service:${VERSION}
+          docker pull ${DOCKER_HUB_USERNAME}/featbit-rda-web:${VERSION}
+          \`\`\`
+
+          ### npm package
+          - \`@featbit/experimentation-claude-code-connector@${VERSION}\` — https://www.npmjs.com/package/@featbit/experimentation-claude-code-connector
+
+          \`\`\`bash
+          npx @featbit/experimentation-claude-code-connector@${VERSION}
+          \`\`\`
+
+          ### Skills bundle
+          Attached: \`skills-${VERSION}.tar.gz\` (sha256 in the .sha256 sidecar).
+
+          \`\`\`bash
+          curl -L -o skills.tar.gz https://github.com/${{ github.repository }}/releases/download/v${VERSION}/skills-${VERSION}.tar.gz
+          tar -xzf skills.tar.gz -C ~/.claude/
+          \`\`\`
+          EOF
+          )
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes "$NOTES" \
+            --generate-notes \
+            "skills-${VERSION}.tar.gz" \
+            "skills-${VERSION}.tar.gz.sha256"
