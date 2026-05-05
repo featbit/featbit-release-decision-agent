@@ -20,18 +20,18 @@
 │  modules/web  (Next.js + Prisma)  :3000                     │
 │  Dashboard + REST API + Analysis Engine + Memory API        │
 │  + server-side /api/sandbox0/* (Managed-mode chat proxy)    │
-└──────┬───────────────────────────┬──────────────────────────┘
-       │ TRACK_SERVICE_URL          │ MEMORY_API_BASE / SYNC_API_URL
-       ↓                           ↓
-┌─────────────────────┐                              ┌────────────────────────┐
-│  modules/track-     │                              │  modules/project-agent │
-│  service (.NET 10)  │                              │  (Codex, SSE)          │
-│  :5050 → :8080      │                              │  :3031 → :3031         │
-│  POST /api/track    │                              │  POST /query           │
-│  POST /api/query/   │                              │  (project memory +     │
-│       experiment    │                              │   onboarding)          │
-│  GET  /health       │                              │                        │
-└──────────┬──────────┘                              └────────────────────────┘
+└──────┬──────────────────────────────────────────────────────┘
+       │ TRACK_SERVICE_URL
+       ↓
+┌─────────────────────┐
+│  modules/track-     │
+│  service (.NET 10)  │
+│  :5050 → :8080      │
+│  POST /api/track    │
+│  POST /api/query/   │
+│       experiment    │
+│  GET  /health       │
+└──────────┬──────────┘
            ↑
 ┌──────────────────────┐
 │  modules/run-active- │
@@ -53,7 +53,7 @@ Storage:
   ClickHouse          ← track-service read/write
 ```
 
-The four runtime services (web, track-service, project-agent, run-active-test) are wired together in `modules/docker-compose.yml`. The local-mode connector is published to npm and is **not** part of `docker compose` — each end user runs it themselves on their own machine.
+The runtime services (web, track-service, run-active-test) are wired together in `modules/docker-compose.yml`. The local-mode connector is published to npm and is **not** part of `docker compose` — each end user runs it themselves on their own machine.
 
 ---
 
@@ -66,7 +66,7 @@ The four runtime services (web, track-service, project-agent, run-active-test) a
 ### Responsibilities
 
 - **UI**: Experiment dashboard, wizard stages (intent → hypothesis → exposure → measurement → analysis → decision → learning)
-- **REST API**: Experiment / run CRUD, activity log, memory, agent-session proxy
+- **REST API**: Experiment / run CRUD, activity log, memory
 - **Analysis Engine**: Bayesian A/B + Bandit analysis (in-process TypeScript)
 - **Memory API**: Per-project and per-user AI memory storage (`/api/memory/`)
 
@@ -86,8 +86,7 @@ modules/web/src/
 │     ├─ experiments/[id]/experiment-run/ ← Run CRUD
 │     ├─ experiments/running/        ← GET running runs (used by workers)
 │     ├─ memory/project/             ← Project-scoped AI memory
-│     ├─ memory/user/                ← User-scoped AI memory
-│     └─ agent-session/[projectKey]/ ← Agent session proxy
+│     └─ memory/user/                ← User-scoped AI memory
 ├─ lib/
 │  ├─ stats/
 │  │  ├─ analyze.ts        ← Bayesian A/B orchestrator
@@ -267,43 +266,7 @@ The pre-connector containerised sandbox lives at `modules/sandbox/`. It is no lo
 
 ---
 
-## 4️⃣ modules/project-agent — Project-Level AI Assistant (SSE)
-
-**Language**: TypeScript (Node.js, Codex CLI)  
-**Port** (docker): 3031  
-**Type**: Server-Sent Events streaming
-
-### Responsibilities
-
-- Project onboarding assistant powered by OpenAI Codex CLI
-- Reads and writes shared project memory via `MEMORY_API_BASE`
-- Per-session env vars: `FEATBIT_PROJECT_KEY`, `FEATBIT_USER_ID`
-
-### Key Files
-
-```
-modules/project-agent/src/
-├─ server.ts        ← Express, /query route
-├─ agent.ts         ← Codex CLI wrapper
-├─ prompt.ts        ← Builds system prompt with project context
-├─ session-store.ts ← In-memory session tracking
-└─ sse.ts           ← SSE helpers
-```
-
-Skills in `modules/project-agent/skills/` — loaded on demand.
-
-### Environment Variables
-
-| Variable | Notes |
-|---|---|
-| `OPENAI_API_KEY` | Required for Codex |
-| `MEMORY_API_BASE` | `http://web:3000` |
-| `PORT` | Default: 3031 |
-| `CODEX_HOME` | `/app/codex-config` (volume-mounted) |
-
----
-
-## 5️⃣ modules/run-active-test-worker — Synthetic Data Generator (Cloudflare Worker)
+## 4️⃣ modules/run-active-test-worker — Synthetic Data Generator (Cloudflare Worker)
 
 **Language**: TypeScript (Cloudflare Workers)  
 **Trigger**: Cron, every minute  
@@ -346,7 +309,7 @@ All services (except the Cloudflare Worker) run via `modules/docker-compose.yml`
 ```
 modules/
   docker-compose.yml
-  .env                ← DATABASE_URL, CLICKHOUSE_CONNECTION_STRING, SANDBOX0_API_KEY, OPENAI_API_KEY, …
+  .env                ← DATABASE_URL, CLICKHOUSE_CONNECTION_STRING, SANDBOX0_API_KEY, TRACK_SERVICE_SIGNING_KEY, …
 ```
 
 ### Service Map
@@ -355,7 +318,6 @@ modules/
 |---|---|---|---|
 | `track-service` | `featbit/track-service:local` | 5050 | ClickHouse |
 | `run-active-test` | `featbit/run-active-test:local` | — | track-service (healthy) |
-| `project-agent` | `featbit/project-agent:local` | 3031 | web (healthy) |
 | `web` | `featbit/web:local` | 3000 | — |
 
 The `Local Claude Code` chat path is **not** a docker service — users run `npx @featbit/experimentation-claude-code-connector` on their own machines.
@@ -567,7 +529,6 @@ Use the language-native dev loop:
 |---|---|
 | `modules/web` | `npm run dev` (Next.js HMR) — or `npx tsc --noEmit` + `npm run lint` for compile-time only |
 | `modules/track-service` | `dotnet run` from the project directory |
-| `modules/project-agent` | `npm run dev` in the module |
 | `modules/experimentation-claude-code-connector` | `npm run dev` (tsx watch) — only when modifying the connector itself; end-user verification is `npx @featbit/experimentation-claude-code-connector` from outside the repo |
 | `modules/run-active-test-worker` | `npm run dev` (wrangler dev) |
 

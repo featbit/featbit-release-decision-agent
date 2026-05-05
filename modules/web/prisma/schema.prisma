@@ -139,19 +139,6 @@ model ProjectMemory {
   @@map("project_memory")
 }
 
-model ProjectAgentSession {
-  id            String   @id @default(uuid())
-  projectKey    String   @map("project_key")
-  userId        String   @map("user_id")
-  codexThreadId String?  @map("codex_thread_id")
-  messages      String   @default("[]")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  @@unique([projectKey, userId])
-  @@map("project_agent_session")
-}
-
 model ManagedAgent {
   version       String   @id
   agentId       String   @map("agent_id")

@@ -107,15 +107,10 @@ trackService:
       secretName: "track-service-tls"
 
 # ── web ────────────────────────────────────────────────────────────────────────
-# NOTE: `NEXT_PUBLIC_*` build args are baked at `next build` time. The default
-# agent backend is sandbox0 (Managed Agents) and only needs the FeatBit auth
-# URL at build time:
+# NOTE: `NEXT_PUBLIC_FEATBIT_API_URL` is baked at `next build` time:
 #   docker build modules/web \
 #     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
-#     -t your-acr.azurecr.io/featbit/web:0.2.0
-#
-# `NEXT_PUBLIC_SANDBOX_URL` is only relevant when explicitly setting
-# `NEXT_PUBLIC_AGENT_BACKEND=classic` to revert to the SSE backend.
+#     -t your-acr.azurecr.io/featbit/featbit-rda-web:<version>
 #
 # Server-side runtime envs (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) are NOT
 # build-time — pass them via `extraEnv` below or project them from Azure

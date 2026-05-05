@@ -62,28 +62,6 @@ yarn-error.log*
 
 
 # =======
-# modules/project-agent/ (ts)
-# =======
-modules/project-agent/dist/
-modules/project-agent/node_modules/
-modules/project-agent/.pnp
-modules/project-agent/.pnp.*
-modules/project-agent/.yarn/*
-!modules/project-agent/.yarn/patches
-!modules/project-agent/.yarn/plugins
-!modules/project-agent/.yarn/releases
-!modules/project-agent/.yarn/versions
-modules/project-agent/coverage/
-modules/project-agent/.next/
-modules/project-agent/out/
-modules/project-agent/build/
-modules/project-agent/.vercel/
-modules/project-agent/next-env.d.ts
-modules/project-agent/*.tsbuildinfo
-modules/project-agent/.env
-!modules/project-agent/.env.example
-
-# =======
 # modules/sandbox/ (ts)
 # =======
 modules/sandbox/dist/

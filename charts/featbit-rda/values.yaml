@@ -22,7 +22,7 @@ trackService:
   image:
     # Falls back to global.imageRegistry if empty.
     registry: ""
-    repository: featbit/track-service
+    repository: featbit/featbit-rda-track-service
     tag: "0.3.0"
     pullPolicy: IfNotPresent
 
@@ -156,13 +156,11 @@ trackService:
 # Connects to a remote PostgreSQL (Azure) over DATABASE_URL and to track-service
 # over TRACK_SERVICE_URL (defaults to the in-cluster Service when trackService.enabled).
 #
-# NOTE: `NEXT_PUBLIC_*` build args are baked into the bundle at `next build`
-# time and CANNOT be changed by this chart. The default backend is sandbox0
-# (Managed Agents) — only `NEXT_PUBLIC_FEATBIT_API_URL` needs to be passed
-# at build time. Set `NEXT_PUBLIC_AGENT_BACKEND=classic` only if you want
-# the legacy SSE backend, in which case `NEXT_PUBLIC_SANDBOX_URL` also
-# matters. Server-side sandbox0 runtime env vars (`SANDBOX0_API_KEY`,
-# `SANDBOX0_BASE_URL`) are passed via `web.extraEnv` below, NOT build args.
+# NOTE: `NEXT_PUBLIC_FEATBIT_API_URL` is the only build-arg the web image
+# accepts — it's baked into the bundle at `next build` time and CANNOT be
+# changed by this chart. Set it on the Docker image build, not here. The
+# server-side sandbox0 vars (`SANDBOX0_API_KEY`, `SANDBOX0_BASE_URL`) for
+# the Managed-mode chat are runtime envs — pass them via `web.extraEnv` below.
 web:
   enabled: true
 
@@ -171,7 +169,7 @@ web:
   image:
     # Falls back to global.imageRegistry if empty.
     registry: ""
-    repository: featbit/web
+    repository: featbit/featbit-rda-web
     tag: "0.2.0"
     pullPolicy: IfNotPresent
 

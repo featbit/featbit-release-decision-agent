@@ -198,8 +198,7 @@ export function AiMemoryClient() {
         </div>
         {projectEntries.length === 0 ? (
           <EmptyState>
-            No project memory yet. When you run onboarding with project-agent,
-            answers land here.
+            No project memory yet. Onboarding answers land here once captured.
           </EmptyState>
         ) : (
           <TypeGroups
@@ -242,8 +241,8 @@ export function AiMemoryClient() {
           <EmptyState>Sign in to view your private memory.</EmptyState>
         ) : userEntries.length === 0 ? (
           <EmptyState>
-            No private memory yet. project-agent will ask a couple of
-            calibration questions the first time you chat with it.
+            No private memory yet. The agent will ask a couple of calibration
+            questions the first time you chat with it.
           </EmptyState>
         ) : (
           <TypeGroups

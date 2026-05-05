@@ -21,6 +21,12 @@ services:
       Ingest__ChannelCapacity: ${INGEST_CHANNEL_CAPACITY:-100000}
       Ingest__BatchSize:       ${INGEST_BATCH_SIZE:-1000}
       Ingest__FlushIntervalMs: ${INGEST_FLUSH_INTERVAL_MS:-5000}
+      # ClickHouse table layout — overrides appsettings.json defaults. Match
+      # the values used by your `<database>.<table>` in CH; the chart uses the
+      # same keys (charts/featbit-rda/values.yaml → trackService.clickHouse.*).
+      ClickHouse__Database:             ${CLICKHOUSE_DATABASE:-featbit}
+      ClickHouse__FlagEvaluationsTable: ${CLICKHOUSE_FLAG_EVALUATIONS_TABLE:-flag_evaluations}
+      ClickHouse__MetricEventsTable:    ${CLICKHOUSE_METRIC_EVENTS_TABLE:-metric_events}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -44,38 +50,13 @@ services:
       TICK_MS:    "5000"
       MAX_EVENTS: "8"
 
-  # The previous `agent-sandbox` service ran the Claude Agent SDK in a
-  # container. It has been replaced by `@featbit/experimentation-claude-code-connector`,
-  # which users start themselves on their own machine via:
-  #     npx @featbit/experimentation-claude-code-connector
-  # and the web UI's "Local Claude Code" mode connects to it on
-  # http://127.0.0.1:3100. The original modules/sandbox sources are kept in
-  # the repo for reference but no longer participate in `docker compose up`.
-
-  # Project-level AI agent — onboarding + shared project memory over SSE.
-  # Codex binary needs seccomp:unconfined for Linux landlock sandbox.
-  project-agent:
-    build:
-      context: ..
-      dockerfile: modules/project-agent/Dockerfile
-    image: featbit/project-agent:local
-    container_name: project-agent
-    restart: unless-stopped
-    ports:
-      - "3031:3031"
-    environment:
-      PORT: 3031
-      MEMORY_API_BASE: "http://web:3000"
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      CODEX_HOME: /app/codex-config
-      NODE_ENV: production
-    volumes:
-      - ./project-agent/codex-config:/app/codex-config
-    security_opt:
-      - seccomp:unconfined
-    depends_on:
-      web:
-        condition: service_healthy
+  # The previous `agent-sandbox` and `project-agent` services have been removed.
+  # Chat now runs in two modes selected per-browser by the web app itself:
+  #   - Managed: web's `/api/sandbox0/*` routes proxy to sandbox0 Managed Agents
+  #     (configure via SANDBOX0_API_KEY / SANDBOX0_BASE_URL on the web service).
+  #   - Local Claude Code: the user starts `@featbit/experimentation-claude-code-connector`
+  #     on their own machine, the browser hits http://127.0.0.1:3100 directly.
+  # No backend agent container is needed in compose.
 
   # Next.js web app — the experiment dashboard / management UI.
   # Connects to Azure PostgreSQL remotely (no local PG needed).
@@ -100,6 +81,15 @@ services:
       # Server-side only; never exposed to the browser.
       TRACK_SERVICE_SIGNING_KEY: ${TRACK_SERVICE_SIGNING_KEY:-}
       NODE_ENV:            production
+      # sandbox0 Managed Agents (the default chat backend in fresh browsers).
+      # Without SANDBOX0_API_KEY the chat panel returns 401 on first message.
+      SANDBOX0_API_KEY:    ${SANDBOX0_API_KEY:-}
+      SANDBOX0_BASE_URL:   ${SANDBOX0_BASE_URL:-https://agents.sandbox0.ai}
+      # Optional knobs — uncomment/override only when needed.
+      # TRACK_TIMEOUT_MS:               "10000"
+      # ALLOW_PRIVATE_CUSTOMER_ENDPOINTS: "1"     # dev only — permits 127.0.0.1 / 10.* customer endpoints
+      # FEATBIT_ACCESS_TOKEN:           ${FEATBIT_ACCESS_TOKEN:-}
+      # MANAGED_AGENT_VERSION:          "default"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]
       interval: 30s

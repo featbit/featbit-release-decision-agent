@@ -2,7 +2,6 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { WorkspaceSwitcher } from "@/components/workspace/workspace-switcher";
-import { AgentButton } from "@/components/project-agent/agent-button";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +19,6 @@ export default function DashboardLayout({
             <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b border-border/70 bg-background/75 px-3 backdrop-blur-xl">
               <SidebarTrigger />
               <div className="ml-auto flex items-center gap-2">
-                <AgentButton />
                 <WorkspaceSwitcher />
               </div>
             </header>
