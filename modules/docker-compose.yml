@@ -70,7 +70,7 @@ services:
       start_period: 10s
 
   track-service:
-    image: featbit/featbit-rda-track-service:${VERSION:-0.0.2-beta}
+    image: featbit/featbit-rda-track-service:${VERSION:-0.0.4-beta}
     container_name: track-service
     restart: unless-stopped
     depends_on:
@@ -111,7 +111,7 @@ services:
   #     on their own machine, the browser hits http://127.0.0.1:3100 directly.
   # No backend agent container is needed in compose.
   web:
-    image: featbit/featbit-rda-web:${VERSION:-0.0.2-beta}
+    image: featbit/featbit-rda-web:${VERSION:-0.0.4-beta}
     container_name: web
     restart: unless-stopped
     depends_on:

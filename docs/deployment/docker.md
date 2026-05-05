@@ -21,10 +21,20 @@ External dependency that **isn't** in the stack: a running FeatBit instance ([`g
 cd modules
 cp .env.example .env       # defaults are fine for first boot
 docker compose up -d
-open http://localhost:3000
 ```
 
-Log in with your FeatBit account ([featbit.co](https://featbit.co) or your self-hosted FeatBit).
+Once the stack is healthy, open <http://localhost:3000> in your browser.
+
+### Logging in
+
+RDA delegates authentication to **FeatBit** — there is no separate user database. To log in:
+
+1. Make sure you have a FeatBit account on either:
+   - [**featbit.co**](https://featbit.co) (FeatBit SaaS — default), or
+   - your **self-hosted FeatBit instance** ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Set `FEATBIT_API_URL` in `.env` and re-`up -d` web before logging in.
+2. On the login page, enter your FeatBit email + password. RDA forwards the credentials to FeatBit, gets back a JWT, and creates a session.
+
+If FeatBit is unreachable, login fails — check the [troubleshooting](#troubleshooting) row for *Browser login redirects in a loop*.
 
 ---
 
@@ -34,7 +44,7 @@ Edit `modules/.env`. The knobs you'll actually touch:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `VERSION` | `0.0.2-beta` | Image tag for `web` and `track-service`. |
+| `VERSION` | `0.0.4-beta` | Image tag for `web` and `track-service`. |
 | `POSTGRES_PASSWORD` / `CLICKHOUSE_PASSWORD` | `featbit_local_pw` | Passwords for the embedded databases. Change before exposing anything. |
 | `TRACK_SERVICE_SIGNING_KEY` | empty | HMAC for signed `envId`. Set to a long random string; the same value must be on both web and track-service. Generate: `openssl rand -base64 48`. |
 | `SANDBOX0_API_KEY` | empty | Required for the Managed-mode chat panel; without it the chat returns 401. |

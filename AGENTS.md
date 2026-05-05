@@ -334,7 +334,7 @@ The `Local Claude Code` chat path is **not** a docker service — users run `npx
 cd modules
 
 # Default mode — pull and run published images:
-export VERSION=0.0.2-beta            # whichever tag you want; defaults are pinned in docker-compose.yml
+export VERSION=0.0.4-beta            # whichever tag you want; defaults are pinned in docker-compose.yml
 docker compose pull
 docker compose up -d
 
