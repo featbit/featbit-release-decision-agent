@@ -25,14 +25,9 @@ The FeatBit Release Decision Agent is built **on top of** the FeatBit feature-fl
 
 **SaaS path** — sign up at **[featbit.co](https://featbit.co)** and you're done; FeatBit + RDA are bundled.
 
-**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). To point RDA's web at your FeatBit, set `FEATBIT_API_URL=https://your-featbit-api` in `modules/.env` (or `web.featbit.apiUrl` in your Helm values). It's a runtime env var — no rebuild required, the published image works against any FeatBit backend.
+**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). Set `FEATBIT_API_URL=https://your-featbit-api` in `modules/.env` (or `web.featbit.apiUrl` in Helm values) to point RDA's web at it — runtime env, no rebuild required.
 
-You'll also need:
-
-- A reachable **PostgreSQL 14+** (web's primary store)
-- A reachable **ClickHouse** *(only if you keep `track-service`)* — initialised via [`modules/track-service/sql/schema.sql`](modules/track-service/sql/schema.sql)
-
-Step-by-step DB initialisation lives in the deployment guides below.
+PostgreSQL and ClickHouse are bundled into the Docker Compose stack and bootstrap themselves on first boot — you don't have to provision them. You can override the connection strings to point at your own databases instead; see the deployment guides.
 
 ### Deployment
 
@@ -42,16 +37,15 @@ The fastest path is the hosted version: sign up at **[featbit.co](https://featbi
 
 #### 2. Self-host with Docker Compose
 
-For a single-host install you fully control, the bundled compose stack brings up `web` + `track-service` against your own PostgreSQL and ClickHouse:
-
 ```bash
 cd modules
-# create .env with DATABASE_URL, CLICKHOUSE_CONNECTION_STRING, TRACK_SERVICE_SIGNING_KEY
-# (see docs/deployment/docker.md for the full template)
-docker compose up -d
+cp .env.example .env       # defaults are fine for first boot
+docker compose up -d       # pulls images, brings up everything, applies schemas
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) and log in with your FeatBit account.
+
+The compose stack brings up web, track-service, PostgreSQL, and ClickHouse together. ClickHouse's schema is auto-applied via `/docker-entrypoint-initdb.d/`; the web container runs `prisma migrate deploy` on every start. Override `DATABASE_URL` / `CLICKHOUSE_CONNECTION_STRING` in `.env` to use external databases instead of the bundled ones.
 
 Full step-by-step guide: **[`docs/deployment/docker.md`](docs/deployment/docker.md)**.
 

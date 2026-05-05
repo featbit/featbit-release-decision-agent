@@ -1,28 +1,89 @@
-# Production-ish stack: pulls the published Docker Hub images, no local build.
-# Pin the version via VERSION env var (defaults to the latest tested tag).
+# Self-contained stack: web + track-service + their own PostgreSQL + ClickHouse.
+# `docker compose up -d` brings up everything, applies the ClickHouse schema on
+# first boot (via clickhouse-server's /docker-entrypoint-initdb.d/), and runs
+# Prisma migrations on every web start (via web's docker-entrypoint.sh).
 #
-# Usage:
+# Usage (default — embedded DBs):
 #   cd modules
-#   cp .env.example .env                     # fill in DATABASE_URL etc.
-#   docker compose pull                      # fetch the published images
-#   docker compose up -d                     # start track-service + web
+#   cp .env.example .env       # the defaults are fine for first boot
+#   docker compose up -d
+#   open http://localhost:3000
 #
-# To debug locally with build-from-source + in-network routing, layer in
-# docker-compose.local.yml — see that file's header.
+# Usage (external DBs):
+#   Override DATABASE_URL and/or CLICKHOUSE_CONNECTION_STRING in .env, then
+#   skip the embedded services:
+#     docker compose up -d web track-service
+#
+# To debug locally with build-from-source, layer in docker-compose.local.yml
+# — see that file's header.
 
 services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-featbit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-featbit_local_pw}
+      POSTGRES_DB:       ${POSTGRES_DB:-release_decision}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-featbit} -d ${POSTGRES_DB:-release_decision}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24-alpine
+    container_name: clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER:                    ${CLICKHOUSE_USER:-featbit}
+      CLICKHOUSE_PASSWORD:                ${CLICKHOUSE_PASSWORD:-featbit_local_pw}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      # CLICKHOUSE_DB pre-creates the database before the initdb scripts run,
+      # so schema.sql's `CREATE DATABASE IF NOT EXISTS` becomes a no-op.
+      CLICKHOUSE_DB:                      ${CLICKHOUSE_DATABASE:-featbit}
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    volumes:
+      - ch_data:/var/lib/clickhouse
+      # First-boot schema apply. clickhouse-server runs *.sql in this dir as
+      # part of init when the data dir is empty. Idempotent on re-runs anyway
+      # (uses IF NOT EXISTS), but only the first boot triggers it.
+      - ./track-service/sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   track-service:
     image: featbit/featbit-rda-track-service:${VERSION:-0.0.2-beta}
     container_name: track-service
     restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
     ports:
       - "5050:8080"
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       ASPNETCORE_ENVIRONMENT: Production
-      # Read from .env — points at local docker CH or remote Azure VM CH.
-      CLICKHOUSE_CONNECTION_STRING: ${CLICKHOUSE_CONNECTION_STRING}
+      # Defaults to the embedded clickhouse service. Override CLICKHOUSE_CONNECTION_STRING
+      # in .env to point at an external CH (and skip the `clickhouse` service).
+      CLICKHOUSE_CONNECTION_STRING: ${CLICKHOUSE_CONNECTION_STRING:-Host=clickhouse;Port=8123;User=${CLICKHOUSE_USER:-featbit};Password=${CLICKHOUSE_PASSWORD:-featbit_local_pw};Protocol=http;Database=${CLICKHOUSE_DATABASE:-featbit}}
       # HMAC key for env-secret validation. Share the same value with every
       # service that mints tokens (web, run-active-test). When unset the
       # service logs a warning and falls back to "Authorization header = envId".
@@ -53,10 +114,16 @@ services:
     image: featbit/featbit-rda-web:${VERSION:-0.0.2-beta}
     container_name: web
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
-      DATABASE_URL:        ${DATABASE_URL}
+      # Defaults to the embedded postgres service. Override DATABASE_URL in
+      # .env to point at an external PG (and skip the `postgres` service).
+      # The web entrypoint runs `prisma migrate deploy` on every start.
+      DATABASE_URL:        ${DATABASE_URL:-postgresql://${POSTGRES_USER:-featbit}:${POSTGRES_PASSWORD:-featbit_local_pw}@postgres:5432/${POSTGRES_DB:-release_decision}?sslmode=disable}
       # FeatBit backend the web app authenticates against. Defaults to FeatBit
       # SaaS; self-hosters of FeatBit set this to their own API URL in .env.
       # Server-side only — never sent to the browser (browser goes through
@@ -86,3 +153,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+volumes:
+  pg_data:
+  ch_data:

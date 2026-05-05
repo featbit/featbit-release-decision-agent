@@ -18,6 +18,8 @@ artifacts/
 # Local environment and secret files
 .env
 .env.*
+# Exception: per-module .env.example templates ARE tracked (no real secrets).
+!**/.env.example
 *.local
 # *.local.yaml
 *.local.yml
