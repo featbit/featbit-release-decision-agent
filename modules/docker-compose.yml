@@ -57,7 +57,11 @@ services:
       - "3000:3000"
     environment:
       DATABASE_URL:        ${DATABASE_URL}
-      TRACK_SERVICE_URL:   "https://track.featbit.ai"
+      # Defaults to the in-network track-service so `docker compose up -d`
+      # works as a full stack out of the box. To run web standalone against
+      # an external track-service (or skip it via customer-managed-endpoint),
+      # set TRACK_SERVICE_URL in .env.
+      TRACK_SERVICE_URL:   ${TRACK_SERVICE_URL:-http://track-service:8080}
       # Same key as track-service — web's track-client signs envId per query.
       # Server-side only; never exposed to the browser.
       TRACK_SERVICE_SIGNING_KEY: ${TRACK_SERVICE_SIGNING_KEY:-}
