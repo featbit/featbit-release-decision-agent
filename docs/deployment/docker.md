@@ -21,7 +21,7 @@ For local-build / debug workflows, see [§ Local debug overlay](#local-debug-ove
 ## Prerequisites
 
 - Docker Engine 24+ with Compose v2
-- **A running FeatBit instance** — RDA's web app delegates all auth and flag evaluation to FeatBit. SaaS users get this for free at [featbit.co](https://featbit.co); self-hosters install [`github.com/featbit/featbit`](https://github.com/featbit/featbit) first and then **rebuild RDA's web image** with `--build-arg NEXT_PUBLIC_FEATBIT_API_URL=<your-featbit-api>` (the published image bakes in the SaaS URL).
+- **A running FeatBit instance** — RDA's web app delegates all auth and flag evaluation to FeatBit. SaaS users get this for free at [featbit.co](https://featbit.co); self-hosters install [`github.com/featbit/featbit`](https://github.com/featbit/featbit) first and then point web at it via `NEXT_PUBLIC_FEATBIT_API_URL` (see [§ Pointing web at a self-hosted FeatBit](#pointing-web-at-a-self-hosted-featbit) below).
 - A reachable PostgreSQL 14+ (Azure Database for PostgreSQL, Supabase, RDS, self-hosted, …)
 - *(Modes 2 + 4)* a reachable ClickHouse instance
 
@@ -212,9 +212,40 @@ docker compose down
 
 ---
 
+## Pointing web at a self-hosted FeatBit
+
+The published `featbit/featbit-rda-web` image bakes in `NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co` (the SaaS backend). This URL is a Next.js client-side env — it's compiled into the JavaScript bundle that ships to the browser, so it **cannot** be changed via container runtime env vars. Compose's `environment:` won't help.
+
+To target your own FeatBit, rebuild via the local-build overlay:
+
+```bash
+# modules/.env
+NEXT_PUBLIC_FEATBIT_API_URL=https://your-featbit-api.example.com
+```
+
+```bash
+cd modules
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build web
+```
+
+The `web.build.args` block in [`docker-compose.local.yml`](../../modules/docker-compose.local.yml) reads `NEXT_PUBLIC_FEATBIT_API_URL` from your shell / `.env` and passes it as a build-arg, so compose itself produces the right image — you don't run `docker build` by hand.
+
+If you'd rather publish a custom image to your own registry once and reuse it on multiple machines:
+
+```bash
+docker build modules/web \
+  --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://your-featbit-api.example.com \
+  -t your-registry.example.com/featbit-rda-web:0.0.2-beta-self-hosted
+docker push your-registry.example.com/featbit-rda-web:0.0.2-beta-self-hosted
+```
+
+Then in `modules/docker-compose.yml`, override the image reference for `web` (or layer in your own overlay file). At that point `docker compose pull && up -d` works without needing the local-build overlay.
+
+---
+
 ## Local debug overlay
 
-`docker-compose.local.yml` is the debug overlay that **builds images from source** and adds the `run-active-test` synthetic event generator. Use it when you're developing locally and want source changes to round-trip.
+`docker-compose.local.yml` is the debug overlay that **builds images from source** and adds the `run-active-test` synthetic event generator. Use it when you're developing locally and want source changes to round-trip — and (as above) when you need to bake a non-default `NEXT_PUBLIC_FEATBIT_API_URL` into the web bundle.
 
 ```bash
 cd modules
@@ -225,6 +256,7 @@ What the overlay changes vs the default:
 
 - `track-service` and `web` build from `./track-service` / `./web` instead of pulling from Docker Hub.
 - `track-service`'s `ASPNETCORE_ENVIRONMENT` flips back to `Development`.
+- `web.build.args.NEXT_PUBLIC_FEATBIT_API_URL` reads from your `.env` (defaults to the SaaS backend) — change it there to repoint the web bundle.
 - `run-active-test` (Cloudflare Worker that emits synthetic events) joins the stack — there is no published image for it.
 
 ---
@@ -243,7 +275,7 @@ Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret pr
 | `web` boots but `/api/experiments/.../analyze` returns `503` | `track-service` not reachable, or ClickHouse schema not applied |
 | `track-service` returns `401` on every query | `TRACK_SERVICE_SIGNING_KEY` mismatched between `web` and `track-service` |
 | `track-service` logs `legacy mode (Authorization = envId)` warning | `TRACK_SERVICE_SIGNING_KEY` not set — auth is being bypassed; only safe for local dev |
-| Browser login redirects in a loop | `NEXT_PUBLIC_FEATBIT_API_URL` (build-time, baked into the image) points somewhere the **browser** can't resolve. Self-hosters of FeatBit must rebuild the web image with the right URL — see § Local debug overlay |
+| Browser login redirects in a loop | `NEXT_PUBLIC_FEATBIT_API_URL` (build-time, baked into the image) points somewhere the **browser** can't resolve. Self-hosters of FeatBit must rebuild the web image with the right URL — see § Pointing web at a self-hosted FeatBit |
 | Chat panel returns `401: missing authorization header` | `SANDBOX0_API_KEY` empty in `.env` |
 | ClickHouse query errors mention missing tables | Schema not applied, or `CLICKHOUSE_DATABASE` / table-name overrides don't match what's in CH |
 
