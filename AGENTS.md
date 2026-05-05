@@ -304,21 +304,27 @@ npm run deploy
 
 ## 🐳 Docker Compose
 
-All services (except the Cloudflare Worker) run via `modules/docker-compose.yml`.
+Two compose files, layered:
+
+| File | Purpose | Image source |
+|---|---|---|
+| `modules/docker-compose.yml` | Production-ish default. Pull and run published images. | Docker Hub (`featbit/featbit-rda-{web,track-service}:${VERSION}`) |
+| `modules/docker-compose.local.yml` | Local debug overlay. Builds from source, routes web at the in-network track-service, adds `run-active-test` for synthetic events. | Local build (`featbit/featbit-rda-*:local`) |
 
 ```
 modules/
   docker-compose.yml
+  docker-compose.local.yml
   .env                ← DATABASE_URL, CLICKHOUSE_CONNECTION_STRING, SANDBOX0_API_KEY, TRACK_SERVICE_SIGNING_KEY, …
 ```
 
-### Service Map
+### Service map
 
-| Service | Image | Host port | Depends on |
-|---|---|---|---|
-| `track-service` | `featbit/track-service:local` | 5050 | ClickHouse |
-| `run-active-test` | `featbit/run-active-test:local` | — | track-service (healthy) |
-| `web` | `featbit/web:local` | 3000 | — |
+| Service | Defined in | Image (default mode) | Host port | Depends on |
+|---|---|---|---|---|
+| `track-service` | base | `featbit/featbit-rda-track-service:${VERSION}` | 5050 | external ClickHouse |
+| `web` | base | `featbit/featbit-rda-web:${VERSION}` | 3000 | track-service (when local overlay) |
+| `run-active-test` | local overlay only | `featbit/run-active-test:local` (build-only) | — | track-service (healthy) |
 
 The `Local Claude Code` chat path is **not** a docker service — users run `npx @featbit/experimentation-claude-code-connector` on their own machines.
 
@@ -327,17 +333,19 @@ The `Local Claude Code` chat path is **not** a docker service — users run `npx
 ```bash
 cd modules
 
-# Start all services
+# Default mode — pull and run published images:
+export VERSION=0.0.2-beta            # whichever tag you want; defaults are pinned in docker-compose.yml
+docker compose pull
 docker compose up -d
 
-# Rebuild a specific service after code changes
-docker compose build web && docker compose up -d web
+# Local debug — build from source + in-network routing + run-active-test:
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 # Tail logs
 docker compose logs -f web
 docker compose logs -f track-service
 
-# Stop
+# Stop (works in either mode)
 docker compose down
 ```
 

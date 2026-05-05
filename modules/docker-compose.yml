@@ -1,17 +1,26 @@
+# Production-ish stack: pulls the published Docker Hub images, no local build.
+# Pin the version via VERSION env var (defaults to the latest tested tag).
+#
+# Usage:
+#   cd modules
+#   cp .env.example .env                     # fill in DATABASE_URL etc.
+#   docker compose pull                      # fetch the published images
+#   docker compose up -d                     # start track-service + web
+#
+# To debug locally with build-from-source + in-network routing, layer in
+# docker-compose.local.yml — see that file's header.
+
 services:
 
   track-service:
-    build:
-      context: ./track-service
-      dockerfile: Dockerfile
-    image: featbit/track-service:local
+    image: featbit/featbit-rda-track-service:${VERSION:-0.0.2-beta}
     container_name: track-service
     restart: unless-stopped
     ports:
       - "5050:8080"
     environment:
       ASPNETCORE_URLS: "http://+:8080"
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Production
       # Read from .env — points at local docker CH or remote Azure VM CH.
       CLICKHOUSE_CONNECTION_STRING: ${CLICKHOUSE_CONNECTION_STRING}
       # HMAC key for env-secret validation. Share the same value with every
@@ -34,42 +43,14 @@ services:
       retries: 3
       start_period: 20s
 
-  run-active-test:
-    build:
-      context: ./run-active-test-worker
-      dockerfile: Dockerfile
-    image: featbit/run-active-test:local
-    container_name: run-active-test
-    restart: unless-stopped
-    environment:
-      WORKER_URL: "https://track.featbit.ai"
-      ENV_ID:     "rat-env-v1"
-      # Same signing key as track-service. dev-loop signs envId at startup;
-      # leave blank to fall back to the raw envId (legacy track-service).
-      TRACK_SERVICE_SIGNING_KEY: ${TRACK_SERVICE_SIGNING_KEY:-}
-      TICK_MS:    "5000"
-      MAX_EVENTS: "8"
-
-  # The previous `agent-sandbox` and `project-agent` services have been removed.
-  # Chat now runs in two modes selected per-browser by the web app itself:
+  # Chat panel runs in two modes, selected per-browser by the web app itself:
   #   - Managed: web's `/api/sandbox0/*` routes proxy to sandbox0 Managed Agents
-  #     (configure via SANDBOX0_API_KEY / SANDBOX0_BASE_URL on the web service).
+  #     (configure via SANDBOX0_API_KEY / SANDBOX0_BASE_URL below).
   #   - Local Claude Code: the user starts `@featbit/experimentation-claude-code-connector`
   #     on their own machine, the browser hits http://127.0.0.1:3100 directly.
   # No backend agent container is needed in compose.
-
-  # Next.js web app — the experiment dashboard / management UI.
-  # Connects to Azure PostgreSQL remotely (no local PG needed).
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        # NEXT_PUBLIC_* is baked in at build time and executed in the browser,
-        # so this URL must be reachable from the user's machine — NOT from
-        # inside the docker network.
-        NEXT_PUBLIC_FEATBIT_API_URL: ${NEXT_PUBLIC_FEATBIT_API_URL:-https://app-api.featbit.co}
-    image: featbit/web:local
+    image: featbit/featbit-rda-web:${VERSION:-0.0.2-beta}
     container_name: web
     restart: unless-stopped
     ports:

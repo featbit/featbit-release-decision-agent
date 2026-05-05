@@ -1,0 +1,60 @@
+# Local debug overlay — builds images from source and routes web /
+# run-active-test at the in-network track-service instead of production.
+#
+#   cd modules
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# What this layer does on top of docker-compose.yml:
+#   - track-service / web: build from ./track-service, ./web instead of pulling
+#     featbit/featbit-rda-* from Docker Hub. Local-tagged images (`:local`).
+#   - track-service: ASPNETCORE_ENVIRONMENT flipped back to Development.
+#   - web: TRACK_SERVICE_URL pointed at the in-network track-service hostname,
+#     so the signed env-secret round-trip can be exercised end-to-end without
+#     touching https://track.featbit.ai.
+#   - run-active-test: defined here only (no published image; it's a dev /
+#     load-gen tool). Targets the in-network track-service.
+services:
+
+  track-service:
+    build:
+      context: ./track-service
+      dockerfile: Dockerfile
+    image: featbit/featbit-rda-track-service:local
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* is baked into the client bundle at build time and is
+        # executed in the user's browser, so this URL must be reachable from
+        # the host — NOT the container network. Defaults to FeatBit SaaS.
+        NEXT_PUBLIC_FEATBIT_API_URL: ${NEXT_PUBLIC_FEATBIT_API_URL:-https://app-api.featbit.co}
+    image: featbit/featbit-rda-web:local
+    depends_on:
+      track-service:
+        condition: service_healthy
+    environment:
+      TRACK_SERVICE_URL: "http://track-service:8080"
+
+  # Synthetic event generator. Not part of the release; build-only.
+  run-active-test:
+    build:
+      context: ./run-active-test-worker
+      dockerfile: Dockerfile
+    image: featbit/run-active-test:local
+    container_name: run-active-test
+    restart: unless-stopped
+    depends_on:
+      track-service:
+        condition: service_healthy
+    environment:
+      WORKER_URL: "http://track-service:8080"
+      ENV_ID:     "rat-env-v1"
+      # Same signing key as track-service. dev-loop signs envId at startup;
+      # leave blank to fall back to the raw envId (legacy track-service).
+      TRACK_SERVICE_SIGNING_KEY: ${TRACK_SERVICE_SIGNING_KEY:-}
+      TICK_MS:    "5000"
+      MAX_EVENTS: "8"

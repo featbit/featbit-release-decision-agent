@@ -21,6 +21,9 @@ artifacts/
 *.local
 # *.local.yaml
 *.local.yml
+# Exception: the canonical local-debug compose overlay IS in the repo so devs
+# don't each maintain their own copy.
+!modules/docker-compose.local.yml
 secrets.json
 
 # Rider / VS Code
