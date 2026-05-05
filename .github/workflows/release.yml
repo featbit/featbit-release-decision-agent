@@ -22,10 +22,6 @@ on:
       version:
         description: "Release version (no leading v, e.g. 0.4.0). Used for image tags, npm version, GH Release tag v<version>, and skills tarball name."
         required: true
-      next-public-featbit-api-url:
-        description: "NEXT_PUBLIC_FEATBIT_API_URL baked into the web image at build time"
-        required: false
-        default: "https://app-api.featbit.co"
       build-latest:
         description: "Also tag and push :latest to Docker Hub"
         type: boolean
@@ -83,6 +79,9 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
 
+      # Build-time defaults (e.g. NEXT_PUBLIC_FEATBIT_API_URL for the web image)
+      # live in each module's Dockerfile, not in this workflow — keeps the
+      # release flow generic and lets self-hosters rebuild with --build-arg.
       - name: Build and push ${{ matrix.app }} (:${{ env.VERSION }})
         uses: docker/build-push-action@v5
         with:
@@ -91,8 +90,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ secrets.DOCKER_HUB_USERNAME }}/${{ matrix.app }}:${{ env.VERSION }}
-          build-args: |
-            NEXT_PUBLIC_FEATBIT_API_URL=${{ github.event.inputs.next-public-featbit-api-url }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -105,8 +102,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ secrets.DOCKER_HUB_USERNAME }}/${{ matrix.app }}:latest
-          build-args: |
-            NEXT_PUBLIC_FEATBIT_API_URL=${{ github.event.inputs.next-public-featbit-api-url }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

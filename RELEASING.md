@@ -37,8 +37,9 @@ The Helm chart is released separately (see "Chart release" below) — it depends
 
 1. Go to GitHub → Actions → **Release** → Run workflow:
    - **version**: `0.4.0` (no leading `v` — the workflow validates SemVer)
-   - **next-public-featbit-api-url**: defaults to `https://app-api.featbit.co` (FeatBit SaaS). Override only when publishing images that target a self-hosted FeatBit backend — this URL is baked into the web bundle and cannot be changed at runtime.
    - **build-latest**: usually leave off; flip on for stable cuts you want `:latest` to follow.
+
+   The web image bakes in `NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co` (the FeatBit SaaS backend) at build time — this default lives in `modules/web/Dockerfile`, not in the workflow, so the release always ships a SaaS-ready image. Self-hosters of FeatBit who need a different backend rebuild the image themselves with `docker build --build-arg NEXT_PUBLIC_FEATBIT_API_URL=...`.
 2. Wait for all jobs to go green:
    - `preflight` validates the version and refuses if `v<version>` already exists.
    - `docker (featbit-rda-track-service)` and `docker (featbit-rda-web)` build multi-arch and push.

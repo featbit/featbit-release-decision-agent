@@ -14,8 +14,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time public env vars (injected by docker-compose build args)
-ARG NEXT_PUBLIC_FEATBIT_API_URL
+# Build-time public env baked into the Next.js bundle. Defaults to the FeatBit
+# SaaS backend so the published image works out of the box for SaaS users.
+# Self-hosters of FeatBit override this with `--build-arg` when rebuilding.
+ARG NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co
 ENV NEXT_PUBLIC_FEATBIT_API_URL=${NEXT_PUBLIC_FEATBIT_API_URL}
 
 ENV NEXT_TELEMETRY_DISABLED=1
