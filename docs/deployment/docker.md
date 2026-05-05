@@ -72,28 +72,6 @@ docker compose up -d web postgres
 
 ---
 
-## Common operations
-
-```bash
-# Tail logs
-docker compose logs -f web
-docker compose logs -f track-service
-
-# Pin a different image version
-VERSION=0.0.3-beta docker compose up -d
-
-# Apply .env changes
-docker compose up -d --force-recreate web
-
-# Stop everything; data persists in pg_data / ch_data volumes
-docker compose down
-
-# Full reset — wipes the embedded databases too, schemas re-init on next up
-docker compose down -v
-```
-
----
-
 ## Local debug overlay
 
 `docker-compose.local.yml` builds web + track-service from source instead of pulling the published images, and adds the `run-active-test` synthetic event generator. Use it when you're developing locally and want source changes to round-trip.
