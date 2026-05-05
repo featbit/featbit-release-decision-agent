@@ -158,6 +158,7 @@ export async function bridgeFetch(
 
 interface RefreshResult {
   ok: boolean;
+  status: number;
   token?: string;
   cookies?: FeatBitCookie[];
 }
@@ -174,17 +175,18 @@ export async function refreshFeatBitToken(
     method: "POST",
     cookies,
   });
-  if (!res.ok) return { ok: false };
+  if (!res.ok) return { ok: false, status: res.status };
   let parsed: unknown;
   try {
     parsed = JSON.parse(res.bodyText);
   } catch {
-    return { ok: false };
+    return { ok: false, status: res.status };
   }
   const token = extractToken(parsed);
-  if (!token) return { ok: false };
+  if (!token) return { ok: false, status: res.status };
   return {
     ok: true,
+    status: res.status,
     token,
     cookies: mergeCookies(cookies, res.setCookies),
   };

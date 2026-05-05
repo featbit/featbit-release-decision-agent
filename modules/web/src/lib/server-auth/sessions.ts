@@ -136,8 +136,16 @@ export async function refreshIfNeeded(session: ServerSession): Promise<ServerSes
 async function doRefresh(session: ServerSession): Promise<ServerSession | null> {
   const result = await refreshFeatBitToken(session.cookies);
   if (!result.ok || !result.token) {
-    await destroySession(session.id).catch(() => undefined);
-    return null;
+    // 401 means the refresh token itself is definitively rejected — destroy.
+    // Any other failure (5xx, network hiccup caught before here, missing token
+    // in an otherwise-ok response) is treated as transient: keep the existing
+    // session so the user stays logged in and we retry on the next request.
+    if (result.status === 401) {
+      await destroySession(session.id).catch(() => undefined);
+      return null;
+    }
+    console.error("[doRefresh] refresh failed with status", result.status, "— keeping stale session");
+    return session;
   }
   const cookies = result.cookies ?? session.cookies;
   const row = await prisma.authSession.update({
@@ -146,6 +154,7 @@ async function doRefresh(session: ServerSession): Promise<ServerSession | null> 
       featbitToken: result.token,
       featbitCookies: cookies as unknown as object,
       refreshedAt: new Date(),
+      expiresAt: ttl(),
     },
   });
   return rowToSession(row);
