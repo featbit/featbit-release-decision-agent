@@ -1,17 +1,19 @@
-# Docker Compose deployment
+# FeatBit RDA Docker Compose stack
 
-The compose stack ships everything in one command — web, track-service, PostgreSQL, ClickHouse. Both database schemas bootstrap themselves on first boot, so there is nothing to apply by hand.
+Self-contained Docker Compose stack — `web`, `track-service`, PostgreSQL, ClickHouse — for single-host deployments and local trials. Both database schemas bootstrap themselves on first boot, so there is nothing to apply by hand.
+
+---
 
 ## What ships
 
 | Service | Image | Port | Notes |
 |---|---|---|---|
-| `web` | `featbit/featbit-rda-web:${VERSION}` | `3000` | Runs `prisma migrate deploy` against `DATABASE_URL` on every container start. |
-| `track-service` | `featbit/featbit-rda-track-service:${VERSION}` | `5050 → 8080` | Event ingest + per-experiment metric query. |
+| `web` | `featbit/featbit-rda-web:0.0.4-beta` | `3000` | Runs `prisma migrate deploy` against `DATABASE_URL` on every container start. |
+| `track-service` | `featbit/featbit-rda-track-service:0.0.4-beta` | `5050 → 8080` | Event ingest + per-experiment metric query. |
 | `postgres` | `postgres:16-alpine` | `5432` | Persistent volume `pg_data`. |
-| `clickhouse` | `clickhouse/clickhouse-server:24-alpine` | `8123`, `9000` | Auto-applies `track-service/sql/schema.sql` from `/docker-entrypoint-initdb.d/` on first boot. Persistent volume `ch_data`. |
+| `clickhouse` | `clickhouse/clickhouse-server:24-alpine` | `8123`, `9000` | Auto-applies `modules/track-service/sql/schema.sql` from `/docker-entrypoint-initdb.d/` on first boot. Persistent volume `ch_data`. |
 
-External dependency that **isn't** in the stack: a running FeatBit instance ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Defaults to FeatBit SaaS (`https://app-api-experimentation.featbit.co`); self-hosters set `FEATBIT_API_URL` in `.env`.
+External dependency that **isn't** in the stack: a running FeatBit instance ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Defaults to FeatBit SaaS (`https://app-api-experimentation.featbit.co`); self-hosters replace `FEATBIT_API_URL` on the `web` block.
 
 ---
 
@@ -19,7 +21,7 @@ External dependency that **isn't** in the stack: a running FeatBit instance ([`g
 
 The compose file is self-contained — no `.env`, no variable substitution. Two steps:
 
-**1. Set the cross-service signing key.** Open `modules/docker-compose.yml` and replace the `REPLACE_ME` placeholder in the `x-signing-key` anchor near the top with a long random string. Both `web` and `track-service` reference the anchor, so you only edit one place.
+**1. Set the cross-service signing key.** Open `docker/docker-compose.yml` and replace the `REPLACE_ME` placeholder in the `x-signing-key` anchor near the top with a long random string. Both `web` and `track-service` reference the anchor, so you only edit one place.
 
 Generate a key:
 
@@ -36,7 +38,7 @@ openssl rand -base64 48
 **2. Bring the stack up.**
 
 ```bash
-cd modules
+cd docker
 docker compose up -d
 ```
 
@@ -50,7 +52,7 @@ RDA delegates authentication to **FeatBit** — there is no separate user databa
 
 1. Make sure you have a FeatBit account on either:
    - [**featbit.co**](https://featbit.co) (FeatBit SaaS — default), or
-   - your **self-hosted FeatBit instance** ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Set `FEATBIT_API_URL` in `.env` and re-`up -d` web before logging in.
+   - your **self-hosted FeatBit instance** ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Replace `FEATBIT_API_URL` on the `web` block in `docker-compose.yml` and re-`up -d` web before logging in.
 2. On the login page, enter your FeatBit email + password. RDA forwards the credentials to FeatBit, gets back a JWT, and creates a session.
 
 If FeatBit is unreachable, login fails — check the [troubleshooting](#troubleshooting) row for *Browser login redirects in a loop*.
@@ -59,7 +61,7 @@ If FeatBit is unreachable, login fails — check the [troubleshooting](#troubles
 
 ## Configuration
 
-All knobs live in `modules/docker-compose.yml`. Edit the file directly — there is no `.env` layer. The fields you'll actually touch:
+All knobs live in `docker-compose.yml`. Edit the file directly — there is no `.env` layer. The fields you'll actually touch:
 
 | Field (in compose) | Default | What it does |
 |---|---|---|
@@ -89,7 +91,7 @@ docker compose up -d web track-service postgres
 Two things to know:
 
 - **External PG**: the role in `DATABASE_URL` needs `CREATE` / `ALTER` privileges (web runs `prisma migrate deploy` on every start).
-- **External CH**: apply the schema once before first run — `clickhouse-client --queries-file modules/track-service/sql/schema.sql` (idempotent).
+- **External CH**: apply the schema once before first run — `clickhouse-client --queries-file modules/track-service/sql/schema.sql` (idempotent; path is repo-root-relative).
 
 ### Web only (no track-service / ClickHouse)
 
@@ -103,7 +105,7 @@ docker compose up -d web postgres
 
 ## Going to production
 
-Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret projection from Key Vault, and pod disruption budgets, use the Helm chart instead — see [`charts/README.md`](../../charts/README.md).
+Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret projection from Key Vault, and pod disruption budgets, use the Helm chart instead — see [`../charts/README.md`](../charts/README.md).
 
 ---
 
@@ -119,4 +121,4 @@ Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret pr
 | Chat panel returns `401: missing authorization header` | `SANDBOX0_API_KEY` is `""` in `docker-compose.yml`. |
 | `clickhouse` container doesn't apply `schema.sql` | The init scripts only run when the data dir is empty. Wipe and re-init: `docker compose down -v` then `docker compose up -d` |
 
-For the full service map and env-var reference, see [`AGENTS.md`](../../AGENTS.md).
+For the full service map and env-var reference, see [`../AGENTS.md`](../AGENTS.md).

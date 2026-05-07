@@ -25,7 +25,7 @@ The FeatBit Release Decision Agent is built **on top of** the FeatBit feature-fl
 
 **SaaS path** — sign up at **[featbit.co](https://featbit.co)** and you're done; FeatBit + RDA are bundled.
 
-**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). Replace `FEATBIT_API_URL` on the `web` block in `modules/docker-compose.yml` (or set `web.featbit.apiUrl` in Helm values) to point RDA's web at your FeatBit — runtime env, no rebuild required.
+**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). Replace `FEATBIT_API_URL` on the `web` block in `docker/docker-compose.yml` (or set `web.featbit.apiUrl` in Helm values) to point RDA's web at your FeatBit — runtime env, no rebuild required.
 
 PostgreSQL and ClickHouse are bundled into the Docker Compose stack and bootstrap themselves on first boot — you don't have to provision them. You can override the connection strings to point at your own databases instead; see the deployment guides.
 
@@ -37,7 +37,7 @@ The fastest path is the hosted version: sign up at **[featbit.co](https://featbi
 
 #### 2. Self-host with Docker Compose
 
-Full step-by-step guide: **[`docs/deployment/docker.md`](docs/deployment/docker.md)**.
+Full step-by-step guide: **[`docker/README.md`](docker/README.md)**.
 
 #### 3. Self-host with Helm on Kubernetes
 
@@ -118,7 +118,7 @@ Every experiment carries a `dataSourceMode`. The default (`featbit-managed`) pul
 
 - **[`AGENTS.md`](AGENTS.md)** — full service map, environment variables, troubleshooting, and the canonical metric storage contract.
 - **[`WHITE_PAPER.md`](WHITE_PAPER.md)** — product thesis and market positioning.
-- **[`docs/deployment/docker.md`](docs/deployment/docker.md)** — Docker Compose deployment, end to end.
+- **[`docker/README.md`](docker/README.md)** — Docker Compose deployment, end to end.
 - **[`charts/README.md`](charts/README.md)** — Helm chart deployment: install, prerequisites, layout, design decisions, AKS examples.
 - **[`docs/usage/`](docs/usage/)** — usage docs (placeholder until the docs site is published).
 - **[`skills/featbit-release-decision/`](skills/featbit-release-decision/)** — the release-decision workflow + CF-01 → CF-08 phase definitions.

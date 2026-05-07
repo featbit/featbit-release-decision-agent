@@ -7,7 +7,7 @@
 #   1. Replace REPLACE_ME below with a long random string. Generate one:
 #        macOS / Linux:   openssl rand -base64 48
 #        Windows (PS 7+): [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
-#   2. cd modules && docker compose up -d
+#   2. cd docker && docker compose up -d
 #   3. open http://localhost:3000
 
 # Shared HMAC-SHA256 key for env-secret signing. web mints tokens, track-service
@@ -57,7 +57,7 @@ services:
       # First-boot schema apply. clickhouse-server runs *.sql in this dir as
       # part of init when the data dir is empty. Idempotent on re-runs anyway
       # (uses IF NOT EXISTS), but only the first boot triggers it.
-      - ./track-service/sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+      - ../modules/track-service/sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     ulimits:
       nofile:
         soft: 262144

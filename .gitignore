@@ -202,3 +202,8 @@ data-process/stats-service/.venv/
 data-process/stats-service/venv/
 data-process/stats-service/.env
 !data-process/stats-service/.env.example
+
+# ======
+# charts/ (Helm)
+# ======
+charts/featbit-rda/**/values.local.yaml

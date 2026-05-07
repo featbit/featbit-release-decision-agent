@@ -53,7 +53,7 @@ Storage:
   ClickHouse          ← track-service read/write
 ```
 
-The runtime services (web, track-service, run-active-test) are wired together in `modules/docker-compose.yml`. The local-mode connector is published to npm and is **not** part of `docker compose` — each end user runs it themselves on their own machine.
+The runtime services (web, track-service, run-active-test) are wired together in `docker/docker-compose.yml`. The local-mode connector is published to npm and is **not** part of `docker compose` — each end user runs it themselves on their own machine.
 
 ---
 
@@ -304,10 +304,11 @@ npm run deploy
 
 ## 🐳 Docker Compose
 
-One self-contained compose file. All values are hard-coded — no `.env`, no `${}` substitution. To customize anything (image tag, passwords, FeatBit URL, signing key, sandbox0 key), edit `modules/docker-compose.yml` directly.
+One self-contained compose file. All values are hard-coded — no `.env`, no `${}` substitution. To customize anything (image tag, passwords, FeatBit URL, signing key, sandbox0 key), edit `docker/docker-compose.yml` directly.
 
 ```
-modules/
+docker/
+  README.md            ← deployment guide
   docker-compose.yml   ← single source of truth: image tags, ports, env, volumes, the x-signing-key anchor
 ```
 
@@ -327,7 +328,7 @@ The `Local Claude Code` chat path is **not** a docker service — users run `npx
 ### Start / Stop
 
 ```bash
-cd modules
+cd docker
 
 # 1. Replace REPLACE_ME in the x-signing-key anchor at the top of docker-compose.yml
 # 2. Bring it up:
