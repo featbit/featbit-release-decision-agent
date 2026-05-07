@@ -25,7 +25,7 @@ The FeatBit Release Decision Agent is built **on top of** the FeatBit feature-fl
 
 **SaaS path** — sign up at **[featbit.co](https://featbit.co)** and you're done; FeatBit + RDA are bundled.
 
-**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). Set `FEATBIT_API_URL=https://your-featbit-api` in `modules/.env` (or `web.featbit.apiUrl` in Helm values) to point RDA's web at it — runtime env, no rebuild required.
+**Self-host path** — install FeatBit first from **[github.com/featbit/featbit](https://github.com/featbit/featbit)** (Docker Compose or Helm). Replace `FEATBIT_API_URL` on the `web` block in `modules/docker-compose.yml` (or set `web.featbit.apiUrl` in Helm values) to point RDA's web at your FeatBit — runtime env, no rebuild required.
 
 PostgreSQL and ClickHouse are bundled into the Docker Compose stack and bootstrap themselves on first boot — you don't have to provision them. You can override the connection strings to point at your own databases instead; see the deployment guides.
 

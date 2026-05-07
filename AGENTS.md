@@ -132,7 +132,7 @@ modules/web/src/
 | `TRACK_SERVICE_URL` | No (runtime) | Defaults to `http://track-service:8080` |
 | `SANDBOX0_API_KEY` | Yes (runtime, Managed mode) | Auth for sandbox0 Managed Agents (server-side; the `/api/sandbox0/*` routes use it). Used by the chat panel's "Managed" mode. |
 | `SANDBOX0_BASE_URL` | No (runtime) | Defaults to `https://agents.sandbox0.ai` |
-| `FEATBIT_API_URL` | No (runtime) | FeatBit backend for auth (default: `https://app-api.featbit.co`). Server-only — never sent to the browser. |
+| `FEATBIT_API_URL` | No (runtime) | FeatBit backend for auth (default: `https://app-api-experimentation.featbit.co`). Server-only — never sent to the browser. |
 
 The chat panel's "Managed" vs "Local Claude Code" toggle is per-browser localStorage (key `featbit:agent-mode`); there is no compile-time env var. Local mode hits `http://127.0.0.1:3100` directly and requires no server-side configuration — the user installs `npx @featbit/experimentation-claude-code-connector` themselves.
 
@@ -304,50 +304,54 @@ npm run deploy
 
 ## 🐳 Docker Compose
 
-Two compose files, layered:
-
-| File | Purpose | Image source |
-|---|---|---|
-| `modules/docker-compose.yml` | Production-ish default. Pull and run published images. | Docker Hub (`featbit/featbit-rda-{web,track-service}:${VERSION}`) |
-| `modules/docker-compose.local.yml` | Local debug overlay. Builds from source, routes web at the in-network track-service, adds `run-active-test` for synthetic events. | Local build (`featbit/featbit-rda-*:local`) |
+One self-contained compose file. All values are hard-coded — no `.env`, no `${}` substitution. To customize anything (image tag, passwords, FeatBit URL, signing key, sandbox0 key), edit `modules/docker-compose.yml` directly.
 
 ```
 modules/
-  docker-compose.yml
-  docker-compose.local.yml
-  .env                ← DATABASE_URL, CLICKHOUSE_CONNECTION_STRING, SANDBOX0_API_KEY, TRACK_SERVICE_SIGNING_KEY, …
+  docker-compose.yml   ← single source of truth: image tags, ports, env, volumes, the x-signing-key anchor
 ```
 
 ### Service map
 
-| Service | Defined in | Image (default mode) | Host port | Depends on |
-|---|---|---|---|---|
-| `track-service` | base | `featbit/featbit-rda-track-service:${VERSION}` | 5050 | external ClickHouse |
-| `web` | base | `featbit/featbit-rda-web:${VERSION}` | 3000 | track-service (when local overlay) |
-| `run-active-test` | local overlay only | `featbit/run-active-test:local` (build-only) | — | track-service (healthy) |
+| Service | Image | Host port | Depends on |
+|---|---|---|---|
+| `postgres` | `postgres:16-alpine` | 5432 | — |
+| `clickhouse` | `clickhouse/clickhouse-server:24-alpine` | 8123, 9000 | — |
+| `track-service` | `featbit/featbit-rda-track-service:0.0.4-beta` | 5050 | clickhouse (healthy) |
+| `web` | `featbit/featbit-rda-web:0.0.4-beta` | 3000 | postgres (healthy) |
 
 The `Local Claude Code` chat path is **not** a docker service — users run `npx @featbit/experimentation-claude-code-connector` on their own machines.
+
+`run-active-test` is a Cloudflare Worker (cron-triggered), not a compose service. See `modules/run-active-test-worker/`.
 
 ### Start / Stop
 
 ```bash
 cd modules
 
-# Default mode — pull and run published images:
-export VERSION=0.0.4-beta            # whichever tag you want; defaults are pinned in docker-compose.yml
-docker compose pull
+# 1. Replace REPLACE_ME in the x-signing-key anchor at the top of docker-compose.yml
+# 2. Bring it up:
 docker compose up -d
-
-# Local debug — build from source + in-network routing + run-active-test:
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 # Tail logs
 docker compose logs -f web
 docker compose logs -f track-service
 
-# Stop (works in either mode)
+# Stop
 docker compose down
 ```
+
+### Building local images
+
+When you want a real container off your local source instead of the published image (e.g. to validate a Dockerfile change), build it directly — no compose overlay:
+
+```bash
+docker build -t featbit/featbit-rda-web:local        modules/web
+docker build -t featbit/featbit-rda-track-service:local modules/track-service
+# Then point the `image:` lines in docker-compose.yml at the :local tag.
+```
+
+For day-to-day source changes, use the per-service dev loop instead — `npm run dev` in `modules/web`, `dotnet run` in `modules/track-service`. Compose is for cross-service integration only.
 
 ---
 
@@ -483,9 +487,9 @@ this column directly, so guardrail `metricAgg` and `inverse` propagate to
 ### Analysis returns no data
 
 1. Check track-service health: `curl http://localhost:5050/health`
-2. Verify ClickHouse connection string in `.env`
+2. Verify `CLICKHOUSE_CONNECTION_STRING` on the `track-service` block in `docker-compose.yml`
 3. Check events were ingested: look for `[BatchIngestWorker]` log lines in `docker compose logs track-service`
-4. Verify `run-active-test` container is running and sending events
+4. Verify the `run-active-test` Cloudflare Worker is firing (Workers & Pages → Cron Triggers)
 
 ### track-service won't start
 
@@ -496,7 +500,7 @@ this column directly, so guardrail `metricAgg` and `inverse` propagate to
 ### Managed-mode chat not responding
 
 - Check `docker compose logs web` for errors from `/api/sandbox0/*` routes
-- Verify `SANDBOX0_API_KEY` and `SANDBOX0_BASE_URL` are set in `.env`
+- Verify `SANDBOX0_API_KEY` and `SANDBOX0_BASE_URL` on the `web` block in `docker-compose.yml`
 - Confirm the chat panel's mode selector is on **Managed** (top-right of the chat)
 
 ### Local-Claude-Code mode not connecting

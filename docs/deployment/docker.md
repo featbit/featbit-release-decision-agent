@@ -11,19 +11,38 @@ The compose stack ships everything in one command — web, track-service, Postgr
 | `postgres` | `postgres:16-alpine` | `5432` | Persistent volume `pg_data`. |
 | `clickhouse` | `clickhouse/clickhouse-server:24-alpine` | `8123`, `9000` | Auto-applies `track-service/sql/schema.sql` from `/docker-entrypoint-initdb.d/` on first boot. Persistent volume `ch_data`. |
 
-External dependency that **isn't** in the stack: a running FeatBit instance ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Defaults to FeatBit SaaS (`https://app-api.featbit.co`); self-hosters set `FEATBIT_API_URL` in `.env`.
+External dependency that **isn't** in the stack: a running FeatBit instance ([`github.com/featbit/featbit`](https://github.com/featbit/featbit)). Defaults to FeatBit SaaS (`https://app-api-experimentation.featbit.co`); self-hosters set `FEATBIT_API_URL` in `.env`.
 
 ---
 
 ## Quickstart
 
+The compose file is self-contained — no `.env`, no variable substitution. Two steps:
+
+**1. Set the cross-service signing key.** Open `modules/docker-compose.yml` and replace the `REPLACE_ME` placeholder in the `x-signing-key` anchor near the top with a long random string. Both `web` and `track-service` reference the anchor, so you only edit one place.
+
+Generate a key:
+
+```bash
+# macOS / Linux
+openssl rand -base64 48
+```
+
+```powershell
+# Windows (PowerShell 7+)
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+```
+
+**2. Bring the stack up.**
+
 ```bash
 cd modules
-cp .env.example .env       # defaults are fine for first boot
 docker compose up -d
 ```
 
 Once the stack is healthy, open <http://localhost:3000> in your browser.
+
+> Skipping step 1 still works on `localhost`, but `track-service` falls back to "legacy mode" (Authorization header trusted as plaintext envId, no HMAC validation) and prints a warning on every boot. Don't expose a stack with `REPLACE_ME` outside `localhost`.
 
 ### Logging in
 
@@ -40,21 +59,21 @@ If FeatBit is unreachable, login fails — check the [troubleshooting](#troubles
 
 ## Configuration
 
-Edit `modules/.env`. The knobs you'll actually touch:
+All knobs live in `modules/docker-compose.yml`. Edit the file directly — there is no `.env` layer. The fields you'll actually touch:
 
-| Variable | Default | What it does |
+| Field (in compose) | Default | What it does |
 |---|---|---|
-| `VERSION` | `0.0.4-beta` | Image tag for `web` and `track-service`. |
-| `POSTGRES_PASSWORD` / `CLICKHOUSE_PASSWORD` | `featbit_local_pw` | Passwords for the embedded databases. Change before exposing anything. |
-| `TRACK_SERVICE_SIGNING_KEY` | empty | HMAC for signed `envId`. Set to a long random string; the same value must be on both web and track-service. Generate: `openssl rand -base64 48`. |
+| `image:` tag on `web` and `track-service` | `0.0.4-beta` | Pin to a different release. |
+| `POSTGRES_PASSWORD` / `CLICKHOUSE_PASSWORD` | `featbit_local_pw` | Passwords for the embedded databases. Change before exposing anything. (Also update the matching values in `DATABASE_URL` and `CLICKHOUSE_CONNECTION_STRING`.) |
+| `x-signing-key` anchor | `REPLACE_ME` | HMAC for signed `envId`. Replace before exposing the stack outside `localhost`. |
 | `SANDBOX0_API_KEY` | empty | Required for the Managed-mode chat panel; without it the chat returns 401. |
-| `FEATBIT_API_URL` | SaaS | Set to your FeatBit API URL if self-hosting FeatBit. |
-| `DATABASE_URL` | embedded | Override to point at an external PostgreSQL. |
-| `CLICKHOUSE_CONNECTION_STRING` | embedded | Override to point at an external ClickHouse. |
+| `FEATBIT_API_URL` | SaaS | Replace with your FeatBit API URL if self-hosting FeatBit. |
+| `DATABASE_URL` (`web`) | embedded | Replace to point at an external PostgreSQL. |
+| `CLICKHOUSE_CONNECTION_STRING` (`track-service`) | embedded | Replace to point at an external ClickHouse. |
 
 ### Using external databases
 
-Override the connection string in `.env`, then skip the embedded service when bringing the stack up:
+Replace the connection string in `docker-compose.yml`, then skip the embedded service when bringing the stack up:
 
 ```bash
 # External PG + external CH:
@@ -82,17 +101,6 @@ docker compose up -d web postgres
 
 ---
 
-## Local debug overlay
-
-`docker-compose.local.yml` builds web + track-service from source instead of pulling the published images, and adds the `run-active-test` synthetic event generator. Use it when you're developing locally and want source changes to round-trip.
-
-```bash
-cd modules
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
-```
-
----
-
 ## Going to production
 
 Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret projection from Key Vault, and pod disruption budgets, use the Helm chart instead — see [`helm.md`](helm.md).
@@ -105,10 +113,10 @@ Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret pr
 |---|---|
 | `web` container restarts repeatedly with `Prisma migrate failed` | `DATABASE_URL` user lacks `CREATE` privilege on the schema, or password has unescaped special characters (URL-encode `@` → `%40` etc.) |
 | `web` boots but `/api/experiments/.../analyze` returns `503` | track-service not reachable, or external CH missing schema |
-| `track-service` returns `401` on every query | `TRACK_SERVICE_SIGNING_KEY` mismatched between web and track-service |
-| `track-service` logs `legacy mode (Authorization = envId)` warning | `TRACK_SERVICE_SIGNING_KEY` not set — auth bypassed; only safe for local dev |
+| `track-service` returns `401` on every query | `web` and `track-service` see different signing keys — make sure both `TRACK_SERVICE_SIGNING_KEY` lines reference the same `*signing-key` anchor and you `docker compose up -d` to re-roll the env. |
+| `track-service` logs `legacy mode (Authorization = envId)` warning | `x-signing-key` still set to `REPLACE_ME` — auth bypassed; only safe for `localhost`. |
 | Browser login redirects in a loop | `FEATBIT_API_URL` points at a FeatBit backend the **server** can't reach. Try `docker compose exec web wget -qO- "$FEATBIT_API_URL/health"` |
-| Chat panel returns `401: missing authorization header` | `SANDBOX0_API_KEY` empty in `.env` |
+| Chat panel returns `401: missing authorization header` | `SANDBOX0_API_KEY` is `""` in `docker-compose.yml`. |
 | `clickhouse` container doesn't apply `schema.sql` | The init scripts only run when the data dir is empty. Wipe and re-init: `docker compose down -v` then `docker compose up -d` |
 
 For the full service map and env-var reference, see [`AGENTS.md`](../../AGENTS.md).

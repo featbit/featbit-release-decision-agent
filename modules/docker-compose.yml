@@ -1,21 +1,21 @@
 # Self-contained stack: web + track-service + their own PostgreSQL + ClickHouse.
-# `docker compose up -d` brings up everything, applies the ClickHouse schema on
-# first boot (via clickhouse-server's /docker-entrypoint-initdb.d/), and runs
-# Prisma migrations on every web start (via web's docker-entrypoint.sh).
+# All values are hard-coded — no .env, no variable substitution. To customize
+# (passwords, image tag, FeatBit URL, sandbox0 key, etc.), edit this file
+# directly.
 #
-# Usage (default — embedded DBs):
-#   cd modules
-#   cp .env.example .env       # the defaults are fine for first boot
-#   docker compose up -d
-#   open http://localhost:3000
-#
-# Usage (external DBs):
-#   Override DATABASE_URL and/or CLICKHOUSE_CONNECTION_STRING in .env, then
-#   skip the embedded services:
-#     docker compose up -d web track-service
-#
-# To debug locally with build-from-source, layer in docker-compose.local.yml
-# — see that file's header.
+# Quickstart:
+#   1. Replace REPLACE_ME below with a long random string. Generate one:
+#        macOS / Linux:   openssl rand -base64 48
+#        Windows (PS 7+): [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(48))
+#   2. cd modules && docker compose up -d
+#   3. open http://localhost:3000
+
+# Shared HMAC-SHA256 key for env-secret signing. web mints tokens, track-service
+# validates them — both services MUST see the same value. The anchor below is
+# referenced from both service blocks via *signing-key, so you only edit it
+# here. Leaving REPLACE_ME makes track-service log a "legacy mode" warning and
+# trust the Authorization header as plaintext envId — only safe for localhost.
+x-signing-key: &signing-key "REPLACE_ME"
 
 services:
 
@@ -24,15 +24,15 @@ services:
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER:     ${POSTGRES_USER:-featbit}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-featbit_local_pw}
-      POSTGRES_DB:       ${POSTGRES_DB:-release_decision}
+      POSTGRES_USER: featbit
+      POSTGRES_PASSWORD: featbit_local_pw
+      POSTGRES_DB: release_decision
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-featbit} -d ${POSTGRES_DB:-release_decision}"]
+      test: ["CMD-SHELL", "pg_isready -U featbit -d release_decision"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -43,15 +43,15 @@ services:
     container_name: clickhouse
     restart: unless-stopped
     environment:
-      CLICKHOUSE_USER:                    ${CLICKHOUSE_USER:-featbit}
-      CLICKHOUSE_PASSWORD:                ${CLICKHOUSE_PASSWORD:-featbit_local_pw}
+      CLICKHOUSE_USER: featbit
+      CLICKHOUSE_PASSWORD: featbit_local_pw
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
       # CLICKHOUSE_DB pre-creates the database before the initdb scripts run,
       # so schema.sql's `CREATE DATABASE IF NOT EXISTS` becomes a no-op.
-      CLICKHOUSE_DB:                      ${CLICKHOUSE_DATABASE:-featbit}
+      CLICKHOUSE_DB: featbit
     ports:
-      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
-      - "${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+      - "8123:8123"
+      - "9000:9000"
     volumes:
       - ch_data:/var/lib/clickhouse
       # First-boot schema apply. clickhouse-server runs *.sql in this dir as
@@ -70,7 +70,7 @@ services:
       start_period: 10s
 
   track-service:
-    image: featbit/featbit-rda-track-service:${VERSION:-0.0.4-beta}
+    image: featbit/featbit-rda-track-service:0.0.4-beta
     container_name: track-service
     restart: unless-stopped
     depends_on:
@@ -81,22 +81,16 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       ASPNETCORE_ENVIRONMENT: Production
-      # Defaults to the embedded clickhouse service. Override CLICKHOUSE_CONNECTION_STRING
-      # in .env to point at an external CH (and skip the `clickhouse` service).
-      CLICKHOUSE_CONNECTION_STRING: ${CLICKHOUSE_CONNECTION_STRING:-Host=clickhouse;Port=8123;User=${CLICKHOUSE_USER:-featbit};Password=${CLICKHOUSE_PASSWORD:-featbit_local_pw};Protocol=http;Database=${CLICKHOUSE_DATABASE:-featbit}}
-      # HMAC key for env-secret validation. Share the same value with every
-      # service that mints tokens (web, run-active-test). When unset the
-      # service logs a warning and falls back to "Authorization header = envId".
-      TRACK_SERVICE_SIGNING_KEY: ${TRACK_SERVICE_SIGNING_KEY:-}
-      Ingest__ChannelCapacity: ${INGEST_CHANNEL_CAPACITY:-100000}
-      Ingest__BatchSize:       ${INGEST_BATCH_SIZE:-1000}
-      Ingest__FlushIntervalMs: ${INGEST_FLUSH_INTERVAL_MS:-5000}
-      # ClickHouse table layout — overrides appsettings.json defaults. Match
-      # the values used by your `<database>.<table>` in CH; the chart uses the
-      # same keys (charts/featbit-rda/values.yaml → trackService.clickHouse.*).
-      ClickHouse__Database:             ${CLICKHOUSE_DATABASE:-featbit}
-      ClickHouse__FlagEvaluationsTable: ${CLICKHOUSE_FLAG_EVALUATIONS_TABLE:-flag_evaluations}
-      ClickHouse__MetricEventsTable:    ${CLICKHOUSE_METRIC_EVENTS_TABLE:-metric_events}
+      # If you change the CLICKHOUSE_USER/PASSWORD/DB above, update the
+      # User/Password/Database fields here to match.
+      CLICKHOUSE_CONNECTION_STRING: "Host=clickhouse;Port=8123;User=featbit;Password=featbit_local_pw;Protocol=http;Database=featbit"
+      TRACK_SERVICE_SIGNING_KEY: *signing-key
+      Ingest__ChannelCapacity: "100000"
+      Ingest__BatchSize: "1000"
+      Ingest__FlushIntervalMs: "5000"
+      ClickHouse__Database: featbit
+      ClickHouse__FlagEvaluationsTable: flag_evaluations
+      ClickHouse__MetricEventsTable: metric_events
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -111,7 +105,7 @@ services:
   #     on their own machine, the browser hits http://127.0.0.1:3100 directly.
   # No backend agent container is needed in compose.
   web:
-    image: featbit/featbit-rda-web:${VERSION:-0.0.4-beta}
+    image: featbit/featbit-rda-web:0.0.4-beta
     container_name: web
     restart: unless-stopped
     depends_on:
@@ -120,33 +114,21 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Defaults to the embedded postgres service. Override DATABASE_URL in
-      # .env to point at an external PG (and skip the `postgres` service).
+      # If you change the POSTGRES_USER/PASSWORD/DB above, update this URL too.
       # The web entrypoint runs `prisma migrate deploy` on every start.
-      DATABASE_URL:        ${DATABASE_URL:-postgresql://${POSTGRES_USER:-featbit}:${POSTGRES_PASSWORD:-featbit_local_pw}@postgres:5432/${POSTGRES_DB:-release_decision}?sslmode=disable}
+      DATABASE_URL: "postgresql://featbit:featbit_local_pw@postgres:5432/release_decision?sslmode=disable"
       # FeatBit backend the web app authenticates against. Defaults to FeatBit
-      # SaaS; self-hosters of FeatBit set this to their own API URL in .env.
-      # Server-side only — never sent to the browser (browser goes through
-      # the same-origin /api/featbit-proxy route).
-      FEATBIT_API_URL:     ${FEATBIT_API_URL:-https://app-api.featbit.co}
-      # Defaults to the in-network track-service so `docker compose up -d`
-      # works as a full stack out of the box. To run web standalone against
-      # an external track-service (or skip it via customer-managed-endpoint),
-      # set TRACK_SERVICE_URL in .env.
-      TRACK_SERVICE_URL:   ${TRACK_SERVICE_URL:-http://track-service:8080}
-      # Same key as track-service — web's track-client signs envId per query.
-      # Server-side only; never exposed to the browser.
-      TRACK_SERVICE_SIGNING_KEY: ${TRACK_SERVICE_SIGNING_KEY:-}
-      NODE_ENV:            production
+      # SaaS; self-hosters of FeatBit replace this with their own API URL.
+      # Server-side only — never sent to the browser.
+      FEATBIT_API_URL: "https://app-api-experimentation.featbit.co"
+      TRACK_SERVICE_URL: "http://track-service:8080"
+      TRACK_SERVICE_SIGNING_KEY: *signing-key
+      NODE_ENV: production
       # sandbox0 Managed Agents (the default chat backend in fresh browsers).
-      # Without SANDBOX0_API_KEY the chat panel returns 401 on first message.
-      SANDBOX0_API_KEY:    ${SANDBOX0_API_KEY:-}
-      SANDBOX0_BASE_URL:   ${SANDBOX0_BASE_URL:-https://agents.sandbox0.ai}
-      # Optional knobs — uncomment/override only when needed.
-      # TRACK_TIMEOUT_MS:               "10000"
-      # ALLOW_PRIVATE_CUSTOMER_ENDPOINTS: "1"     # dev only — permits 127.0.0.1 / 10.* customer endpoints
-      # FEATBIT_ACCESS_TOKEN:           ${FEATBIT_ACCESS_TOKEN:-}
-      # MANAGED_AGENT_VERSION:          "default"
+      # Without a key the chat panel returns 401 on first message — the rest
+      # of the app still works.
+      SANDBOX0_API_KEY: ""
+      SANDBOX0_BASE_URL: "https://agents.sandbox0.ai"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000"]
       interval: 30s
