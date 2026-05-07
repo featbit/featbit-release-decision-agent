@@ -207,3 +207,4 @@ data-process/stats-service/.env
 # charts/ (Helm)
 # ======
 charts/featbit-rda/**/values.local.yaml
+charts/featbit-rda/**/keyvault-secret-provider.local.yaml
