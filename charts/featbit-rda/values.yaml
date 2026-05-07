@@ -17,13 +17,13 @@ global:
 trackService:
   enabled: true
 
-  replicaCount: 3
+  replicaCount: 1
 
   image:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/featbit-rda-track-service
-    tag: "0.3.0"
+    tag: "0.0.5-beta"
     pullPolicy: IfNotPresent
 
   serviceAccount:
@@ -119,8 +119,8 @@ trackService:
 
   autoscaling:
     enabled: true
-    minReplicas: 3
-    maxReplicas: 10
+    minReplicas: 1
+    maxReplicas: 3
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
 
@@ -163,13 +163,13 @@ trackService:
 web:
   enabled: true
 
-  replicaCount: 2
+  replicaCount: 1
 
   image:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/featbit-rda-web
-    tag: "0.2.0"
+    tag: "0.0.5-beta"
     pullPolicy: IfNotPresent
 
   serviceAccount:
@@ -264,8 +264,8 @@ web:
 
   autoscaling:
     enabled: true
-    minReplicas: 2
-    maxReplicas: 5
+    minReplicas: 1
+    maxReplicas: 3
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
 

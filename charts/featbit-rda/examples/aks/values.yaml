@@ -22,13 +22,13 @@ global:
 # ── track-service ──────────────────────────────────────────────────────────────
 trackService:
   enabled: true
-  replicaCount: 3
+  replicaCount: 1
 
   image:
     # Inherits global.imageRegistry when empty.
     registry: ""
-    repository: featbit/track-service
-    tag: "0.3.0"
+    repository: featbit/featbit-rda-track-service
+    tag: "0.0.5-beta"
     pullPolicy: IfNotPresent
 
   # (A) Dev / staging — plain Secret generated from the value below:
@@ -73,8 +73,8 @@ trackService:
 
   autoscaling:
     enabled: true
-    minReplicas: 3
-    maxReplicas: 10
+    minReplicas: 1
+    maxReplicas: 3
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
 
@@ -113,12 +113,12 @@ trackService:
 # Secret) for sandbox0 keys.
 web:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
 
   image:
     registry: ""           # inherits global.imageRegistry
-    repository: featbit/web
-    tag: "0.2.0"
+    repository: featbit/featbit-rda-web
+    tag: "0.0.5-beta"
     pullPolicy: IfNotPresent
 
   # (A) Dev / staging — chart generates a Secret from the value below:
@@ -167,8 +167,8 @@ web:
 
   autoscaling:
     enabled: true
-    minReplicas: 2
-    maxReplicas: 5
+    minReplicas: 1
+    maxReplicas: 3
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
 

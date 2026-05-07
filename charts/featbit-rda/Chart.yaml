@@ -6,7 +6,7 @@ description: |
   Each service is toggled via its own section in values.yaml (e.g. trackService.enabled).
 type: application
 version: 0.2.0
-appVersion: "0.2.0"
+appVersion: "0.0.5-beta"
 home: https://github.com/featbit/featbit-release-decision-agent
 sources:
   - https://github.com/featbit/featbit-release-decision-agent

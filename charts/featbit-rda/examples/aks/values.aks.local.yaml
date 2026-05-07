@@ -10,12 +10,12 @@ global:
 
 trackService:
   enabled: true
-  replicaCount: 3
+  replicaCount: 1
 
   image:
     registry: ""
-    repository: featbit/track-service
-    tag: "0.3.0"
+    repository: featbit/featbit-rda-track-service
+    tag: "0.0.5-beta"
     pullPolicy: IfNotPresent
 
   clickHouse:
@@ -51,8 +51,8 @@ trackService:
 
   autoscaling:
     enabled: true
-    minReplicas: 3
-    maxReplicas: 10
+    minReplicas: 1
+    maxReplicas: 3
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
 
@@ -91,12 +91,12 @@ trackService:
 #     -t featbitrdawu3.azurecr.io/featbit/web:0.1.0
 web:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
 
   image:
     registry: ""
-    repository: featbit/web
-    tag: "0.2.0"
+    repository: featbit/featbit-rda-web
+    tag: "0.0.5-beta"
     pullPolicy: IfNotPresent
 
   database:
@@ -141,7 +141,7 @@ web:
 
   autoscaling:
     enabled: true
-    minReplicas: 2
+    minReplicas: 1
     maxReplicas: 5
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
