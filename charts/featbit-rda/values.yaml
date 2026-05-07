@@ -206,7 +206,7 @@ web:
   # default; self-hosters of github.com/featbit/featbit set this to their
   # own API URL. Server-only — never sent to the browser.
   featbit:
-    apiUrl: "https://app-api.featbit.co"
+    apiUrl: "https://app-api-experimentation.featbit.co"
 
   # PostgreSQL connection string for Prisma. Either set `connectionString`
   # (chart generates a Secret) or `existingSecret` to reference one you

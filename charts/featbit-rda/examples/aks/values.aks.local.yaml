@@ -87,7 +87,7 @@ trackService:
 # in CI with these args before bumping the tag below:
 #   docker build modules/web \
 #     --build-arg NEXT_PUBLIC_SANDBOX_URL=https://sandbox.featbit.ai \
-#     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api.featbit.co \
+#     --build-arg NEXT_PUBLIC_FEATBIT_API_URL=https://app-api-experimentation.featbit.co \
 #     -t featbitrdawu3.azurecr.io/featbit/web:0.1.0
 web:
   enabled: true

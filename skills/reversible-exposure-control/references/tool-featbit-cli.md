@@ -42,7 +42,7 @@ Config is stored outside the repository:
 
 Environment variable overrides (take precedence over config file): `FEATBIT_HOST`, `FEATBIT_TOKEN`, `FEATBIT_ORG`
 
-Default host if none provided: `https://app-api.featbit.co`
+Default host if none provided: `https://app-api-experimentation.featbit.co`
 
 All business commands accept `--host`, `--token`, and `--org` to override saved config on a single call without writing to disk.
 
