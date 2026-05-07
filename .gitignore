@@ -11,6 +11,7 @@ skills/**/.DS_Store
 *.user
 *.suo
 *.userosscache
+*.sln
 *.sln.docstates
 TestResults/
 artifacts/
