@@ -37,16 +37,6 @@ The fastest path is the hosted version: sign up at **[featbit.co](https://featbi
 
 #### 2. Self-host with Docker Compose
 
-```bash
-cd modules
-cp .env.example .env       # defaults are fine for first boot
-docker compose up -d       # pulls images, brings up everything, applies schemas
-```
-
-Open [http://localhost:3000](http://localhost:3000) and log in with your FeatBit account.
-
-The compose stack brings up web, track-service, PostgreSQL, and ClickHouse together. ClickHouse's schema is auto-applied via `/docker-entrypoint-initdb.d/`; the web container runs `prisma migrate deploy` on every start. Override `DATABASE_URL` / `CLICKHOUSE_CONNECTION_STRING` in `.env` to use external databases instead of the bundled ones.
-
 Full step-by-step guide: **[`docs/deployment/docker.md`](docs/deployment/docker.md)**.
 
 #### 3. Self-host with Helm on Kubernetes
@@ -59,7 +49,7 @@ helm install featbit-rda charts/featbit-rda \
   -f charts/featbit-rda/examples/aks/values.yaml
 ```
 
-Full guide and AKS reference values: **[`docs/deployment/helm.md`](docs/deployment/helm.md)**.
+Full guide and AKS reference values: **[`charts/README.md`](charts/README.md)**.
 
 ### Usage
 
@@ -129,9 +119,8 @@ Every experiment carries a `dataSourceMode`. The default (`featbit-managed`) pul
 - **[`AGENTS.md`](AGENTS.md)** — full service map, environment variables, troubleshooting, and the canonical metric storage contract.
 - **[`WHITE_PAPER.md`](WHITE_PAPER.md)** — product thesis and market positioning.
 - **[`docs/deployment/docker.md`](docs/deployment/docker.md)** — Docker Compose deployment, end to end.
-- **[`docs/deployment/helm.md`](docs/deployment/helm.md)** — Helm chart deployment.
+- **[`charts/README.md`](charts/README.md)** — Helm chart deployment: install, prerequisites, layout, design decisions, AKS examples.
 - **[`docs/usage/`](docs/usage/)** — usage docs (placeholder until the docs site is published).
-- **[`charts/README.md`](charts/README.md)** — Helm chart layout, design decisions, AKS examples.
 - **[`skills/featbit-release-decision/`](skills/featbit-release-decision/)** — the release-decision workflow + CF-01 → CF-08 phase definitions.
 - **[`modules/experimentation-claude-code-connector/README.md`](modules/experimentation-claude-code-connector/README.md)** — Local-mode bridge: install, config, SSE contract, publishing.
 - **[`tutorial/`](tutorial/)** — Bayesian and experimentation learning notes (EN / 中文).

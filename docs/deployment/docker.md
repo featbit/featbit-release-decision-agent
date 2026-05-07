@@ -103,7 +103,7 @@ docker compose up -d web postgres
 
 ## Going to production
 
-Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret projection from Key Vault, and pod disruption budgets, use the Helm chart instead — see [`helm.md`](helm.md).
+Compose is fine for a single host. For HA, autoscaling, ingress + TLS, secret projection from Key Vault, and pod disruption budgets, use the Helm chart instead — see [`charts/README.md`](../../charts/README.md).
 
 ---
 
