@@ -28,7 +28,7 @@ trackService:
     # Inherits global.imageRegistry when empty.
     registry: ""
     repository: featbit/featbit-rda-track-service
-    tag: "0.0.6-beta"
+    tag: "0.0.6"
     pullPolicy: IfNotPresent
 
   # (A) Dev / staging — plain Secret generated from the value below:
@@ -118,7 +118,7 @@ web:
   image:
     registry: ""           # inherits global.imageRegistry
     repository: featbit/featbit-rda-web
-    tag: "0.0.6-beta"
+    tag: "0.0.6"
     pullPolicy: IfNotPresent
 
   # (A) Dev / staging — chart generates a Secret from the value below:
