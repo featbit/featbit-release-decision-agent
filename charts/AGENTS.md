@@ -85,69 +85,14 @@ Installed ~99 days before this work, used by multiple releases:
 - CH password path: `modules/.env` → human pastes into `az keyvault secret set`
   → KV → CSI → K8s Secret → pod env var. Never touches the chart.
 
-## Application changes pending deploy — chart 0.2.0 (2026-05-01)
+## Build + push images by hand
 
-`Chart.yaml` bumped 0.1.0 → 0.2.0. New image tags:
-
-| Image | Old | New |
-|---|---|---|
-| `featbit/track-service` | `0.2.0` | `0.3.0` |
-| `featbit/web` | `0.1.0` | `0.2.0` |
-
-The chart **structure** (templates, env vars, secrets) is unchanged — only
-image tags and version metadata moved. No new prereqs.
-
-### What's actually in the new images
-
-- **Metric vocabulary unified** (`{binary | continuous} × {once | count | sum | average}`)
-  end-to-end across UI, server actions, REST API, sync.ts, SKILL.md, and
-  the track-service request schema. Setup-side writes (Edit Metrics dialog,
-  `/api/experiments/[id]/state` PUT, expert wizard) now propagate to the
-  latest run row via `propagateMetricsToLatestRun` — without this, the
-  analyzer kept reading stale defaults.
-- **track-service request body now requires `metricType` + `metricAgg`.**
-  Old behaviour (omit them → SQL falls back to "sum" per-user contribution)
-  is gone. Anything missing the fields gets a 400.
-- **Inverse-direction fix.** Guardrails declared with `direction=increase_bad`
-  (e.g. `visitor_bounced`) now correctly produce `inverse=true` so the
-  analyzer's `P(harm)` is `P(treatment > control)`, not the flipped form.
-- Drops the legacy `(sumValue > conversions)` heuristic that misclassified
-  binary metrics carrying numeric payloads as continuous.
-- UI: variant key auto-remap when configured names don't match ClickHouse-stored
-  variation values; warnings array surfaces in the analysis output; observation
-  window shows `ongoing` when only start is set; chat-trigger callout is now
-  English; expert wizard adds a per-guardrail `metricAgg` select.
-
-### Deploy order recommendation
-
-Roll **track-service first**, then **web**. Reason: new track-service rejects
-requests missing `metricType` / `metricAgg` (400). Old web pods don't send
-these fields. During a parallel rollout there is a brief window where stale
-old-web pods could call new track-service and 400 — recovers in ≤ 1 minute as
-the rolling update completes, but a phased upgrade avoids the noise:
-
-```
-helm upgrade featbit-rda ./charts/featbit-rda \
-  -f charts/featbit-rda/examples/aks/values.aks.local.yaml \
-  --set web.image.tag=0.1.0       # pin web to old image …
-helm upgrade featbit-rda ./charts/featbit-rda \
-  -f charts/featbit-rda/examples/aks/values.aks.local.yaml \
-  # … then drop the override on the second pass
-```
-
-Reverse direction (new web → old track-service) is fine: old track-service
-silently ignores the unknown request fields and runs its sum-based SQL,
-which is correct for binary/once metrics (the only kind FeatBit's UI ever
-emits at the moment).
-
-### Build + push commands
-
-CI now publishes the canonical images via `.github/workflows/release.yml`
-(see `RELEASING.md`). The published web image has no build-time config —
+CI publishes canonical images via `.github/workflows/release.yml` (see
+`RELEASING.md`). The published web image has no build-time config —
 `FEATBIT_API_URL`, `SANDBOX0_API_KEY`, etc. are all runtime envs set in the
 chart (`web.featbit.apiUrl`, `web.extraEnv`).
 
-If you ever need to push to a private ACR by hand:
+If you need to push to a private ACR by hand:
 
 ```bash
 docker build -t <acr>/featbit/featbit-rda-track-service:<version> modules/track-service
@@ -157,33 +102,22 @@ docker build -t <acr>/featbit/featbit-rda-web:<version> modules/web
 docker push  <acr>/featbit/featbit-rda-web:<version>
 ```
 
+## Chat panel modes (web)
+
 The chat panel exposes two modes chosen per-browser at runtime:
 
-- **Managed** (default) — traffic flows through web's `/api/sandbox0/*`
-  routes to sandbox0 Managed Agents. Configure via `SANDBOX0_API_KEY` /
-  `SANDBOX0_BASE_URL` (defaults to `https://agents.sandbox0.ai`).
-- **Local Claude Code** — the browser hits `http://127.0.0.1:3100` fronted
-  by the user's local `@featbit/experimentation-claude-code-connector`. Wired via
-the same Key Vault SPC as the other secrets:
-
-- KV secret name: `featbit-rda-sandbox0-api-key`
-- Projected K8s Secret: `featbit-rda-sandbox0-secret` (key `api-key`)
-- `values.aks.local.yaml` → `web.extraEnv[SANDBOX0_API_KEY]` references it
-  via `secretKeyRef`
-
-Confirm your `values.aks.local.yaml` carries the `extraEnv` block before
-rolling — chat returns 401 "missing authorization header" if
-`SANDBOX0_API_KEY` is empty.
-
-### One-off data fix already applied
-
-Experiment `3988bc05-0e08-44ca-b11e-ad409412ff47` (FeatBit Official Website /
-homepage hero heading) had legacy guardrail data that surfaced the inverse
-bug (`visitor_bounced` reading 99.8% P(harm)). The DB rows were normalised
-on 2026-04-30 via `modules/web/scripts/normalize-experiment-metrics.ts`. No
-further action needed for that experiment. Other experiments with `direction`
-but no explicit `inverse` would benefit from the same script — re-running it
-per experiment ID is safe and idempotent.
+- **Managed** (default) — web's `/api/sandbox0/*` routes proxy to sandbox0
+  Managed Agents. Configure via `SANDBOX0_API_KEY` / `SANDBOX0_BASE_URL`
+  (defaults to `https://agents.sandbox0.ai`). The API key in production
+  comes from KV via the same SPC as the other secrets:
+  - KV secret name: `featbit-rda-sandbox0-api-key`
+  - Projected K8s Secret: `featbit-rda-sandbox0-secret` (key `api-key`)
+  - `values.aks.local.yaml` → `web.extraEnv[SANDBOX0_API_KEY]` references
+    it via `secretKeyRef`. Without this block, chat returns 401
+    "missing authorization header".
+- **Local Claude Code** — browser calls `http://127.0.0.1:3100`, fronted by
+  the user's local `@featbit/experimentation-claude-code-connector`. No
+  cluster-side config needed.
 
 ## TODO
 

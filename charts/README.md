@@ -10,17 +10,18 @@ The chart is deliberately cloud-neutral. It does **not** provision PostgreSQL or
 
 ```bash
 helm install featbit-rda charts/featbit-rda \
-  --namespace featbit --create-namespace \
-  -f charts/featbit-rda/examples/aks/values.yaml
+  --namespace featbit-rda --create-namespace \
+  -f charts/featbit-rda/examples/aks/values.aks.local.yaml
 ```
 
-A reference AKS install (NGINX ingress, cert-manager, Key Vault CSI) is documented in [`featbit-rda/examples/aks/`](featbit-rda/examples/aks/). A Docker Desktop smoke-test profile lives in [`featbit-rda/examples/local/`](featbit-rda/examples/local/).
+A reference AKS install (NGINX ingress, cert-manager, Key Vault CSI) is documented in [`featbit-rda/examples/aks/`](featbit-rda/examples/aks/) — start from the public template `values.yaml`, copy to `values.aks.local.yaml`, fill in the marked fields, then install with the command above. A Docker Desktop smoke-test profile lives in [`featbit-rda/examples/local/`](featbit-rda/examples/local/).
 
 ## Upgrade
 
 ```bash
 helm upgrade featbit-rda charts/featbit-rda \
-  -n featbit -f path/to/your/values.yaml
+  -n featbit-rda \
+  -f charts/featbit-rda/examples/aks/values.aks.local.yaml
 ```
 
 ---
