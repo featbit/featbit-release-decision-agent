@@ -6,7 +6,10 @@
 #   - ClickHouse DB: default  (tables live in `default`, not `featbit`)
 
 global:
-  imageRegistry: "featbitrdawu3.azurecr.io"
+  # Pull from Docker Hub directly (release.yml publishes featbit/featbit-rda-*
+  # there). ACR is no longer in the loop. Public images, no imagePullSecrets
+  # needed.
+  imageRegistry: ""
 
 trackService:
   enabled: true

@@ -20,6 +20,8 @@ type PermissionMode = "default" | "acceptEdits" | "bypassPermissions" | "plan";
  * tool-level approvals (you will need to wire your own approval mechanism;
  * the SDK's built-in TTY prompt cannot reach this process).
  */
+// Resolved at request time, not module load, so that cli.ts can mutate
+// process.env from CLI flags before the first request arrives.
 function resolvePermissionMode(): PermissionMode {
   const raw = process.env.PERMISSION_MODE?.trim();
   if (
@@ -32,8 +34,6 @@ function resolvePermissionMode(): PermissionMode {
   }
   return "bypassPermissions";
 }
-
-const PERMISSION_MODE = resolvePermissionMode();
 
 /**
  * Stream a Claude Code agent run back to the web client over SSE.
@@ -66,7 +66,7 @@ export async function runAgentStream(
     cwd,
     maxTurns,
     ...(allowedTools ? { allowedTools } : {}),
-    permissionMode: PERMISSION_MODE,
+    permissionMode: resolvePermissionMode(),
     includePartialMessages: true,
     settingSources: ["user" as const, "project" as const],
     systemPrompt: { type: "preset" as const, preset: "claude_code" as const },

@@ -14,23 +14,56 @@ machine. No code, prompts, or credentials leave your computer.
 ## Quick start
 
 ```sh
-npx @featbit/experimentation-claude-code-connector
+npx @featbit/experimentation-claude-code-connector \
+  --access-token fbat_xxx \
+  --sync-api-url https://www.featbit.ai
 ```
 
 The connector listens at `http://127.0.0.1:3100` on the loopback interface
-only. Open the FeatBit experiment page, choose **Local agent** in the chat
-panel, and the page will connect automatically.
+only. Open the FeatBit experiment page, choose **Local Claude Code** in the
+chat panel, and the page will connect automatically.
+
+`--access-token` is the only flag you really need to set — issue one from
+the web UI: **Env Settings → Agent tokens → Issue token**. The plaintext
+is shown once on issuance, copy it then.
+
+`--sync-api-url` defaults to `https://www.featbit.ai`. Set it when you run
+the web locally (`http://localhost:3000`) or self-host on a different URL.
 
 ## Configuration
 
-Environment variables (all optional):
+Every option has a CLI flag. Each flag has a corresponding environment
+variable as fallback (useful for systemd / Docker setups). **Flags take
+precedence over env vars.**
 
-| Variable          | Default                                                                          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`            | `3100`                                                                           | Listen port                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `HOST`            | `127.0.0.1`                                                                      | Bind address. Keep on loopback unless you know what you are doing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `CORS_ORIGINS`    | `https://app.featbit.ai,https://featbit.ai,http://localhost:3000`                | Comma-separated list of web origins allowed to talk to the connector. `*` to allow any.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `PERMISSION_MODE` | `bypassPermissions`                                                              | SDK permission mode: `default` (interactive prompt — will block headless), `acceptEdits` (auto-approve file edits only), `bypassPermissions` (no prompts), `plan` (read-only). Default is `bypassPermissions` because the connector is loopback-only on your own machine — the trust boundary is identical to running `claude --dangerously-skip-permissions`. The FeatBit release-decision skill needs to run `npx tsx` to query its database, which requires either this default or an explicit allowlist in `~/.claude/settings.json`. |
+### Most users only set these two
+
+| Flag | Env var | Notes |
+| --- | --- | --- |
+| `-t, --access-token <token>` | `ACCESS_TOKEN` | Bearer token (`fbat_…`) the agent passes on every `/api/experiments/*` call. Without it the agent boots with no DB access and reports "database unreachable". The legacy env name `FEATBIT_ACCESS_TOKEN` is still recognised. |
+| `--sync-api-url <url>` | `SYNC_API_URL` | Base URL of the FeatBit web app. Default `https://www.featbit.ai`. Set to `http://localhost:3000` for a local web, or your own URL when self-hosting. |
+
+### Connector-side (rarely changed)
+
+| Flag | Env var | Default | Notes |
+| --- | --- | --- | --- |
+| `--port <port>` | `PORT` | `3100` | Listen port. |
+| `--host <host>` | `HOST` | `127.0.0.1` | Bind address. Keep on loopback unless you know what you are doing. |
+| `--cors-origins <list>` | `CORS_ORIGINS` | `https://www.featbit.ai,https://app.featbit.ai,https://featbit.ai,http://localhost:3000` | Comma-separated list of web origins allowed to talk to the connector. Pass `*` to allow any. |
+| `--permission-mode <mode>` | `PERMISSION_MODE` | `bypassPermissions` | SDK permission mode: `default` (interactive prompt — will block headless), `acceptEdits` (auto-approve file edits only), `bypassPermissions` (no prompts), `plan` (read-only). Default is `bypassPermissions` because the connector is loopback-only on your own machine — the trust boundary is identical to running `claude --dangerously-skip-permissions`. The FeatBit release-decision skill needs to run `npx tsx` to query its database, which requires either this default or an explicit allowlist in `~/.claude/settings.json`. |
+
+### Example: local web, custom port
+
+```sh
+# Same command on macOS / Linux / Windows PowerShell
+npx @featbit/experimentation-claude-code-connector \
+  --access-token fbat_xxx \
+  --sync-api-url http://localhost:3000 \
+  --port 4100
+```
+
+Run `npx @featbit/experimentation-claude-code-connector --help` for the
+full inline reference.
 
 ## Endpoints
 

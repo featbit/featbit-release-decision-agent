@@ -11,6 +11,11 @@ import {
 import { useSandbox0Chat } from "@/hooks/use-sandbox0-chat";
 import { persistMessagesAction } from "@/lib/actions";
 import { useAgentMode, type AgentMode } from "@/lib/agent-mode";
+import {
+  useConnectorUrl,
+  DEFAULT_CONNECTOR_URL,
+  normalizeConnectorUrl,
+} from "@/lib/connector-url";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -129,8 +134,10 @@ function ManagedChatPanel(props: InnerProps) {
 }
 
 function LocalChatPanel(props: InnerProps) {
+  const [connectorUrl] = useConnectorUrl();
   const chat = useLocalAgentChat({
     experimentId: props.experimentId,
+    connectorUrl,
     initialMessages: props.initialMessages.map(toChat),
     // Persistence + DB-delta sync are handled inside the hook itself, not via
     // an onStreamComplete callback like the managed mode — the hook owns the
@@ -269,6 +276,12 @@ function ChatPanelView({
     <div className="flex h-full flex-col bg-card/55">
       {/* Mode selector — always visible */}
       <AgentModeSelector mode={mode} setMode={setMode} />
+
+      {/* Connector URL — always visible in Local mode so users can change it
+          even after the connector is already connected. Per-browser, not
+          per-project: it's a fact about which machine/port is hosting the
+          local connector, not about which experiment is being analysed. */}
+      {mode === "local" && <ConnectorUrlBar />}
 
       {/* Connection status bar */}
       <ConnectionStatusBar mode={mode} status={connectionStatus} />
@@ -511,6 +524,97 @@ function AgentModeSelector({
   );
 }
 
+/* ── Connector URL bar (Local mode only) ── */
+
+function ConnectorUrlBar() {
+  const [connectorUrl, setConnectorUrl] = useConnectorUrl();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  function openEditor() {
+    setDraft(connectorUrl === DEFAULT_CONNECTOR_URL ? "" : connectorUrl);
+    setValidationError(null);
+    setEditing(true);
+  }
+
+  function save() {
+    const normalized = normalizeConnectorUrl(draft);
+    if (!normalized) {
+      setConnectorUrl("");
+      setEditing(false);
+      return;
+    }
+    try {
+      new URL(normalized);
+    } catch {
+      setValidationError("Invalid URL — use http://host:port");
+      return;
+    }
+    setConnectorUrl(normalized);
+    setEditing(false);
+  }
+
+  const displayHost = connectorUrl.replace(/^https?:\/\//i, "");
+  const isCustom = connectorUrl !== DEFAULT_CONNECTOR_URL;
+
+  if (editing) {
+    return (
+      <div className="border-b border-border/70 bg-background/40 px-3 py-1.5 text-[11px]">
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground shrink-0">URL</span>
+          <input
+            type="text"
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setValidationError(null); }}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+            placeholder={DEFAULT_CONNECTOR_URL}
+            className="flex-1 rounded border border-border bg-background px-2 py-0.5 font-mono outline-none focus:border-primary"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={save}
+            className="rounded bg-primary text-primary-foreground px-2 py-0.5 font-medium hover:bg-primary/90"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            className="rounded border border-border px-2 py-0.5 hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+        {validationError && (
+          <p className="mt-1 text-destructive">{validationError}</p>
+        )}
+        <p className="mt-1 text-muted-foreground">
+          Empty = reset to default. Per-browser setting; not tied to project or workspace.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 border-b border-border/70 bg-background/40 px-3 py-1 text-[11px]">
+      <span className="text-muted-foreground truncate">
+        Connector:{" "}
+        <code className="font-mono text-foreground/80">{displayHost}</code>
+        {isCustom && <span className="ml-1 text-muted-foreground/70">(custom)</span>}
+      </span>
+      <button
+        type="button"
+        onClick={openEditor}
+        className="shrink-0 text-muted-foreground hover:text-foreground underline"
+      >
+        Change
+      </button>
+    </div>
+  );
+}
+
 /* ── Connection status bar ── */
 function ConnectionStatusBar({
   mode,
@@ -521,6 +625,7 @@ function ConnectionStatusBar({
 }) {
   const [show, setShow] = useState(status !== "connected");
   const prevStatus = useRef(status);
+  const [connectorUrl] = useConnectorUrl();
 
   useEffect(() => {
     if (prevStatus.current !== "connected" && status === "connected") {
@@ -533,6 +638,10 @@ function ConnectionStatusBar({
 
   const visible = status !== "connected" || show;
   if (!visible) return null;
+
+  // Strip the scheme for compact display ("127.0.0.1:3100" reads cleaner than
+  // "http://127.0.0.1:3100" in a one-line status bar).
+  const displayHost = connectorUrl.replace(/^https?:\/\//i, "");
 
   return (
     <div
@@ -561,7 +670,7 @@ function ConnectionStatusBar({
           <span>
             {mode === "managed"
               ? "Managed agent unavailable — check sandbox0 credentials"
-              : "Local connector not running on 127.0.0.1:3100"}
+              : `Local connector not running on ${displayHost}`}
           </span>
         </>
       )}
@@ -573,6 +682,7 @@ function ConnectionStatusBar({
 
 function LocalAgentSetupCard() {
   const [copied, setCopied] = useState(false);
+  const [connectorUrl] = useConnectorUrl();
 
   function copyCommand() {
     navigator.clipboard?.writeText(LOCAL_AGENT_NPX_COMMAND).then(() => {
@@ -580,6 +690,8 @@ function LocalAgentSetupCard() {
       setTimeout(() => setCopied(false), 1500);
     });
   }
+
+  const displayHost = connectorUrl.replace(/^https?:\/\//i, "");
 
   return (
     <div className="mx-auto max-w-md rounded-lg border border-border/80 bg-card/90 p-4 shadow-sm">
@@ -627,8 +739,9 @@ function LocalAgentSetupCard() {
         </li>
         <li>
           Leave it running. This panel will detect it on{" "}
-          <code className="font-mono text-[11px] rounded bg-foreground/10 px-1 py-0.5">127.0.0.1:3100</code>{" "}
-          within a few seconds.
+          <code className="font-mono text-[11px] rounded bg-foreground/10 px-1 py-0.5">{displayHost}</code>{" "}
+          within a few seconds. Use the <strong>Change</strong> button in the
+          bar above if your connector listens on a different port or host.
         </li>
       </ol>
     </div>

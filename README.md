@@ -51,6 +51,27 @@ helm install featbit-rda charts/featbit-rda \
 
 Full guide and AKS reference values: **[`charts/README.md`](charts/README.md)**.
 
+### Run the local Claude Code connector (for Local chat mode)
+
+The web app's chat panel has two modes — **Managed** (FeatBit-hosted Claude via sandbox0) and **Local** (your own Claude Code CLI). Local is the default. If you stay on Local mode, run the connector on your machine before opening the chat panel.
+
+Two flags matter:
+
+- `--access-token` — **required**. Bearer token (`fbat_…`) the agent uses to call the web API. Issue one from the web UI: **Env Settings → Agent tokens → Issue token**. Plaintext is shown once — copy it then.
+- `--sync-api-url` — base URL of the web app. Default is `https://www.featbit.ai`. Set to `http://localhost:3000` when running web locally, or to your self-hosted URL.
+
+```sh
+npx @featbit/experimentation-claude-code-connector \
+  --access-token fbat_xxx \
+  --sync-api-url http://localhost:3000
+```
+
+Same command on macOS, Linux, and Windows PowerShell — no shell-specific env-var dance. Listens on `http://127.0.0.1:3100`. Keep the process running while you use the chat panel.
+
+If port 3100 is taken, add `--port 4100`, then click **Change** in the chat panel's connector toolbar (or open **Env Settings → Local Claude Code connector URL**) and paste the new URL. Both inputs share the same per-browser localStorage value.
+
+Run with `--help` for the full flag reference, or see [`modules/experimentation-claude-code-connector/README.md`](modules/experimentation-claude-code-connector/README.md) for env-var fallbacks and SSE protocol details.
+
 ### Usage
 
 Once the dashboard is up:
