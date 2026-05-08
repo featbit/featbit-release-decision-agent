@@ -208,3 +208,4 @@ data-process/stats-service/.env
 # ======
 charts/featbit-rda/**/values.local.yaml
 charts/featbit-rda/**/keyvault-secret-provider.local.yaml
+charts/featbit-rda/**/values.aks.local.yaml
