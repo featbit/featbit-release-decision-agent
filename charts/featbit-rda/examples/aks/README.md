@@ -179,7 +179,7 @@ curl https://track.example.com/health
 helm upgrade featbit-rda ../../ \
   -f values.local.yaml \
   --namespace featbit-rda \
-  --set trackService.image.tag=0.0.5-beta
+  --set trackService.image.tag=0.0.6-beta
 ```
 
 Rolling update keeps ≥3 pods available (`maxUnavailable: 0`, HPA min 3, PDB min 2).

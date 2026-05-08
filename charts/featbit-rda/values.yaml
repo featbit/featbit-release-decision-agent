@@ -23,7 +23,7 @@ trackService:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/featbit-rda-track-service
-    tag: "0.0.5-beta"
+    tag: "0.0.6-beta"
     pullPolicy: IfNotPresent
 
   serviceAccount:
@@ -169,7 +169,7 @@ web:
     # Falls back to global.imageRegistry if empty.
     registry: ""
     repository: featbit/featbit-rda-web
-    tag: "0.0.5-beta"
+    tag: "0.0.6-beta"
     pullPolicy: IfNotPresent
 
   serviceAccount:
