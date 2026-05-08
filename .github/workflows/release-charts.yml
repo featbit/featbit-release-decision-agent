@@ -1,12 +1,12 @@
 name: Release Charts
 
+# Manual-only. Bump `charts/featbit-rda/Chart.yaml: version` before triggering —
+# chart-releaser keys GitHub Releases by chart `version` (not `appVersion`),
+# so reusing an existing version would 422. `skip_existing: true` is set so
+# accidental re-runs no-op instead of failing the workflow.
+
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'charts/**'
-      - '.github/workflows/release-charts.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -31,5 +31,7 @@ jobs:
 
       - name: Run chart-releaser
         uses: helm/chart-releaser-action@v1.6.0
+        with:
+          skip_existing: true
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
