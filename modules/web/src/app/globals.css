@@ -201,4 +201,309 @@
       linear-gradient(to bottom, oklch(0.42 0.03 192 / 0.06) 1px, transparent 1px);
     background-size: 28px 28px;
   }
+
+  .featbit-jump-grid {
+    background:
+      radial-gradient(circle at center, rgba(60, 199, 152, 0.24), transparent 36rem),
+      linear-gradient(to right, rgba(60, 199, 152, 0.12) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(60, 199, 152, 0.09) 1px, transparent 1px);
+    background-size: auto, 40px 40px, 40px 40px;
+    mask-image: radial-gradient(circle at center, black 0 46%, transparent 78%);
+    animation: featbit-jump-grid 6s linear infinite;
+  }
+
+  .featbit-jump-scan {
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(60, 199, 152, 0.16),
+      transparent
+    );
+    animation: featbit-jump-scan 3.1s ease-in-out infinite;
+  }
+
+  .featbit-jump-beam {
+    background:
+      linear-gradient(118deg, transparent 0 36%, rgba(60, 199, 152, 0.18) 43%, transparent 52%),
+      linear-gradient(238deg, transparent 0 38%, rgba(103, 81, 214, 0.16) 47%, transparent 56%);
+    animation: featbit-jump-beam 6s ease-in-out infinite;
+    mix-blend-mode: screen;
+  }
+
+  .featbit-jump-horizon {
+    box-shadow:
+      0 0 32px rgba(60, 199, 152, 0.75),
+      0 0 120px rgba(103, 81, 214, 0.35);
+    animation: featbit-jump-horizon 6s ease-in-out infinite;
+  }
+
+  .featbit-jump-data {
+    opacity: 0.55;
+    background:
+      linear-gradient(180deg, transparent, rgba(60, 199, 152, 0.32), transparent),
+      repeating-linear-gradient(
+        180deg,
+        transparent 0 20px,
+        rgba(156, 245, 216, 0.35) 20px 22px,
+        transparent 22px 48px
+      );
+    mask-image: linear-gradient(180deg, transparent, black 16%, black 84%, transparent);
+  }
+
+  .featbit-jump-data-left {
+    animation: featbit-jump-data 2.4s linear infinite;
+  }
+
+  .featbit-jump-data-right {
+    animation: featbit-jump-data 2.4s linear infinite reverse;
+  }
+
+  .featbit-jump-core {
+    animation: featbit-jump-core 3s ease-in-out infinite;
+  }
+
+  .featbit-jump-orbit {
+    position: absolute;
+    inset: -2.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(60, 199, 152, 0.35);
+  }
+
+  .featbit-jump-orbit-one {
+    animation: featbit-jump-orbit 3.2s linear infinite;
+  }
+
+  .featbit-jump-orbit-two {
+    inset: -4.4rem;
+    border-color: rgba(103, 81, 214, 0.28);
+    transform: rotateX(64deg) rotateZ(18deg);
+    animation: featbit-jump-orbit-reverse 4s linear infinite;
+  }
+
+  .featbit-jump-orbit-three {
+    inset: -6rem;
+    border-style: dashed;
+    border-color: rgba(156, 245, 216, 0.2);
+    transform: rotateY(58deg) rotateZ(8deg);
+    animation: featbit-jump-orbit-three 5.2s linear infinite;
+  }
+
+  .featbit-jump-pulse {
+    position: absolute;
+    inset: -0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(60, 199, 152, 0.42);
+    animation: featbit-jump-pulse 2s ease-out infinite;
+  }
+
+  .featbit-jump-node {
+    position: absolute;
+    height: 0.55rem;
+    width: 0.55rem;
+    border-radius: 999px;
+    background: #9cf5d8;
+    box-shadow: 0 0 20px rgba(156, 245, 216, 0.9);
+  }
+
+  .featbit-jump-node-one {
+    right: -3.1rem;
+    top: 1.35rem;
+    animation: featbit-jump-node 1.8s ease-in-out infinite;
+  }
+
+  .featbit-jump-node-two {
+    bottom: -3.8rem;
+    left: 1.6rem;
+    animation: featbit-jump-node 1.8s ease-in-out 0.35s infinite;
+  }
+
+  .featbit-jump-node-three {
+    left: -4.8rem;
+    top: 3.9rem;
+    animation: featbit-jump-node 1.8s ease-in-out 0.7s infinite;
+  }
+
+  .featbit-jump-message {
+    animation: featbit-jump-message 6s ease-in-out infinite;
+  }
+
+  .featbit-jump-message:nth-child(2) {
+    animation-delay: 0.16s;
+  }
+
+  .featbit-jump-message:nth-child(3) {
+    animation-delay: 0.32s;
+  }
+
+  .featbit-jump-message:nth-child(4) {
+    animation-delay: 0.48s;
+  }
+
+  .featbit-jump-message:nth-child(5) {
+    animation-delay: 0.64s;
+  }
+
+  .featbit-jump-message:nth-child(6) {
+    animation-delay: 0.8s;
+  }
+
+  .featbit-jump-progress {
+    animation: featbit-jump-progress 6s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+    transform-origin: left;
+  }
+
+  @keyframes featbit-jump-grid {
+    to {
+      background-position:
+        center,
+        40px 40px,
+        40px 40px;
+    }
+  }
+
+  @keyframes featbit-jump-scan {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    20%,
+    70% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+
+  @keyframes featbit-jump-beam {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: translateX(-3%) scale(1);
+    }
+    50% {
+      opacity: 0.95;
+      transform: translateX(3%) scale(1.04);
+    }
+  }
+
+  @keyframes featbit-jump-horizon {
+    0%,
+    100% {
+      opacity: 0.3;
+      transform: translateX(-50%) scaleX(0.8);
+    }
+    45%,
+    70% {
+      opacity: 0.85;
+      transform: translateX(-50%) scaleX(1);
+    }
+  }
+
+  @keyframes featbit-jump-data {
+    to {
+      background-position: 0 180px, 0 180px;
+    }
+  }
+
+  @keyframes featbit-jump-core {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.04);
+    }
+  }
+
+  @keyframes featbit-jump-orbit {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes featbit-jump-orbit-reverse {
+    to {
+      transform: rotateX(64deg) rotateZ(-342deg);
+    }
+  }
+
+  @keyframes featbit-jump-orbit-three {
+    to {
+      transform: rotateY(58deg) rotateZ(368deg);
+    }
+  }
+
+  @keyframes featbit-jump-pulse {
+    0% {
+      opacity: 0.8;
+      transform: scale(0.92);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.36);
+    }
+  }
+
+  @keyframes featbit-jump-node {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: scale(0.72);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.28);
+    }
+  }
+
+  @keyframes featbit-jump-message {
+    0%,
+    100% {
+      border-color: rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+      transform: translateY(0);
+    }
+    45%,
+    65% {
+      border-color: rgba(60, 199, 152, 0.34);
+      box-shadow: 0 0 22px rgba(60, 199, 152, 0.12);
+      transform: translateY(-1px);
+    }
+  }
+
+  @keyframes featbit-jump-progress {
+    0% {
+      transform: scaleX(0.04);
+    }
+    36% {
+      transform: scaleX(0.38);
+    }
+    72% {
+      transform: scaleX(0.78);
+    }
+    100% {
+      transform: scaleX(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .featbit-jump-scan,
+    .featbit-jump-beam,
+    .featbit-jump-horizon,
+    .featbit-jump-data-left,
+    .featbit-jump-data-right,
+    .featbit-jump-core,
+    .featbit-jump-orbit-one,
+    .featbit-jump-orbit-two,
+    .featbit-jump-orbit-three,
+    .featbit-jump-pulse,
+    .featbit-jump-node,
+    .featbit-jump-message,
+    .featbit-jump-progress {
+      animation-duration: 1ms;
+      animation-iteration-count: 1;
+    }
+  }
 }
